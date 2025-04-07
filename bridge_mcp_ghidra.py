@@ -64,11 +64,29 @@ def list_classes(offset: int = 0, limit: int = 100) -> list:
     return safe_get("classes", {"offset": offset, "limit": limit})
 
 @mcp.tool()
+def rename_struct_field(struct_name: str, old_field_name: str, new_field_name: str) -> str:
+    """
+    Rename a field within a struct.
+    """
+    return safe_post("renameStructField", {
+        "structName": struct_name,
+        "oldFieldName": old_field_name, 
+        "newFieldName": new_field_name
+    })
+
+@mcp.tool()
 def decompile_function(name: str) -> str:
     """
     Decompile a specific function by name and return the decompiled C code.
     """
     return safe_post("decompile", name)
+
+@mcp.tool()
+def list_references(address: str, offset: int = 0, limit: int = 100) -> list:
+    """
+    List all references (xrefs) to the specified address with pagination.
+    """
+    return safe_get("references", {"address": address, "offset": offset, "limit": limit})
 
 @mcp.tool()
 def rename_function(old_name: str, new_name: str) -> str:
@@ -78,11 +96,28 @@ def rename_function(old_name: str, new_name: str) -> str:
     return safe_post("renameFunction", {"oldName": old_name, "newName": new_name})
 
 @mcp.tool()
+def set_comment(address: str, comment: str) -> str:
+    """
+    Set a comment at the specified address.
+    """
+    return safe_post("setComment", {
+        "address": address,
+        "comment": comment
+    })
+
+@mcp.tool()
 def rename_data(address: str, new_name: str) -> str:
     """
     Rename a data label at the specified address.
     """
     return safe_post("renameData", {"address": address, "newName": new_name})
+
+@mcp.tool()
+def list_structures(offset: int = 0, limit: int = 100) -> list:
+    """
+    List all structure/type definitions in the program with pagination.
+    """
+    return safe_get("structures", {"offset": offset, "limit": limit})
 
 @mcp.tool()
 def list_segments(offset: int = 0, limit: int = 100) -> list:
@@ -111,6 +146,13 @@ def list_namespaces(offset: int = 0, limit: int = 100) -> list:
     List all non-global namespaces in the program with pagination.
     """
     return safe_get("namespaces", {"offset": offset, "limit": limit})
+
+@mcp.tool()
+def list_symbols(offset: int = 0, limit: int = 100) -> list:
+    """
+    List all symbols (functions, variables, etc.) in the program with pagination.
+    """
+    return safe_get("symbols", {"offset": offset, "limit": limit})
 
 @mcp.tool()
 def list_data_items(offset: int = 0, limit: int = 100) -> list:

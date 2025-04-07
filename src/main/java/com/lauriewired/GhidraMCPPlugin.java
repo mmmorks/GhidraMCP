@@ -4,6 +4,9 @@ import ghidra.framework.plugintool.Plugin;
 import ghidra.framework.plugintool.PluginTool;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.GlobalNamespace;
+import ghidra.program.model.data.DataTypeComponent;
+import ghidra.program.model.data.ProgramBasedDataTypeManager;
+import ghidra.program.model.data.Structure;
 import ghidra.program.model.listing.*;
 import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.symbol.*;
@@ -30,6 +33,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.net.InetSocketAddress;
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -102,6 +106,23 @@ public class GhidraMCPPlugin extends Plugin {
             sendResponse(exchange, decompileFunctionByName(name));
         });
 
+        server.createContext("/references", exchange -> {
+            Map<String, String> qparams = parseQueryParams(exchange);
+            String address = qparams.get("address");
+            int offset = parseIntOrDefault(qparams.get("offset"), 0);
+            int limit  = parseIntOrDefault(qparams.get("limit"),  100);
+            sendResponse(exchange, listReferences(address, offset, limit));
+        });
+
+        server.createContext("/renameStructField", exchange -> {
+            Map<String, String> params = parsePostParams(exchange);
+            String structName = params.get("structName");
+            String oldFieldName = params.get("oldFieldName");
+            String newFieldName = params.get("newFieldName");
+            String result = renameStructField(structName, oldFieldName, newFieldName);
+            sendResponse(exchange, result);
+        });
+
         server.createContext("/renameFunction", exchange -> {
             Map<String, String> params = parsePostParams(exchange);
             String response = renameFunction(params.get("oldName"), params.get("newName"))
@@ -138,6 +159,13 @@ public class GhidraMCPPlugin extends Plugin {
             sendResponse(exchange, listImports(offset, limit));
         });
 
+        server.createContext("/setComment", exchange -> {
+            Map<String, String> params = parsePostParams(exchange);
+            String address = params.get("address");
+            String comment = params.get("comment");
+            sendResponse(exchange, setComment(address, comment));
+        });
+
         server.createContext("/exports", exchange -> {
             Map<String, String> qparams = parseQueryParams(exchange);
             int offset = parseIntOrDefault(qparams.get("offset"), 0);
@@ -157,6 +185,20 @@ public class GhidraMCPPlugin extends Plugin {
             int offset = parseIntOrDefault(qparams.get("offset"), 0);
             int limit  = parseIntOrDefault(qparams.get("limit"),  100);
             sendResponse(exchange, listDefinedData(offset, limit));
+        });
+
+        server.createContext("/structures", exchange -> {
+            Map<String, String> qparams = parseQueryParams(exchange);
+            int offset = parseIntOrDefault(qparams.get("offset"), 0);
+            int limit  = parseIntOrDefault(qparams.get("limit"),  100);
+            sendResponse(exchange, listStructures(offset, limit));
+        });
+
+        server.createContext("/symbols", exchange -> {
+            Map<String, String> qparams = parseQueryParams(exchange);
+            int offset = parseIntOrDefault(qparams.get("offset"), 0);
+            int limit  = parseIntOrDefault(qparams.get("limit"),  100);
+            sendResponse(exchange, listSymbols(offset, limit));
         });
 
         server.createContext("/searchFunctions", exchange -> {
@@ -183,6 +225,34 @@ public class GhidraMCPPlugin extends Plugin {
     // Pagination-aware listing methods
     // ----------------------------------------------------------------------------------
 
+    private String listStructures(int offset, int limit) {
+        Program program = getCurrentProgram();
+        if (program == null) return "No program loaded";
+
+        ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
+        List<Structure> structs = new ArrayList<>();
+        // Get all structures from the data type manager
+        dtm.getAllStructures().forEachRemaining((struct) -> {
+            structs.add(struct);
+        });
+        Collections.sort(structs, Comparator.comparing(Structure::getName));  
+        List<String> lines = new ArrayList<>();
+        for (Structure struct : structs) {
+            StringBuilder sb = new StringBuilder();
+            sb.append(struct.getName()).append(": {");
+            for (int i = 0; i < struct.getNumComponents(); i++) {
+                DataTypeComponent comp = struct.getComponent(i);
+                if (i > 0) sb.append(", ");
+                sb.append(comp.getDataType().getName())
+                .append(" ")
+                .append(comp.getFieldName());
+            }
+            sb.append("}");
+            lines.add(sb.toString());
+        }
+        return paginateList(lines, offset, limit);
+    }
+    
     private String getAllFunctionNames(int offset, int limit) {
         Program program = getCurrentProgram();
         if (program == null) return "No program loaded";
@@ -228,6 +298,17 @@ public class GhidraMCPPlugin extends Plugin {
 
         List<String> lines = new ArrayList<>();
         for (Symbol symbol : program.getSymbolTable().getExternalSymbols()) {
+            lines.add(symbol.getName() + " -> " + symbol.getAddress());
+        }
+        return paginateList(lines, offset, limit);
+    }
+
+    private String listSymbols(int offset, int limit) {
+        Program program = getCurrentProgram();
+        if (program == null) return "No program loaded";
+
+        List<String> lines = new ArrayList<>();
+        for (Symbol symbol : program.getSymbolTable().getAllSymbols(false)) {
             lines.add(symbol.getName() + " -> " + symbol.getAddress());
         }
         return paginateList(lines, offset, limit);
@@ -400,6 +481,126 @@ public class GhidraMCPPlugin extends Plugin {
         }
     }
 
+    private String setComment(String addressStr, String comment) {
+        Program program = getCurrentProgram();
+        if (program == null) return "No program loaded";
+        if (addressStr == null || comment == null) return "Address and comment are required";
+
+        AtomicBoolean successFlag = new AtomicBoolean(false);
+        try {
+            SwingUtilities.invokeAndWait(() -> {
+                int tx = program.startTransaction("Add comment");
+                try {
+                    Address addr = program.getAddressFactory().getAddress(addressStr);
+                    program.getListing().setComment(addr, CodeUnit.PRE_COMMENT, comment);
+                    successFlag.set(true);
+                }
+                catch (Exception e) {
+                    Msg.error(this, "Error adding comment", e);
+                }
+                finally {
+                    program.endTransaction(tx, successFlag.get());
+                }
+            });
+        }
+        catch (InterruptedException | InvocationTargetException e) {
+            Msg.error(this, "Failed to execute add comment on Swing thread", e);
+            return "Failed to add comment: " + e.getMessage();
+        }
+        
+        return successFlag.get() ? "Comment added successfully" : "Failed to add comment";
+    }
+
+    private String renameStructField(String structName, String oldFieldName, String newFieldName) {
+        Program program = getCurrentProgram();
+        if (program == null) return "No program loaded";
+        if (structName == null || oldFieldName == null || newFieldName == null) {
+            return "Structure name, old field name, and new field name are required";
+        }
+
+        AtomicBoolean successFlag = new AtomicBoolean(false);
+        try {
+            SwingUtilities.invokeAndWait(() -> {
+                int tx = program.startTransaction("Rename struct field");
+                try {
+                    ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
+                    Structure struct = (Structure) dtm.getDataType("/" + structName);
+                    if (struct != null) {
+                        // Check if oldFieldName matches pattern "field<N>_0x<offset>"
+                        if (oldFieldName.matches("field\\d+_0x[0-9a-fA-F]+")) {
+                            // Extract index number from field name
+                            int index = Integer.parseInt(oldFieldName.substring(5, oldFieldName.indexOf('_')));
+                            if (index >= 0 && index < struct.getNumComponents()) {
+                                DataTypeComponent component = struct.getComponent(index);
+                                struct.replace(index, component.getDataType(), component.getLength(), 
+                                            newFieldName, component.getComment());
+                                successFlag.set(true);
+                            }
+                        } else {
+                            // Original logic for named fields
+                            for (int i = 0; i < struct.getNumComponents(); i++) {
+                                DataTypeComponent component = struct.getComponent(i);
+                                if ((component.getFieldName() != null) && 
+                                    component.getFieldName().equals(oldFieldName)) {
+                                    struct.replace(i, component.getDataType(), component.getLength(),
+                                                newFieldName, component.getComment());
+                                    successFlag.set(true);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (Exception e) {
+                    Msg.error(this, "Error renaming struct field", e);
+                }
+                finally {
+                    program.endTransaction(tx, successFlag.get());
+                }
+            });
+        } catch (InterruptedException | InvocationTargetException e) {
+            String errorMsg = "Failed to execute rename on Swing thread: " + e.getMessage();
+            Msg.error(this, errorMsg, e);
+            return errorMsg;
+        }
+
+        return successFlag.get() ? "Field renamed successfully" : "Failed to rename field";
+    }
+
+    private String listReferences(String addressStr, int offset, int limit) {
+        Program program = getCurrentProgram();
+        if (program == null) return "No program loaded";
+        if (addressStr == null) return "Address is required";
+
+        List<String> refs = new ArrayList<>();
+        try {
+            Address addr = program.getAddressFactory().getAddress(addressStr);
+            ReferenceManager refMgr = program.getReferenceManager();
+            
+            // Get references to this address
+            for (Reference ref : refMgr.getReferencesTo(addr)) {
+                Address fromAddr = ref.getFromAddress();
+                RefType refType = ref.getReferenceType();
+                
+                // Get function containing the reference if it exists
+                Function func = program.getFunctionManager().getFunctionContaining(fromAddr);
+                String funcName = func != null ? func.getName() : "not in function";
+                
+                refs.add(String.format("%s -> %s (from %s in %s)", 
+                    fromAddr, addr, refType.getName(), funcName));
+            }
+
+            if (refs.isEmpty()) {
+                return "No references found to " + addressStr;
+            }
+
+            Collections.sort(refs);
+            return paginateList(refs, offset, limit);
+        } catch (Exception e) {
+            return "Error getting references: " + e.getMessage();
+        }
+    }
+
     private String renameVariableInFunction(String functionName, String oldVarName, String newVarName) {
         Program program = getCurrentProgram();
         if (program == null) return "No program loaded";
@@ -540,7 +741,7 @@ public class GhidraMCPPlugin extends Plugin {
             for (String p : pairs) {
                 String[] kv = p.split("=");
                 if (kv.length == 2) {
-                    result.put(kv[0], kv[1]);
+                    result.put(URLDecoder.decode(kv[0], StandardCharsets.UTF_8), URLDecoder.decode(kv[1], StandardCharsets.UTF_8));
                 }
             }
         }
@@ -557,7 +758,7 @@ public class GhidraMCPPlugin extends Plugin {
         for (String pair : bodyStr.split("&")) {
             String[] kv = pair.split("=");
             if (kv.length == 2) {
-                params.put(kv[0], kv[1]);
+                params.put(URLDecoder.decode(kv[0], StandardCharsets.UTF_8), URLDecoder.decode(kv[1], StandardCharsets.UTF_8));
             }
         }
         return params;
