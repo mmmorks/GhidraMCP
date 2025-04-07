@@ -1822,16 +1822,25 @@ public class GhidraMCPPlugin extends Plugin {
 
     /**
      * Parse query parameters from the URL, e.g. ?offset=10&limit=100
+     * 
+     * package-private for testing
      */
-    private Map<String, String> parseQueryParams(HttpExchange exchange) {
+    static Map<String, String> parseQueryParams(HttpExchange exchange) {
         Map<String, String> result = new HashMap<>();
-        String query = exchange.getRequestURI().getQuery(); // e.g. offset=10&limit=100
+        String query = exchange.getRequestURI().getRawQuery(); // e.g. offset=10&limit=100
         if (query != null) {
             String[] pairs = query.split("&");
             for (String p : pairs) {
                 String[] kv = p.split("=");
                 if (kv.length == 2) {
-                    result.put(URLDecoder.decode(kv[0], StandardCharsets.UTF_8), URLDecoder.decode(kv[1], StandardCharsets.UTF_8));
+                    try {
+                        String key = URLDecoder.decode(kv[0], StandardCharsets.UTF_8);
+                        String value = URLDecoder.decode(kv[1], StandardCharsets.UTF_8);
+                        result.put(key, value);
+                    } catch (IllegalArgumentException e) {
+                        // Log the error but continue processing other parameters
+                        Msg.warn(GhidraMCPPlugin.class, "Error decoding URL parameter: " + p + " - " + e.getMessage());
+                    }
                 }
             }
         }
@@ -1840,15 +1849,41 @@ public class GhidraMCPPlugin extends Plugin {
 
     /**
      * Parse post body form params, e.g. oldName=foo&newName=bar
+     * 
+     * package-private for testing
      */
-    private Map<String, String> parsePostParams(HttpExchange exchange) throws IOException {
+    static Map<String, String> parsePostParams(HttpExchange exchange) throws IOException {
         byte[] body = exchange.getRequestBody().readAllBytes();
         String bodyStr = new String(body, StandardCharsets.UTF_8);
         Map<String, String> params = new HashMap<>();
         for (String pair : bodyStr.split("&")) {
-            String[] kv = pair.split("=");
-            if (kv.length == 2) {
-                params.put(URLDecoder.decode(kv[0], StandardCharsets.UTF_8), URLDecoder.decode(kv[1], StandardCharsets.UTF_8));
+            // Skip empty pairs
+            if (pair.isEmpty()) {
+                continue;
+            }
+            
+            // Find the first equals sign
+            int equalsIndex = pair.indexOf('=');
+            
+            // If there's no equals sign, skip this parameter
+            if (equalsIndex == -1) {
+                continue;
+            }
+            
+            try {
+                // Extract key (everything before the first equals sign)
+                String key = URLDecoder.decode(pair.substring(0, equalsIndex), StandardCharsets.UTF_8);
+                
+                // Extract value (everything after the first equals sign, or empty string if at the end)
+                String value = "";
+                if (equalsIndex < pair.length() - 1) {
+                    value = URLDecoder.decode(pair.substring(equalsIndex + 1), StandardCharsets.UTF_8);
+                }
+                
+                params.put(key, value);
+            } catch (IllegalArgumentException e) {
+                // Log the error but continue processing other parameters
+                Msg.warn(GhidraMCPPlugin.class, "Error decoding URL parameter: " + pair + " - " + e.getMessage());
             }
         }
         return params;
@@ -1856,10 +1891,19 @@ public class GhidraMCPPlugin extends Plugin {
 
     /**
      * Convert a list of strings into one big newline-delimited string, applying offset & limit.
+     * 
+     * package-private for testing
      */
-    private String paginateList(List<String> items, int offset, int limit) {
+    static String paginateList(List<String> items, int offset, int limit) {
+        // Handle zero or negative limit
+        if (limit <= 0) {
+            return "";
+        }
+        
+        // Handle negative offset by treating it as 0
         int start = Math.max(0, offset);
-        int end   = Math.min(items.size(), offset + limit);
+        // Calculate end position
+        int end = Math.min(items.size(), start + limit);
 
         if (start >= items.size()) {
             return ""; // no items in range
@@ -1871,7 +1915,7 @@ public class GhidraMCPPlugin extends Plugin {
     /**
      * Parse an integer from a string, or return defaultValue if null/invalid.
      */
-    private int parseIntOrDefault(String val, int defaultValue) {
+    private static int parseIntOrDefault(String val, int defaultValue) {
         if (val == null) return defaultValue;
         try {
             return Integer.parseInt(val);
@@ -1884,7 +1928,7 @@ public class GhidraMCPPlugin extends Plugin {
     /**
      * Escape non-ASCII chars to avoid potential decode issues.
      */
-    private String escapeNonAscii(String input) {
+    private static String escapeNonAscii(String input) {
         if (input == null) return "";
         StringBuilder sb = new StringBuilder();
         for (char c : input.toCharArray()) {
