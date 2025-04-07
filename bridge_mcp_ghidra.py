@@ -96,16 +96,6 @@ def rename_function(old_name: str, new_name: str) -> str:
     return safe_post("renameFunction", {"oldName": old_name, "newName": new_name})
 
 @mcp.tool()
-def set_comment(address: str, comment: str) -> str:
-    """
-    Set a comment at the specified address.
-    """
-    return safe_post("setComment", {
-        "address": address,
-        "comment": comment
-    })
-
-@mcp.tool()
 def rename_data(address: str, new_name: str) -> str:
     """
     Rename a data label at the specified address.
@@ -171,6 +161,90 @@ def search_functions_by_name(query: str, offset: int = 0, limit: int = 100) -> l
     return safe_get("searchFunctions", {"query": query, "offset": offset, "limit": limit})
 
 @mcp.tool()
+def get_function_by_address(address: str) -> str:
+    """
+    Get a function by its address.
+    """
+    return "\n".join(safe_get("get_function_by_address", {"address": address}))
+
+@mcp.tool()
+def get_current_address() -> str:
+    """
+    Get the address currently selected by the user.
+    """
+    return "\n".join(safe_get("get_current_address"))
+
+@mcp.tool()
+def get_current_function() -> str:
+    """
+    Get the function currently selected by the user.
+    """
+    return "\n".join(safe_get("get_current_function"))
+
+@mcp.tool()
+def list_functions() -> list:
+    """
+    List all functions in the database.
+    """
+    return safe_get("list_functions")
+
+@mcp.tool()
+def decompile_function_by_address(address: str) -> str:
+    """
+    Decompile a function at the given address.
+    """
+    return "\n".join(safe_get("decompile_function", {"address": address}))
+
+@mcp.tool()
+def disassemble_function(address: str) -> list:
+    """
+    Get assembly code (address: instruction; comment) for a function.
+    """
+    return safe_get("disassemble_function", {"address": address})
+
+@mcp.tool()
+def set_decompiler_comment(address: str, comment: str) -> str:
+    """
+    Set a comment for a given address in the function pseudocode.
+    """
+    return safe_post("set_decompiler_comment", {"address": address, "comment": comment})
+
+@mcp.tool()
+def set_disassembly_comment(address: str, comment: str) -> str:
+    """
+    Set a comment for a given address in the function disassembly.
+    """
+    return safe_post("set_disassembly_comment", {"address": address, "comment": comment})
+
+@mcp.tool()
+def rename_local_variable(function_address: str, old_name: str, new_name: str) -> str:
+    """
+    Rename a local variable in a function.
+    """
+    return safe_post("rename_local_variable", {"function_address": function_address, "old_name": old_name, "new_name": new_name})
+
+@mcp.tool()
+def rename_function_by_address(function_address: str, new_name: str) -> str:
+    """
+    Rename a function by its address.
+    """
+    return safe_post("rename_function_by_address", {"function_address": function_address, "new_name": new_name})
+
+@mcp.tool()
+def set_function_prototype(function_address: str, prototype: str) -> str:
+    """
+    Set a function's prototype.
+    """
+    return safe_post("set_function_prototype", {"function_address": function_address, "prototype": prototype})
+
+@mcp.tool()
+def set_local_variable_type(function_address: str, variable_name: str, new_type: str) -> str:
+    """
+    Set a local variable's type.
+    """
+    return safe_post("set_local_variable_type", {"function_address": function_address, "variable_name": variable_name, "new_type": new_type})
+
+@mcp.tool()
 def rename_variable(function_name: str, old_name: str, new_name: str) -> str:
     """
     Rename a local variable within a function.
@@ -183,4 +257,3 @@ def rename_variable(function_name: str, old_name: str, new_name: str) -> str:
 
 if __name__ == "__main__":
     mcp.run()
-
