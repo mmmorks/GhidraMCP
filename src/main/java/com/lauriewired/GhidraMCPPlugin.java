@@ -3,7 +3,15 @@ package com.lauriewired;
 import ghidra.framework.plugintool.Plugin;
 import ghidra.framework.plugintool.PluginTool;
 import ghidra.program.model.address.Address;
+import ghidra.program.model.address.AddressSet;
+import ghidra.program.model.address.AddressSetView;
 import ghidra.program.model.address.GlobalNamespace;
+import ghidra.program.model.address.AddressIterator;
+import ghidra.program.model.block.BasicBlockModel;
+import ghidra.program.model.block.CodeBlock;
+import ghidra.program.model.block.CodeBlockIterator;
+import ghidra.program.model.block.CodeBlockReference;
+import ghidra.program.model.block.CodeBlockReferenceIterator;
 import ghidra.program.model.data.DataTypeComponent;
 import ghidra.program.model.data.ProgramBasedDataTypeManager;
 import ghidra.program.model.data.Structure;
@@ -15,11 +23,14 @@ import ghidra.program.model.pcode.HighSymbol;
 import ghidra.program.model.pcode.LocalSymbolMap;
 import ghidra.program.model.pcode.HighFunctionDBUtil;
 import ghidra.program.model.pcode.HighFunctionDBUtil.ReturnCommitOption;
+import ghidra.program.model.pcode.PcodeOp;
+import ghidra.program.model.pcode.Varnode;
 import ghidra.app.decompiler.DecompInterface;
 import ghidra.app.decompiler.DecompileResults;
 import ghidra.app.plugin.PluginCategoryNames;
 import ghidra.app.services.CodeViewerService;
 import ghidra.app.services.ProgramManager;
+import ghidra.app.services.DataTypeManagerService;
 import ghidra.program.model.symbol.SourceType;
 import ghidra.framework.options.Options;
 import ghidra.framework.plugintool.PluginInfo;
@@ -29,7 +40,6 @@ import ghidra.util.Msg;
 import ghidra.util.task.ConsoleTaskMonitor;
 import ghidra.util.task.TaskMonitor;
 import ghidra.program.model.pcode.HighVariable;
-import ghidra.program.model.pcode.Varnode;
 import ghidra.program.model.data.DataType;
 import ghidra.program.model.data.DataTypeManager;
 import ghidra.program.model.data.PointerDataType;
@@ -46,6 +56,7 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 
 @PluginInfo(
     status = PluginStatus.RELEASED,
@@ -344,6 +355,28 @@ public class GhidraMCPPlugin extends Plugin {
             responseMsg.append("\nResult: ").append(successMsg);
             
             sendResponse(exchange, responseMsg.toString());
+        });
+
+        // Program Analysis API endpoints
+        
+        server.createContext("/analyze_control_flow", exchange -> {
+            Map<String, String> qparams = parseQueryParams(exchange);
+            String address = qparams.get("address");
+            sendResponse(exchange, analyzeControlFlow(address));
+        });
+        
+        server.createContext("/analyze_data_flow", exchange -> {
+            Map<String, String> qparams = parseQueryParams(exchange);
+            String address = qparams.get("address");
+            String variableName = qparams.get("variable");
+            sendResponse(exchange, analyzeDataFlow(address, variableName));
+        });
+        
+        server.createContext("/analyze_call_graph", exchange -> {
+            Map<String, String> qparams = parseQueryParams(exchange);
+            String address = qparams.get("address");
+            int depth = parseIntOrDefault(qparams.get("depth"), 2);
+            sendResponse(exchange, analyzeCallGraph(address, depth));
         });
 
         server.setExecutor(null);
@@ -681,7 +714,24 @@ public class GhidraMCPPlugin extends Plugin {
 
         List<String> refs = new ArrayList<>();
         try {
+            // Try to get the address directly first (if addressStr is a hex address)
             Address addr = program.getAddressFactory().getAddress(addressStr);
+
+            // If addr is null or we couldn't get it directly, try to find it as a symbol name
+            if (addr == null) {
+                SymbolTable symbolTable = program.getSymbolTable();
+                SymbolIterator symbolIterator = symbolTable.getSymbols(addressStr);
+                
+                if (symbolIterator.hasNext()) {
+                    // Use the first matching symbol's address
+                    Symbol symbol = symbolIterator.next();
+                    addr = symbol.getAddress();
+                    Msg.info(this, "Found symbol '" + addressStr + "' at address " + addr);
+                } else {
+                    return "Could not find address or symbol named '" + addressStr + "'";
+                }
+            }
+            
             ReferenceManager refMgr = program.getReferenceManager();
             
             // Get references to this address
@@ -698,7 +748,7 @@ public class GhidraMCPPlugin extends Plugin {
             }
 
             if (refs.isEmpty()) {
-                return "No references found to " + addressStr;
+                return "No references found to " + addressStr + " (address: " + addr + ")";
             }
 
             Collections.sort(refs);
@@ -1990,6 +2040,318 @@ public class GhidraMCPPlugin extends Plugin {
     public Program getCurrentProgram() {
         ProgramManager pm = tool.getService(ProgramManager.class);
         return pm != null ? pm.getCurrentProgram() : null;
+    }
+
+    // ----------------------------------------------------------------------------------
+    // Program Analysis API methods
+    // ----------------------------------------------------------------------------------
+    
+    /**
+     * Analyze the control flow of a function
+     * @param addressStr The address of the function to analyze
+     * @return A textual representation of the control flow graph
+     */
+    private String analyzeControlFlow(String addressStr) {
+        Program program = getCurrentProgram();
+        if (program == null) return "No program loaded";
+        if (addressStr == null || addressStr.isEmpty()) return "Address is required";
+        
+        try {
+            Address addr = program.getAddressFactory().getAddress(addressStr);
+            Function func = getFunctionForAddress(program, addr);
+            if (func == null) return "No function found at or containing address " + addressStr;
+            
+            StringBuilder result = new StringBuilder();
+            result.append("Control Flow Analysis for function: ").append(func.getName())
+                  .append(" at ").append(func.getEntryPoint()).append("\n\n");
+            
+            // Use BasicBlockModel to get the control flow graph
+            BasicBlockModel bbModel = new BasicBlockModel(program);
+            
+            // Get the function's body
+            AddressSetView functionBodyView = func.getBody();
+            AddressSet functionBody = new AddressSet(functionBodyView);
+            
+            // Get the code blocks (basic blocks) for the function
+            CodeBlockIterator blockIterator = bbModel.getCodeBlocksContaining(functionBody, new ConsoleTaskMonitor());
+            
+            // Map to store blocks by address for easier reference
+            Map<Address, CodeBlock> blockMap = new HashMap<>();
+            List<CodeBlock> blocks = new ArrayList<>();
+            
+            // First pass: collect all blocks
+            while (blockIterator.hasNext()) {
+                CodeBlock block = blockIterator.next();
+                blocks.add(block);
+                blockMap.put(block.getFirstStartAddress(), block);
+            }
+            
+            // Sort blocks by address for consistent output
+            blocks.sort(Comparator.comparing(CodeBlock::getFirstStartAddress));
+            
+            // Second pass: print blocks and their destinations
+            for (CodeBlock block : blocks) {
+                result.append("Block at ").append(block.getFirstStartAddress())
+                      .append(" (").append(block.getMinAddress()).append(" - ")
+                      .append(block.getMaxAddress()).append(")\n");
+                
+                // Get the destinations (successors) of this block
+                CodeBlockReferenceIterator destIter = block.getDestinations(new ConsoleTaskMonitor());
+                if (!destIter.hasNext()) {
+                    result.append("  - Terminal block (no successors)\n");
+                }
+                
+                while (destIter.hasNext()) {
+                    CodeBlockReference ref = destIter.next();
+                    CodeBlock destBlock = ref.getDestinationBlock();
+                    
+                    // Determine the type of flow
+                    String flowType = "Unknown";
+                    if (ref.getFlowType().isJump()) {
+                        if (ref.getFlowType().isConditional()) {
+                            flowType = "Conditional Jump";
+                        } else {
+                            flowType = "Unconditional Jump";
+                        }
+                    } else if (ref.getFlowType().isFallthrough()) {
+                        flowType = "Fallthrough";
+                    } else if (ref.getFlowType().isCall()) {
+                        flowType = "Call";
+                    } else if (ref.getFlowType().isTerminal()) {
+                        flowType = "Return";
+                    }
+                    
+                    result.append("  - ").append(flowType).append(" to ")
+                          .append(destBlock.getFirstStartAddress()).append("\n");
+                }
+                
+                // Add the instructions in this block
+                result.append("  Instructions:\n");
+                Listing listing = program.getListing();
+                InstructionIterator instructions = listing.getInstructions(block, true);
+                while (instructions.hasNext()) {
+                    Instruction instr = instructions.next();
+                    result.append("    ").append(instr.getAddress()).append(": ")
+                          .append(instr.toString()).append("\n");
+                }
+                
+                result.append("\n");
+            }
+            
+            return result.toString();
+        } catch (Exception e) {
+            return "Error analyzing control flow: " + e.getMessage();
+        }
+    }
+    
+    /**
+     * Analyze the data flow for a variable in a function
+     * @param addressStr The address of the function to analyze
+     * @param variableName The name of the variable to track
+     * @return A textual representation of the data flow
+     */
+    private String analyzeDataFlow(String addressStr, String variableName) {
+        Program program = getCurrentProgram();
+        if (program == null) return "No program loaded";
+        if (addressStr == null || addressStr.isEmpty()) return "Address is required";
+        if (variableName == null || variableName.isEmpty()) return "Variable name is required";
+        
+        try {
+            Address addr = program.getAddressFactory().getAddress(addressStr);
+            Function func = getFunctionForAddress(program, addr);
+            if (func == null) return "No function found at or containing address " + addressStr;
+            
+            StringBuilder result = new StringBuilder();
+            result.append("Data Flow Analysis for variable '").append(variableName)
+                  .append("' in function ").append(func.getName())
+                  .append(" at ").append(func.getEntryPoint()).append("\n\n");
+            
+            // Decompile the function to get high-level variable information
+            DecompileResults decompResults = decompileFunction(func, program);
+            if (decompResults == null || !decompResults.decompileCompleted()) {
+                return "Could not decompile function for data flow analysis";
+            }
+            
+            HighFunction highFunc = decompResults.getHighFunction();
+            if (highFunc == null) {
+                return "No high function available for data flow analysis";
+            }
+            
+            // Find the variable by name
+            HighSymbol targetSymbol = findSymbolByName(highFunc, variableName);
+            if (targetSymbol == null) {
+                return "Variable '" + variableName + "' not found in function";
+            }
+            
+            HighVariable highVar = targetSymbol.getHighVariable();
+            if (highVar == null) {
+                return "No high variable found for '" + variableName + "'";
+            }
+            
+            // Get information about the variable
+            result.append("Variable information:\n");
+            result.append("  Name: ").append(highVar.getName()).append("\n");
+            result.append("  Type: ").append(highVar.getDataType().getName()).append("\n");
+            result.append("  Storage: ");
+            
+            Varnode[] instances = highVar.getInstances();
+            if (instances.length > 0) {
+                for (int i = 0; i < instances.length; i++) {
+                    if (i > 0) result.append(", ");
+                    result.append(instances[i].getAddress());
+                }
+            } else {
+                result.append("No storage information available");
+            }
+            result.append("\n\n");
+            
+            // Track definitions and uses of the variable
+            result.append("Variable definitions and uses:\n");
+            
+            // Get all PcodeOps that define or use this variable
+            Map<Address, String> defUseMap = new HashMap<>();
+            
+            for (Varnode instance : instances) {
+                // Get the PcodeOp that defines this instance
+                PcodeOp defOp = instance.getDef();
+                if (defOp != null) {
+                    Address defAddr = defOp.getSeqnum().getTarget();
+                    String opType = defOp.getMnemonic();
+                    defUseMap.put(defAddr, "DEFINE: " + opType);
+                }
+                
+                // Get all PcodeOps that use this instance
+                Iterator<PcodeOp> descendants = instance.getDescendants();
+                while (descendants.hasNext()) {
+                    PcodeOp useOp = descendants.next();
+                    Address useAddr = useOp.getSeqnum().getTarget();
+                    String opType = useOp.getMnemonic();
+                    defUseMap.put(useAddr, "USE: " + opType);
+                }
+            }
+            
+            // Sort the addresses for consistent output
+            List<Address> sortedAddrs = new ArrayList<>(defUseMap.keySet());
+            sortedAddrs.sort(Comparator.naturalOrder());
+            
+            // Get the listing for instruction information
+            Listing listing = program.getListing();
+            
+            // Print the definitions and uses
+            for (Address opAddr : sortedAddrs) {
+                Instruction instr = listing.getInstructionAt(opAddr);
+                if (instr != null) {
+                    result.append("  ").append(opAddr).append(": ")
+                          .append(defUseMap.get(opAddr)).append(" - ")
+                          .append(instr.toString()).append("\n");
+                }
+            }
+            
+            return result.toString();
+        } catch (Exception e) {
+            return "Error analyzing data flow: " + e.getMessage();
+        }
+    }
+    
+    /**
+     * Analyze the call graph starting from a function
+     * @param addressStr The address of the function to start from
+     * @param depth The maximum depth to traverse (default: 2)
+     * @return A textual representation of the call graph
+     */
+    private String analyzeCallGraph(String addressStr, int depth) {
+        Program program = getCurrentProgram();
+        if (program == null) return "No program loaded";
+        if (addressStr == null || addressStr.isEmpty()) return "Address is required";
+        
+        // Limit depth to prevent excessive output
+        depth = Math.min(Math.max(depth, 1), 5);
+        
+        try {
+            Address addr = program.getAddressFactory().getAddress(addressStr);
+            Function rootFunc = getFunctionForAddress(program, addr);
+            if (rootFunc == null) return "No function found at or containing address " + addressStr;
+            
+            StringBuilder result = new StringBuilder();
+            result.append("Call Graph Analysis for function: ").append(rootFunc.getName())
+                  .append(" at ").append(rootFunc.getEntryPoint())
+                  .append(" (depth: ").append(depth).append(")\n\n");
+            
+            // Set to track visited functions to avoid cycles
+            Set<Function> visited = new HashSet<>();
+            
+            // Start the recursive call graph traversal
+            buildCallGraph(rootFunc, result, visited, 0, depth);
+            
+            return result.toString();
+        } catch (Exception e) {
+            return "Error analyzing call graph: " + e.getMessage();
+        }
+    }
+    
+    /**
+     * Recursive helper method to build the call graph
+     */
+    private void buildCallGraph(Function func, StringBuilder result, Set<Function> visited, 
+                               int currentDepth, int maxDepth) {
+        // Add indentation based on depth
+        String indent = "  ".repeat(currentDepth);
+        
+        // Print the current function
+        result.append(indent).append("- ").append(func.getName())
+              .append(" at ").append(func.getEntryPoint());
+        
+        // Check if we've already visited this function or reached max depth
+        if (visited.contains(func)) {
+            result.append(" (already visited)\n");
+            return;
+        }
+        
+        result.append("\n");
+        
+        // Mark as visited
+        visited.add(func);
+        
+        // Stop if we've reached the maximum depth
+        if (currentDepth >= maxDepth) {
+            return;
+        }
+        
+        // Get all functions called by this function
+        Set<Function> calledFunctions = new HashSet<>();
+        
+        // Get references from this function
+        ReferenceManager refMgr = func.getProgram().getReferenceManager();
+        AddressSetView body = func.getBody();
+        
+        // Iterate through all addresses in the function body
+        AddressIterator addrIter = body.getAddresses(true);
+        while (addrIter.hasNext()) {
+            Address fromAddr = addrIter.next();
+            
+            // Get all references from this address
+            for (Reference ref : refMgr.getReferencesFrom(fromAddr)) {
+                // Check if it's a call reference
+                if (ref.getReferenceType().isCall()) {
+                    Address toAddr = ref.getToAddress();
+                    
+                    // Get the function at the destination address
+                    Function calledFunc = func.getProgram().getFunctionManager().getFunctionAt(toAddr);
+                    if (calledFunc != null) {
+                        calledFunctions.add(calledFunc);
+                    }
+                }
+            }
+        }
+        
+        // Sort called functions by name for consistent output
+        List<Function> sortedCalled = new ArrayList<>(calledFunctions);
+        sortedCalled.sort(Comparator.comparing(Function::getName));
+        
+        // Recursively process called functions
+        for (Function calledFunc : sortedCalled) {
+            buildCallGraph(calledFunc, result, visited, currentDepth + 1, maxDepth);
+        }
     }
 
     @Override
