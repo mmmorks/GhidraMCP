@@ -693,38 +693,6 @@ def set_disassembly_comment(address: str, comment: str) -> str:
     return safe_post("set_disassembly_comment", {"address": address, "comment": comment})
 
 @mcp.tool()
-def rename_local_variable(function_address: str, old_name: str, new_name: str) -> str:
-    """
-    Rename a local variable in a function identified by its address.
-    
-    This function changes the name of a local variable within a function's scope,
-    which improves readability of the decompiled code. The variable must exist
-    in the function's local symbol table.
-    
-    Parameters:
-        function_address: The address of the function containing the variable,
-                          in Ghidra's address format (e.g., "00401000")
-        old_name: The current name of the variable to rename
-        new_name: The new name to assign to the variable
-    
-    Returns:
-        A string indicating success ("Variable renamed successfully") or failure
-        with an error message explaining why the rename operation failed.
-    
-    Notes:
-        - This operation affects how the variable appears in the decompiler view
-        - Variable names must be unique within the function's scope
-        - This operation modifies the Ghidra program and cannot be undone except by
-          renaming the variable again
-        - This function uses Ghidra's high-level variable system (HighVariable)
-    
-    Example:
-        >>> rename_local_variable("00401000", "local_10", "configValue")
-        "Variable renamed successfully"
-    """
-    return safe_post("rename_local_variable", {"function_address": function_address, "old_name": old_name, "new_name": new_name})
-
-@mcp.tool()
 def rename_function_by_address(function_address: str, new_name: str) -> str:
     """
     Rename a function identified by its address.
@@ -835,33 +803,41 @@ def set_local_variable_type(function_address: str, variable_name: str, new_type:
     return safe_post("set_local_variable_type", {"function_address": function_address, "variable_name": variable_name, "new_type": new_type})
 
 @mcp.tool()
-def rename_variable(function_name: str, old_name: str, new_name: str) -> str:
+def rename_variable(function_name: str, old_name: str, new_name: str) -> dict:
     """
     Rename a local variable within a function identified by name.
-    
-    This function changes the name of a local variable within a function's scope,
-    which improves readability of the decompiled code. Unlike rename_local_variable(),
+
+    This function changes the name of a local variable within a function's scope
+    which improves readability of the decompiled code. Unlike rename_local_variable()
     which identifies the function by address, this function uses the function's name.
-    
+
     Parameters:
         function_name: The name of the function containing the variable
         old_name: The current name of the variable to rename
         new_name: The new name to assign to the variable
-    
+
     Returns:
-        A string indicating success ("Variable renamed") or failure with an error
-        message explaining why the rename operation failed.
-    
+        A dictionary containing:
+        - 'status': A string indicating success ("Variable renamed") or failure with an error message
+        - 'variables': A list of dictionaries, each containing information about a variable in the function:
+            - 'name': The variable name
+            - 'dataType': The variable's data type
+
     Notes:
         - This operation affects how the variable appears in the decompiler view
         - Variable names must be unique within the function's scope
         - This operation modifies the Ghidra program and cannot be undone except by
           renaming the variable again
         - If multiple functions have the same name, the first one found will be used
-    
+
     Example:
-        >>> rename_variable("main", "local_10", "configValue")
+        >>> result = rename_variable("main", "local_10", "configValue")
+        >>> print(result['status'])
         "Variable renamed"
+        >>> print(len(result['variables']))
+        5
+        >>> print(result['variables'][0]['name'])
+        "configValue"
     """
     return safe_post("renameVariable", {
         "functionName": function_name,
@@ -1017,6 +993,39 @@ def analyze_call_graph(address: str, depth: int = 2) -> str:
         "
     """
     return "\n".join(safe_get("analyze_call_graph", {"address": address, "depth": depth}))
+
+@mcp.tool()
+def get_symbol_address(symbol_name: str) -> str:
+    """
+    Get the memory address of a named symbol in the program.
+    
+    This function looks up a symbol by name in the current program's symbol table
+    and returns its memory address. Symbols can be functions, variables, labels,
+    or any other named entity in the binary.
+    
+    Parameters:
+        symbol_name: The name of the symbol to look up. Must match exactly with
+                     a symbol name in the program.
+    
+    Returns:
+        A string containing the memory address of the symbol in Ghidra's address format
+        (e.g., "00401000"). If the symbol is not found or multiple symbols with the
+        same name exist, returns an appropriate error message.
+    
+    Notes:
+        - This function is case-sensitive and requires an exact match with the symbol name
+        - For functions, this returns the entry point address
+        - For data, this returns the address where the data is stored
+        - This is useful for cross-referencing symbols or finding the location of
+          specific functions or variables in the binary
+    
+    Example:
+        >>> get_symbol_address("main")
+        "00401000"
+        >>> get_symbol_address("gConfigData")
+        "00403A20"
+    """
+    return "\n".join(safe_get("get_symbol_address", {"symbol_name": symbol_name}))
 
 if __name__ == "__main__":
     mcp.run()

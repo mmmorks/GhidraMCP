@@ -15,6 +15,7 @@ import ghidra.program.model.block.CodeBlockReferenceIterator;
 import ghidra.program.model.data.DataTypeComponent;
 import ghidra.program.model.data.ProgramBasedDataTypeManager;
 import ghidra.program.model.data.Structure;
+import ghidra.program.model.data.Undefined;
 import ghidra.program.model.listing.*;
 import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.symbol.*;
@@ -30,20 +31,18 @@ import ghidra.app.decompiler.DecompileResults;
 import ghidra.app.plugin.PluginCategoryNames;
 import ghidra.app.services.CodeViewerService;
 import ghidra.app.services.ProgramManager;
-import ghidra.app.services.DataTypeManagerService;
-import ghidra.program.model.symbol.SourceType;
 import ghidra.framework.options.Options;
 import ghidra.framework.plugintool.PluginInfo;
 import ghidra.framework.plugintool.util.PluginStatus;
 import ghidra.program.util.ProgramLocation;
 import ghidra.util.Msg;
 import ghidra.util.task.ConsoleTaskMonitor;
-import ghidra.util.task.TaskMonitor;
 import ghidra.program.model.pcode.HighVariable;
+import ghidra.program.model.data.AbstractIntegerDataType;
 import ghidra.program.model.data.DataType;
 import ghidra.program.model.data.DataTypeManager;
 import ghidra.program.model.data.PointerDataType;
-import ghidra.program.model.listing.Variable;
+
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
@@ -56,7 +55,6 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.stream.Collectors;
 
 @PluginInfo(
     status = PluginStatus.RELEASED,
@@ -152,8 +150,8 @@ public class GhidraMCPPlugin extends Plugin {
 
         server.createContext("/renameData", exchange -> {
             Map<String, String> params = parsePostParams(exchange);
-            renameDataAtAddress(params.get("address"), params.get("newName"));
-            sendResponse(exchange, "Rename data attempted");
+            boolean success = renameDataAtAddress(params.get("address"), params.get("newName"));
+            sendResponse(exchange, success ? "Renamed successfully" : "Rename failed");
         });
 
         server.createContext("/renameVariable", exchange -> {
@@ -161,6 +159,8 @@ public class GhidraMCPPlugin extends Plugin {
             String functionName = params.get("functionName");
             String oldName = params.get("oldName");
             String newName = params.get("newName");
+            
+            // Unified variable renaming that supports both identification methods
             String result = renameVariableInFunction(functionName, oldName, newName);
             sendResponse(exchange, result);
         });
@@ -270,23 +270,6 @@ public class GhidraMCPPlugin extends Plugin {
             sendResponse(exchange, success ? "Comment set successfully" : "Failed to set comment");
         });
 
-        server.createContext("/rename_local_variable", exchange -> {
-            Map<String, String> params = parsePostParams(exchange);
-            String functionAddress = params.get("function_address");
-            String oldName = params.get("old_name");
-            String newName = params.get("new_name");
-            
-            // Call the rename function and get detailed result
-            RenameResult result = renameLocalVariable(functionAddress, oldName, newName);
-            
-            if (result.isSuccess()) {
-                sendResponse(exchange, "Variable renamed successfully");
-            } else {
-                // Return the error message to the client
-                sendResponse(exchange, "Failed to rename variable: " + result.getErrorMessage());
-            }
-        });
-
         server.createContext("/rename_function_by_address", exchange -> {
             Map<String, String> params = parsePostParams(exchange);
             String functionAddress = params.get("function_address");
@@ -378,6 +361,12 @@ public class GhidraMCPPlugin extends Plugin {
             int depth = parseIntOrDefault(qparams.get("depth"), 2);
             sendResponse(exchange, analyzeCallGraph(address, depth));
         });
+        
+        server.createContext("/get_symbol_address", exchange -> {
+            Map<String, String> qparams = parseQueryParams(exchange);
+            String symbolName = qparams.get("symbol_name");
+            sendResponse(exchange, getSymbolAddress(symbolName));
+        });
 
         server.setExecutor(null);
         new Thread(() -> {
@@ -394,6 +383,8 @@ public class GhidraMCPPlugin extends Plugin {
     // ----------------------------------------------------------------------------------
     // Pagination-aware listing methods
     // ----------------------------------------------------------------------------------
+
+
 
     private String listStructures(int offset, int limit) {
         Program program = getCurrentProgram();
@@ -617,15 +608,20 @@ public class GhidraMCPPlugin extends Plugin {
         return successFlag.get();
     }
 
-    private void renameDataAtAddress(String addressStr, String newName) {
+    private boolean renameDataAtAddress(String addressStr, String newName) {
         Program program = getCurrentProgram();
-        if (program == null) return;
+        if (program == null) return false;
 
+        AtomicBoolean successFlag = new AtomicBoolean(false);
         try {
             SwingUtilities.invokeAndWait(() -> {
                 int tx = program.startTransaction("Rename data");
                 try {
                     Address addr = program.getAddressFactory().getAddress(addressStr);
+                    if (addr == null) {
+                        Msg.error(this, "Invalid address: " + addressStr);
+                        return;
+                    }
                     Listing listing = program.getListing();
                     Data data = listing.getDefinedDataAt(addr);
                     if (data != null) {
@@ -633,22 +629,31 @@ public class GhidraMCPPlugin extends Plugin {
                         Symbol symbol = symTable.getPrimarySymbol(addr);
                         if (symbol != null) {
                             symbol.setName(newName, SourceType.USER_DEFINED);
+                            successFlag.set(true);
                         } else {
-                            symTable.createLabel(addr, newName, SourceType.USER_DEFINED);
+                            try {
+                                symTable.createLabel(addr, newName, SourceType.USER_DEFINED);
+                                successFlag.set(true);
+                            } catch (Exception e) {
+                                Msg.error(this, "Failed to create label: " + e.getMessage());
+                            }
                         }
+                    } else {
+                        Msg.error(this, "No defined data at address: " + addressStr);
                     }
                 }
                 catch (Exception e) {
                     Msg.error(this, "Rename data error", e);
                 }
                 finally {
-                    program.endTransaction(tx, true);
+                    program.endTransaction(tx, successFlag.get());
                 }
             });
         }
         catch (InterruptedException | InvocationTargetException e) {
             Msg.error(this, "Failed to execute rename data on Swing thread", e);
         }
+        return successFlag.get();
     }
 
     private String renameStructField(String structName, String oldFieldName, String newFieldName) {
@@ -707,29 +712,19 @@ public class GhidraMCPPlugin extends Plugin {
         return successFlag.get() ? "Field renamed successfully" : "Failed to rename field";
     }
 
-    private String listReferences(String addressStr, int offset, int limit) {
+    private String listReferences(String nameOrAddress, int offset, int limit) {
         Program program = getCurrentProgram();
         if (program == null) return "No program loaded";
-        if (addressStr == null) return "Address is required";
+        if (nameOrAddress == null) return "NameOrAddress is required";
 
         List<String> refs = new ArrayList<>();
         try {
             // Try to get the address directly first (if addressStr is a hex address)
-            Address addr = program.getAddressFactory().getAddress(addressStr);
+            Address addr = program.getAddressFactory().getAddress(nameOrAddress);
 
             // If addr is null or we couldn't get it directly, try to find it as a symbol name
             if (addr == null) {
-                SymbolTable symbolTable = program.getSymbolTable();
-                SymbolIterator symbolIterator = symbolTable.getSymbols(addressStr);
-                
-                if (symbolIterator.hasNext()) {
-                    // Use the first matching symbol's address
-                    Symbol symbol = symbolIterator.next();
-                    addr = symbol.getAddress();
-                    Msg.info(this, "Found symbol '" + addressStr + "' at address " + addr);
-                } else {
-                    return "Could not find address or symbol named '" + addressStr + "'";
-                }
+                addr = getSymbolAddressInternal(program, nameOrAddress);
             }
             
             ReferenceManager refMgr = program.getReferenceManager();
@@ -748,7 +743,7 @@ public class GhidraMCPPlugin extends Plugin {
             }
 
             if (refs.isEmpty()) {
-                return "No references found to " + addressStr + " (address: " + addr + ")";
+                return "No references found to " + nameOrAddress + " (address: " + addr + ")";
             }
 
             Collections.sort(refs);
@@ -797,7 +792,7 @@ public class GhidraMCPPlugin extends Plugin {
         while (symbols.hasNext()) {
             HighSymbol symbol = symbols.next();
             String symbolName = symbol.getName();
-            
+
             if (symbolName.equals(oldVarName)) {
                 highSymbol = symbol;
             }
@@ -812,22 +807,32 @@ public class GhidraMCPPlugin extends Plugin {
 
         boolean commitRequired = checkFullCommit(highSymbol, highFunction);
 
-        final HighSymbol finalHighSymbol = highSymbol;
         final Function finalFunction = func;
+        final HighVariable highVariable = highSymbol.getHighVariable();
+
         AtomicBoolean successFlag = new AtomicBoolean(false);
 
         try {
-            SwingUtilities.invokeAndWait(() -> {           
+            SwingUtilities.invokeAndWait(() -> {
                 int tx = program.startTransaction("Rename variable");
                 try {
                     if (commitRequired) {
-                        HighFunctionDBUtil.commitParamsToDatabase(highFunction, false,
+                        HighFunctionDBUtil.commitParamsToDatabase(highFunction, false, 
                             ReturnCommitOption.NO_COMMIT, finalFunction.getSignatureSource());
                     }
+
+                    final HighVariable newHighVariable = highFunction.splitOutMergeGroup(highVariable, highVariable.getRepresentative());
+                    final HighSymbol finalHighSymbol = newHighVariable.getSymbol();
+
+                    DataType dataType = finalHighSymbol.getDataType();
+                    if (Undefined.isUndefined(dataType)) {
+                        dataType = AbstractIntegerDataType.getUnsignedDataType(dataType.getLength(), program.getDataTypeManager());
+                    }
+
                     HighFunctionDBUtil.updateDBVariable(
                         finalHighSymbol,
                         newVarName,
-                        null,
+                        dataType,
                         SourceType.USER_DEFINED
                     );
                     successFlag.set(true);
@@ -844,7 +849,84 @@ public class GhidraMCPPlugin extends Plugin {
             Msg.error(this, errorMsg, e);
             return errorMsg;
         }
-        return successFlag.get() ? "Variable renamed" : "Failed to rename variable";
+        
+        if (!successFlag.get()) {
+            return "Failed to rename variable";
+        }
+        
+        // Get updated variable list after renaming
+        try {
+            // Re-decompile to get the updated state
+            DecompileResults updatedResult = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
+            if (updatedResult == null || !updatedResult.decompileCompleted()) {
+                return "Variable renamed, but failed to get updated variable list";
+            }
+            
+            HighFunction updatedHighFunction = updatedResult.getHighFunction();
+            if (updatedHighFunction == null) {
+                return "Variable renamed, but failed to get updated high function";
+            }
+            
+            LocalSymbolMap updatedSymbolMap = updatedHighFunction.getLocalSymbolMap();
+            if (updatedSymbolMap == null) {
+                return "Variable renamed, but failed to get updated symbol map";
+            }
+            
+            List<Map<String, String>> variableList = new ArrayList<>();
+            Iterator<HighSymbol> updatedSymbols = updatedSymbolMap.getSymbols();
+            while (updatedSymbols.hasNext()) {
+                HighSymbol symbol = updatedSymbols.next();
+                Map<String, String> varInfo = new HashMap<>();
+                varInfo.put("name", symbol.getName());
+                varInfo.put("dataType", symbol.getDataType().getName());
+                
+                HighVariable var = symbol.getHighVariable();
+                if (var != null && var.getSymbol() != null) {
+                    varInfo.put("storage", var.getSymbol().getStorage().toString());
+                }
+                
+                variableList.add(varInfo);
+            }
+            
+            // Create JSON response
+            StringBuilder jsonResponse = new StringBuilder();
+            jsonResponse.append("{\n");
+            jsonResponse.append("  \"status\": \"Variable renamed\",\n");
+            jsonResponse.append("  \"variables\": [\n");
+            
+            for (int i = 0; i < variableList.size(); i++) {
+                Map<String, String> varInfo = variableList.get(i);
+                jsonResponse.append("    {\n");
+                jsonResponse.append("      \"name\": \"").append(escapeJson(varInfo.get("name"))).append("\",\n");
+                jsonResponse.append("      \"dataType\": \"").append(escapeJson(varInfo.get("dataType"))).append("\"");
+                jsonResponse.append("\n    }");
+                if (i < variableList.size() - 1) {
+                    jsonResponse.append(",");
+                }
+                jsonResponse.append("\n");
+            }
+            
+            jsonResponse.append("  ]\n");
+            jsonResponse.append("}");
+            
+            return jsonResponse.toString();
+            
+        } catch (Exception e) {
+            String errorMsg = "Variable renamed, but failed to collect variable info: " + e.getMessage();
+            Msg.error(this, errorMsg, e);
+            return "Variable renamed";
+        }
+    }
+    
+    private String escapeJson(String text) {
+        if (text == null) {
+            return "";
+        }
+        return text.replace("\\", "\\\\")
+                  .replace("\"", "\\\"")
+                  .replace("\n", "\\n")
+                  .replace("\r", "\\r")
+                  .replace("\t", "\\t");
     }
 
     /**
@@ -1082,367 +1164,7 @@ public class GhidraMCPPlugin extends Plugin {
     private boolean setDisassemblyComment(String addressStr, String comment) {
         return setCommentAtAddress(addressStr, comment, CodeUnit.EOL_COMMENT, "Set disassembly comment");
     }
-    
-    /**
-     * Class to hold the result of a rename operation
-     */
-    private static class RenameResult {
-        private final boolean success;
-        private final String errorMessage;
-        
-        public RenameResult(boolean success, String errorMessage) {
-            this.success = success;
-            this.errorMessage = errorMessage;
-        }
-        
-        public boolean isSuccess() {
-            return success;
-        }
-        
-        public String getErrorMessage() {
-            return errorMessage;
-        }
-    }
-
-    /**
-     * Implementation of variable renaming functionality based on Ghidra's RenameVariableTask
-     * Directly modifies decompiler variables using HighFunction and HighSymbol
-     */
-    private static class RenameVariableTask {
-        private Program program;
-        private Function function;
-        private DecompileResults decompileResults;
-        private String oldName;
-        private String newName;
-        private TaskMonitor monitor;
-        private String errorMessage;
-        
-        public RenameVariableTask(Program program, Function function, 
-                                  DecompileResults decompileResults, 
-                                  String oldName, String newName, 
-                                  TaskMonitor monitor) {
-            this.program = program;
-            this.function = function;
-            this.decompileResults = decompileResults;
-            this.oldName = oldName;
-            this.newName = newName;
-            this.monitor = monitor;
-            this.errorMessage = "";
-        }
-        
-        public boolean renameVariable() {
-            if (decompileResults == null || !decompileResults.decompileCompleted()) {
-                errorMessage = "Decompilation failed or not completed";
-                Msg.error(this, errorMessage);
-                return false;
-            }
-            
-            ghidra.program.model.pcode.HighFunction highFunction = decompileResults.getHighFunction();
-            if (highFunction == null) {
-                errorMessage = "No high function available";
-                Msg.error(this, errorMessage);
-                return false;
-            }
-            
-            // Find the symbol
-            HighSymbol symbol = findHighSymbol(highFunction, oldName);
-            if (symbol == null) {
-                Msg.warn(this, "Could not find high symbol for variable '" + oldName + "' in decompiled function");
-                // Try to find the variable directly in the function's variable list as fallback
-                return tryDirectRenameApproach();
-            }
-            
-            // Get the high variable associated with the symbol
-            HighVariable highVar = symbol.getHighVariable();
-            if (highVar == null) {
-                Msg.warn(this, "No HighVariable found for symbol: " + oldName);
-                // Try to find the variable directly in the function's variable list as fallback
-                return tryDirectRenameApproach();
-            }
-            
-            Msg.info(this, "Found high variable for: " + oldName + " with type " + highVar.getDataType().getName());
-            
-            // Attempt the rename
-            int id = program.startTransaction("Rename High Variable");
-            boolean success = false;
-            
-            try {
-                // This is the key method that handles the actual renaming of high variables
-                // Using HighFunctionDBUtil is the proper way to update decompiler variables
-                Msg.info(this, "Using HighFunctionDBUtil to update variable: " + oldName + " -> " + newName);
-                
-                try {
-                    // Use the existing data type, just change the name
-                    HighFunctionDBUtil.updateDBVariable(
-                        symbol,               // The high symbol to rename (correct parameter type)
-                        newName,               // The new name to assign
-                        highVar.getDataType(), // Keep the existing data type
-                        SourceType.USER_DEFINED // Mark as user-defined
-                    );
-                    
-                    success = true;
-                    Msg.info(this, "Successfully renamed high variable using HighFunctionDBUtil");
-                } catch (Exception e) {
-                    Msg.error(this, "HighFunctionDBUtil failed: " + e.getMessage());
-                    errorMessage = "Could not rename variable using HighFunctionDBUtil: " + e.getMessage();
-                }
-                
-                if (!success) {
-                    errorMessage = "Could not rename variable using any available method";
-                    Msg.error(this, errorMessage);
-                }
-            } finally {
-                program.endTransaction(id, success);
-            }
-            
-            // Verify if the rename worked by checking if the symbol now has the new name
-            if (success) {
-                // Re-decompile to verify the change took effect
-                DecompInterface decomp = new DecompInterface();
-                decomp.openProgram(program);
-                DecompileResults results = decomp.decompileFunction(function, 30, monitor);
-                if (results.decompileCompleted()) {
-                    highFunction = results.getHighFunction();
-                    if (highFunction != null) {
-                        Iterator<HighSymbol> symbols = highFunction.getLocalSymbolMap().getSymbols();
-                        boolean found = false;
-                        while (symbols.hasNext()) {
-                            HighSymbol s = symbols.next();
-                            if (s.getName().equals(newName)) {
-                                found = true;
-                                break;
-                            }
-                        }
-                        
-                        if (!found) {
-                            success = false;
-                            errorMessage = "Rename operation did not appear to take effect after transaction";
-                            Msg.warn(this, errorMessage);
-                        }
-                    }
-                }
-            }
-            
-            return success;
-        }
-        
-        private HighSymbol findHighSymbol(ghidra.program.model.pcode.HighFunction highFunction, String symbolName) {
-            // First, try an exact match
-            Iterator<HighSymbol> symbols = highFunction.getLocalSymbolMap().getSymbols();
-            while (symbols.hasNext()) {
-                HighSymbol symbol = symbols.next();
-                if (symbol.getName().equals(symbolName)) {
-                    Msg.info(this, "Found exact match for symbol: " + symbolName);
-                    return symbol;
-                }
-            }
-            
-            // Debug log - print all available symbols if not found
-            StringBuilder availableSymbols = new StringBuilder("Available symbols in function: ");
-            symbols = highFunction.getLocalSymbolMap().getSymbols();
-            while (symbols.hasNext()) {
-                HighSymbol symbol = symbols.next();
-                availableSymbols.append(symbol.getName()).append(", ");
-            }
-            Msg.debug(this, availableSymbols.toString());
-            
-            return null;
-        }
-        
-        /**
-         * Attempts to rename the variable directly using the Function's variable list
-         * This is a fallback approach when high variable/symbol approaches fail
-         * @return true if successful, false otherwise
-         */
-        private boolean tryDirectRenameApproach() {
-            Msg.info(this, "Trying direct variable rename approach for: " + oldName);
-            
-            // Find the variable in the function's variable list
-            Variable[] allVars = function.getAllVariables();
-            Variable targetVar = null;
-            
-            for (Variable var : allVars) {
-                if (var.getName().equals(oldName)) {
-                    targetVar = var;
-                    Msg.info(this, "Found matching variable in function: " + oldName);
-                    break;
-                }
-            }
-            
-            if (targetVar == null) {
-                errorMessage = "Could not find variable in function variable list: " + oldName;
-                Msg.error(this, errorMessage);
-                return false;
-            }
-            
-            // Try to rename the variable directly
-            int tx = program.startTransaction("Rename Variable Directly");
-            boolean success = false;
-            
-            try {
-                targetVar.setName(newName, SourceType.USER_DEFINED);
-                success = true;
-                Msg.info(this, "Successfully renamed variable using direct setName API: " + oldName + " -> " + newName);
-            } catch (Exception e) {
-                errorMessage = "Failed to rename variable directly: " + e.getMessage();
-                Msg.error(this, errorMessage);
-            } finally {
-                program.endTransaction(tx, success);
-            }
-            
-            return success;
-        }
-        
-        public String getErrorMessage() {
-            return errorMessage;
-        }
-    }
-    
-    /**
-     * Rename a local variable in the decompiler view using HighSymbol
-     * This focuses specifically on changing how variables appear in the decompiler
-     * @return RenameResult containing success/failure status and error message
-     */
-    private RenameResult renameLocalVariable(String functionAddrStr, String oldName, String newName) {
-        // Input validation
-        Program program = getCurrentProgram();
-        if (program == null) return new RenameResult(false, "No program loaded");
-        if (functionAddrStr == null || functionAddrStr.isEmpty()) {
-            return new RenameResult(false, "Function address is required");
-        }
-        if (oldName == null || oldName.isEmpty()) {
-            return new RenameResult(false, "Old variable name is required");
-        }
-        if (newName == null || newName.isEmpty()) {
-            return new RenameResult(false, "New variable name is required");
-        }
-        
-        final StringBuilder errorMessage = new StringBuilder();
-        final AtomicBoolean success = new AtomicBoolean(false);
-        
-        try {
-            SwingUtilities.invokeAndWait(() -> performRenameOperation(
-                program, functionAddrStr, oldName, newName, success, errorMessage));
-        } catch (InterruptedException | InvocationTargetException e) {
-            String msg = "Failed to execute rename variable on Swing thread: " + e.getMessage();
-            errorMessage.append(msg);
-            Msg.error(this, msg, e);
-        }
-        
-        return new RenameResult(success.get(), errorMessage.toString());
-    }
-    
-    /**
-     * Helper method that performs the actual variable rename operation
-     */
-    private void performRenameOperation(
-            Program program, 
-            String functionAddrStr, 
-            String oldName, 
-            String newName,
-            AtomicBoolean success,
-            StringBuilder errorMessage) {
-        
-        try {
-            // Find the function
-            Address addr = program.getAddressFactory().getAddress(functionAddrStr);
-            Function func = getFunctionForAddress(program, addr);
-            
-            if (func == null) {
-                String msg = "Could not find function at address: " + functionAddrStr;
-                errorMessage.append(msg);
-                Msg.error(this, msg);
-                return;
-            }
-            
-            // Set up decompiler for accessing the decompiled function
-            DecompInterface decomp = new DecompInterface();
-            decomp.openProgram(program);
-            decomp.setSimplificationStyle("decompile"); // Full decompilation
-            
-            // Decompile the function
-            DecompileResults results = decomp.decompileFunction(func, 60, new ConsoleTaskMonitor());
-            
-            if (!results.decompileCompleted()) {
-                String msg = "Could not decompile function: " + results.getErrorMessage();
-                errorMessage.append(msg);
-                Msg.error(this, msg);
-                return;
-            }
-            
-            // Create the task and run it
-            RenameVariableTask task = new RenameVariableTask(
-                program, func, results, oldName, newName, new ConsoleTaskMonitor());
-            
-            if (task.renameVariable()) {
-                Msg.info(this, "Successfully renamed variable: " + oldName + " -> " + newName);
-                success.set(true);
-                errorMessage.append("Successfully renamed variable: ")
-                           .append(oldName).append(" → ").append(newName);
-                return;
-            }
-            
-            // Handle failure case with detailed debug info
-            String errorMsg = task.getErrorMessage();
-            Msg.warn(this, "Failed to rename variable: " + errorMsg);
-            
-            errorMessage.append("Failed to rename variable: ").append(errorMsg)
-                       .append("\n\n").append(collectDebugInfo(results, func));
-            
-        } catch (Exception e) {
-            String msg = "Error renaming local variable: " + e.getMessage();
-            errorMessage.append(msg);
-            Msg.error(this, msg, e);
-        }
-    }
-    
-    /**
-     * Collects debug information about variables and symbols for error reporting
-     */
-    private String collectDebugInfo(DecompileResults results, Function func) {
-        StringBuilder debugInfo = new StringBuilder();
-        debugInfo.append("Additional debug info:\n");
-        
-        // List all symbols in the high function
-        Iterator<HighSymbol> symbolIterator = results.getHighFunction().getLocalSymbolMap().getSymbols();
-        debugInfo.append("High function symbols:\n");
-        while (symbolIterator.hasNext()) {
-            HighSymbol sym = symbolIterator.next();
-            debugInfo.append("- ").append(sym.getName());
-            
-            HighVariable highVar = sym.getHighVariable();
-            if (highVar != null) {
-                debugInfo.append(" (Type: ").append(highVar.getDataType().getName()).append(")");
-                
-                // Show storage locations
-                Varnode[] varnodes = highVar.getInstances();
-                if (varnodes.length > 0) {
-                    debugInfo.append(" Storage: ");
-                    for (int i = 0; i < Math.min(varnodes.length, 2); i++) {
-                        Varnode vn = varnodes[i];
-                        if (vn.getAddress() != null) {
-                            debugInfo.append(vn.getAddress());
-                            if (i < Math.min(varnodes.length, 2) - 1) {
-                                debugInfo.append(", ");
-                            }
-                        }
-                    }
-                }
-            }
-            debugInfo.append("\n");
-        }
-        
-        // List all function variables
-        Variable[] vars = func.getAllVariables();
-        debugInfo.append("\nFunction variables:\n");
-        for (Variable var : vars) {
-            debugInfo.append("- ").append(var.getName())
-                  .append(" (Type: ").append(var.getDataType().getName()).append(")\n");
-        }
-        
-        return debugInfo.toString();
-    }
-
+   
     /**
      * Rename a function by its address
      */
@@ -1694,7 +1416,7 @@ public class GhidraMCPPlugin extends Plugin {
             }
             
             // Find the symbol by name
-            HighSymbol symbol = findSymbolByName(highFunction, variableName);
+            HighSymbol symbol = findVariableByName(highFunction, variableName);
             if (symbol == null) {
                 Msg.error(this, "Could not find variable '" + variableName + "' in decompiled function");
                 return;
@@ -1732,7 +1454,7 @@ public class GhidraMCPPlugin extends Plugin {
     /**
      * Find a high symbol by name in the given high function
      */
-    private HighSymbol findSymbolByName(ghidra.program.model.pcode.HighFunction highFunction, String variableName) {
+    private HighSymbol findVariableByName(ghidra.program.model.pcode.HighFunction highFunction, String variableName) {
         Iterator<HighSymbol> symbols = highFunction.getLocalSymbolMap().getSymbols();
         while (symbols.hasNext()) {
             HighSymbol s = symbols.next();
@@ -2178,7 +1900,7 @@ public class GhidraMCPPlugin extends Plugin {
             }
             
             // Find the variable by name
-            HighSymbol targetSymbol = findSymbolByName(highFunc, variableName);
+            HighSymbol targetSymbol = findVariableByName(highFunc, variableName);
             if (targetSymbol == null) {
                 return "Variable '" + variableName + "' not found in function";
             }
@@ -2351,6 +2073,29 @@ public class GhidraMCPPlugin extends Plugin {
         // Recursively process called functions
         for (Function calledFunc : sortedCalled) {
             buildCallGraph(calledFunc, result, visited, currentDepth + 1, maxDepth);
+        }
+    }
+    private String getSymbolAddress(String symbolName) {
+        Program program = getCurrentProgram();
+        if (program == null) return "No program loaded";
+
+        final Address symbolAddress = getSymbolAddressInternal(program, symbolName);
+        if (symbolAddress != null) {
+            return "Symbol '" + symbolName + "' found at address: " + symbolAddress.toString();
+        } else {
+            return "Symbol not found";
+        }
+    }
+    private Address getSymbolAddressInternal(Program program, String symbolName) {
+        final SymbolTable symbolTable = program.getSymbolTable();
+        final SymbolIterator symbolIterator = symbolTable.getSymbols(symbolName);
+        
+        if (symbolIterator.hasNext()) {
+            // Use the first matching symbol's address
+            Symbol symbol = symbolIterator.next();
+            return symbol.getAddress();
+        } else {
+            return null;
         }
     }
 

@@ -120,6 +120,16 @@ public class AppTest {
         HttpExchange specialCharsExchange = createMockHttpExchange("param=%21%40%23%24%25%5E%26%2A%28%29");
         Map<String, String> specialCharsResult = GhidraMCPPlugin.parseQueryParams(specialCharsExchange);
         assertEquals("!@#$%^&*()", specialCharsResult.get("param"), "Special characters should be properly decoded");
+        
+        // Test case 6: Question mark in parameter value
+        HttpExchange questionMarkExchange = createMockHttpExchange("query=what%3Fwhere%3Fwhen%3F");
+        Map<String, String> questionMarkResult = GhidraMCPPlugin.parseQueryParams(questionMarkExchange);
+        assertEquals("what?where?when?", questionMarkResult.get("query"), "Question marks should be properly decoded");
+        
+        // Test case 7: Parameter with complex search query
+        HttpExchange searchQueryExchange = createMockHttpExchange("search=function%3Fpattern%3D%22main%22");
+        Map<String, String> searchQueryResult = GhidraMCPPlugin.parseQueryParams(searchQueryExchange);
+        assertEquals("function?pattern=\"main\"", searchQueryResult.get("search"), "Complex query with question marks should be properly decoded");
     }
     
     /**
@@ -194,6 +204,16 @@ public class AppTest {
         assertEquals(2, noEqualsResult.size(), "Should have two valid parameters");
         assertEquals("value1", noEqualsResult.get("param1"), "First parameter value should match");
         assertEquals("value2", noEqualsResult.get("param2"), "Second parameter value should match");
+        
+        // Test case 10: Question mark in POST parameter value
+        HttpExchange postQuestionMarkExchange = createMockHttpExchangeWithBody("filter=address%3F0x400000%3Fcode");
+        Map<String, String> postQuestionMarkResult = GhidraMCPPlugin.parsePostParams(postQuestionMarkExchange);
+        assertEquals("address?0x400000?code", postQuestionMarkResult.get("filter"), "Question marks in POST parameters should be properly decoded");
+        
+        // Test case 11: POST parameter with multiple question marks and other special chars
+        HttpExchange complexQueryExchange = createMockHttpExchangeWithBody("query=find%3Ffunction%3D%22main%22%3Faddress%3D0x400000");
+        Map<String, String> complexQueryResult = GhidraMCPPlugin.parsePostParams(complexQueryExchange);
+        assertEquals("find?function=\"main\"?address=0x400000", complexQueryResult.get("query"), "Complex query with question marks should be properly decoded");
     }
     
     /**
