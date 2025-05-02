@@ -159,9 +159,26 @@ public class GhidraMCPPlugin extends Plugin {
             String functionName = params.get("functionName");
             String oldName = params.get("oldName");
             String newName = params.get("newName");
+            String usageAddress = params.get("usageAddress");
             
             // Unified variable renaming that supports both identification methods
-            String result = renameVariableInFunction(functionName, oldName, newName);
+            String result = renameVariableInFunction(functionName, oldName, newName, usageAddress);
+            sendResponse(exchange, result);
+        });
+        
+        server.createContext("/splitVariable", exchange -> {
+            Map<String, String> params = parsePostParams(exchange);
+            String functionName = params.get("functionName");
+            String variableName = params.get("variableName");
+            String usageAddress = params.get("usageAddress");
+            String newName = params.get("newName"); // Optional
+            
+            // If newName is not provided, generate a unique name
+            if (newName == null || newName.isEmpty()) {
+                newName = variableName + "_split";
+            }
+            
+            String result = renameVariableInFunction(functionName, variableName, newName, usageAddress);
             sendResponse(exchange, result);
         });
 
@@ -752,14 +769,13 @@ public class GhidraMCPPlugin extends Plugin {
             return "Error getting references: " + e.getMessage();
         }
     }
-
-    private String renameVariableInFunction(String functionName, String oldVarName, String newVarName) {
+    private String renameVariableInFunction(String functionName, String oldVarName, String newVarName, String usageAddressStr) {
         Program program = getCurrentProgram();
         if (program == null) return "No program loaded";
-
+    
         DecompInterface decomp = new DecompInterface();
         decomp.openProgram(program);
-
+    
         Function func = null;
         for (Function f : program.getFunctionManager().getFunctions(true)) {
             if (f.getName().equals(functionName)) {
@@ -767,32 +783,32 @@ public class GhidraMCPPlugin extends Plugin {
                 break;
             }
         }
-
+    
         if (func == null) {
             return "Function not found";
         }
-
+    
         DecompileResults result = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
         if (result == null || !result.decompileCompleted()) {
             return "Decompilation failed";
         }
-
+    
         HighFunction highFunction = result.getHighFunction();
         if (highFunction == null) {
             return "Decompilation failed (no high function)";
         }
-
+    
         LocalSymbolMap localSymbolMap = highFunction.getLocalSymbolMap();
         if (localSymbolMap == null) {
             return "Decompilation failed (no local symbol map)";
         }
-
+    
         HighSymbol highSymbol = null;
         Iterator<HighSymbol> symbols = localSymbolMap.getSymbols();
         while (symbols.hasNext()) {
             HighSymbol symbol = symbols.next();
             String symbolName = symbol.getName();
-
+    
             if (symbolName.equals(oldVarName)) {
                 highSymbol = symbol;
             }
@@ -800,35 +816,78 @@ public class GhidraMCPPlugin extends Plugin {
                 return "Error: A variable with name '" + newVarName + "' already exists in this function";
             }
         }
-
+    
         if (highSymbol == null) {
             return "Variable not found";
         }
-
+    
+        // Find the specific Varnode to split if a usage address is provided
+        Varnode specificVarnode = null;
+        if (usageAddressStr != null && !usageAddressStr.isEmpty()) {
+            try {
+                Address usageAddress = program.getAddressFactory().getAddress(usageAddressStr);
+                HighVariable highVariable = highSymbol.getHighVariable();
+    
+                // Get all instances of this variable
+                Varnode[] instances = highVariable.getInstances();
+                
+                Msg.info(this, "Searching for variable usage at address: " + usageAddress);
+                Msg.info(this, "Variable " + oldVarName + " has " + instances.length + " instances");
+                
+                // First attempt: Find exact match at the specified address
+                specificVarnode = findExactVarnodeMatch(instances, usageAddress);
+                
+                // Second attempt: Find the closest usage within a small range
+                if (specificVarnode == null) {
+                    Msg.info(this, "No exact match found, looking for nearby usage");
+                    specificVarnode = findNearbyVarnodeUsage(instances, usageAddress, 16); // Search within 16 bytes
+                }
+                
+                // Third attempt: Find any usage if we still don't have a match
+                if (specificVarnode == null) {
+                    Msg.info(this, "No nearby match found, using any usage");
+                    specificVarnode = findAnyVarnodeUsage(instances);
+                }
+    
+                if (specificVarnode == null) {
+                    return "Could not find any variable usage, even after trying fallback strategies";
+                }
+                
+                Msg.info(this, "Selected varnode " + 
+                    (specificVarnode.getDef() != null ? "defined at " + specificVarnode.getDef().getSeqnum().getTarget() : 
+                    "with no definition"));
+                
+            } catch (Exception e) {
+                return "Error finding variable usage: " + e.getMessage();
+            }
+        }
+    
         boolean commitRequired = checkFullCommit(highSymbol, highFunction);
-
+    
         final Function finalFunction = func;
         final HighVariable highVariable = highSymbol.getHighVariable();
-
+        final Varnode finalVarnode = specificVarnode != null ? specificVarnode : highVariable.getRepresentative();
+    
         AtomicBoolean successFlag = new AtomicBoolean(false);
-
+    
         try {
             SwingUtilities.invokeAndWait(() -> {
                 int tx = program.startTransaction("Rename variable");
                 try {
                     if (commitRequired) {
-                        HighFunctionDBUtil.commitParamsToDatabase(highFunction, false, 
+                        HighFunctionDBUtil.commitParamsToDatabase(highFunction, false,
                             ReturnCommitOption.NO_COMMIT, finalFunction.getSignatureSource());
                     }
-
-                    final HighVariable newHighVariable = highFunction.splitOutMergeGroup(highVariable, highVariable.getRepresentative());
+    
+                    // Use the specific Varnode if provided, otherwise use the representative
+                    final HighVariable newHighVariable = highFunction.splitOutMergeGroup(highVariable, finalVarnode);
                     final HighSymbol finalHighSymbol = newHighVariable.getSymbol();
-
+    
                     DataType dataType = finalHighSymbol.getDataType();
                     if (Undefined.isUndefined(dataType)) {
                         dataType = AbstractIntegerDataType.getUnsignedDataType(dataType.getLength(), program.getDataTypeManager());
                     }
-
+    
                     HighFunctionDBUtil.updateDBVariable(
                         finalHighSymbol,
                         newVarName,
@@ -888,10 +947,30 @@ public class GhidraMCPPlugin extends Plugin {
                 variableList.add(varInfo);
             }
             
-            // Create JSON response
+            // Re-decompile once more to get the updated code after renaming
+            String decompiled = "";
+            try {
+                DecompileResults finalResult = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
+                if (finalResult != null && finalResult.decompileCompleted()) {
+                    decompiled = finalResult.getDecompiledFunction().getC();
+                }
+            } catch (Exception e) {
+                Msg.warn(this, "Failed to get decompiled code for response: " + e.getMessage());
+                decompiled = "Decompilation unavailable";
+            }
+
+            // Create enhanced JSON response
             StringBuilder jsonResponse = new StringBuilder();
             jsonResponse.append("{\n");
-            jsonResponse.append("  \"status\": \"Variable renamed\",\n");
+            jsonResponse.append("  \"status\": \"Variable split and renamed\",\n");
+            jsonResponse.append("  \"originalVariable\": \"").append(escapeJson(oldVarName)).append("\",\n");
+            jsonResponse.append("  \"newVariable\": \"").append(escapeJson(newVarName)).append("\",\n");
+            
+            // Include split address if provided
+            if (usageAddressStr != null && !usageAddressStr.isEmpty()) {
+                jsonResponse.append("  \"splitAddress\": \"").append(escapeJson(usageAddressStr)).append("\",\n");
+            }
+            
             jsonResponse.append("  \"variables\": [\n");
             
             for (int i = 0; i < variableList.size(); i++) {
@@ -899,6 +978,9 @@ public class GhidraMCPPlugin extends Plugin {
                 jsonResponse.append("    {\n");
                 jsonResponse.append("      \"name\": \"").append(escapeJson(varInfo.get("name"))).append("\",\n");
                 jsonResponse.append("      \"dataType\": \"").append(escapeJson(varInfo.get("dataType"))).append("\"");
+                if (varInfo.containsKey("storage")) {
+                    jsonResponse.append(",\n      \"storage\": \"").append(escapeJson(varInfo.get("storage"))).append("\"");
+                }
                 jsonResponse.append("\n    }");
                 if (i < variableList.size() - 1) {
                     jsonResponse.append(",");
@@ -906,7 +988,8 @@ public class GhidraMCPPlugin extends Plugin {
                 jsonResponse.append("\n");
             }
             
-            jsonResponse.append("  ]\n");
+            jsonResponse.append("  ],\n");
+            jsonResponse.append("  \"decompiled\": \"").append(escapeJson(decompiled)).append("\"\n");
             jsonResponse.append("}");
             
             return jsonResponse.toString();
@@ -1509,11 +1592,110 @@ public class GhidraMCPPlugin extends Plugin {
     }
     
     /**
-     * Resolves a data type by name, handling common types and pointer types
-     * @param dtm The data type manager
-     * @param typeName The type name to resolve
-     * @return The resolved DataType, or null if not found
+     * Find an exact match for a varnode at the specified address
+     * @param instances Array of variable instances to search
+     * @param usageAddress Target address to match
+     * @return Matching varnode or null if no match found
      */
+    private Varnode findExactVarnodeMatch(Varnode[] instances, Address usageAddress) {
+        for (Varnode instance : instances) {
+            // Check if this instance is defined at the specified address
+            PcodeOp defOp = instance.getDef();
+            if (defOp != null && defOp.getSeqnum().getTarget().equals(usageAddress)) {
+                Msg.info(this, "Found exact match with definition at " + usageAddress);
+                return instance;
+            }
+
+            // Check if this instance is used at the specified address
+            Iterator<PcodeOp> uses = instance.getDescendants();
+            while (uses.hasNext()) {
+                PcodeOp useOp = uses.next();
+                if (useOp.getSeqnum().getTarget().equals(usageAddress)) {
+                    Msg.info(this, "Found exact match with usage at " + usageAddress);
+                    return instance;
+                }
+            }
+        }
+        return null;
+    }
+    
+    /**
+     * Find a varnode used near the specified address within a given range
+     * @param instances Array of variable instances to search
+     * @param targetAddress The target address to look near
+     * @param rangeBytes The range in bytes to search (±)
+     * @return A varnode near the target address, or null if none found
+     */
+    private Varnode findNearbyVarnodeUsage(Varnode[] instances, Address targetAddress, int rangeBytes) {
+        long targetOffset = targetAddress.getOffset();
+        Varnode closestVarnode = null;
+        long closestDistance = Long.MAX_VALUE;
+        
+        for (Varnode instance : instances) {
+            // Check distance of definition
+            PcodeOp defOp = instance.getDef();
+            if (defOp != null) {
+                long defOffset = defOp.getSeqnum().getTarget().getOffset();
+                long distance = Math.abs(defOffset - targetOffset);
+                
+                if (distance <= rangeBytes && distance < closestDistance) {
+                    closestVarnode = instance;
+                    closestDistance = distance;
+                    Msg.info(this, "Found nearby definition at " + defOp.getSeqnum().getTarget() + 
+                             " (distance: " + distance + " bytes)");
+                }
+            }
+            
+            // Check distance of uses
+            Iterator<PcodeOp> uses = instance.getDescendants();
+            while (uses.hasNext()) {
+                PcodeOp useOp = uses.next();
+                long useOffset = useOp.getSeqnum().getTarget().getOffset();
+                long distance = Math.abs(useOffset - targetOffset);
+                
+                if (distance <= rangeBytes && distance < closestDistance) {
+                    closestVarnode = instance;
+                    closestDistance = distance;
+                    Msg.info(this, "Found nearby usage at " + useOp.getSeqnum().getTarget() + 
+                             " (distance: " + distance + " bytes)");
+                }
+            }
+        }
+        
+        return closestVarnode;
+    }
+    
+    /**
+     * Find any usage of a variable when no specific match is found
+     * @param instances Array of variable instances
+     * @return Any varnode from the instances array, preferably one with a definition or uses
+     */
+    private Varnode findAnyVarnodeUsage(Varnode[] instances) {
+        if (instances.length == 0) {
+            return null;
+        }
+        
+        // First try to find a varnode with a definition
+        for (Varnode instance : instances) {
+            if (instance.getDef() != null) {
+                Msg.info(this, "Found varnode with definition at " + instance.getDef().getSeqnum().getTarget());
+                return instance;
+            }
+        }
+        
+        // Then try to find a varnode with any uses
+        for (Varnode instance : instances) {
+            Iterator<PcodeOp> uses = instance.getDescendants();
+            if (uses.hasNext()) {
+                Msg.info(this, "Found varnode with uses");
+                return instance;
+            }
+        }
+        
+        // If all else fails, just return the first varnode
+        Msg.info(this, "Using first available varnode instance as fallback");
+        return instances[0];
+    }
     private DataType resolveDataType(DataTypeManager dtm, String typeName) {
         // First try to find exact match in all categories
         DataType dataType = findDataTypeByNameInAllCategories(dtm, typeName);

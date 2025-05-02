@@ -534,6 +534,7 @@ def rename_variable(function_name: str, old_name: str, new_name: str) -> dict:
         function_name: Name of function containing the variable
         old_name: Current variable name
         new_name: New variable name to assign
+        usage_address: Address where variable is used (optional, for context)
     
     Returns: Dictionary with status and list of variables in the function
     
