@@ -6,6 +6,9 @@ import java.io.OutputStream;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import ghidra.util.Msg;
 
 /**
@@ -17,99 +20,91 @@ public class HttpUtils {
      * Parse query parameters from the URL, e.g. ?offset=10&limit=100
      */
     public static Map<String, String> parseQueryParams(HttpExchange exchange) {
-        Map<String, String> result = new HashMap<>();
-        String query = exchange.getRequestURI().getRawQuery(); // e.g. offset=10&limit=100
-        if (query != null) {
-            String[] pairs = query.split("&");
-            for (String p : pairs) {
-                String[] kv = p.split("=");
-                if (kv.length == 2) {
-                    try {
-                        String key = URLDecoder.decode(kv[0], StandardCharsets.UTF_8);
-                        String value = URLDecoder.decode(kv[1], StandardCharsets.UTF_8);
-                        result.put(key, value);
-                    } catch (IllegalArgumentException e) {
-                        // Log the error but continue processing other parameters
-                        Msg.warn(HttpUtils.class, "Error decoding URL parameter: " + p + " - " + e.getMessage());
-                    }
-                }
-            }
+        var query = exchange.getRequestURI().getRawQuery(); // e.g. offset=10&limit=100
+        if (query == null) return Map.of();
+        
+        return Arrays.stream(query.split("&"))
+            .filter(p -> p.contains("="))
+            .map(p -> p.split("=", 2))
+            .filter(kv -> kv.length == 2)
+            .collect(Collectors.toMap(
+                kv -> decodeUrlParameter(kv[0]),
+                kv -> decodeUrlParameter(kv[1]),
+                (v1, v2) -> v1 // In case of duplicate keys, keep the first value
+            ));
+    }
+    
+    /**
+     * Helper method to decode URL parameters safely
+     */
+    private static String decodeUrlParameter(String value) {
+        try {
+            return URLDecoder.decode(value, StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException e) {
+            Msg.warn(HttpUtils.class, "Error decoding URL parameter: " + value + " - " + e.getMessage());
+            return value; // Return the original value if decoding fails
         }
-        return result;
     }
 
     /**
      * Parse post body form params, e.g. oldName=foo&newName=bar
      */
     public static Map<String, String> parsePostParams(HttpExchange exchange) throws IOException {
-        byte[] body = exchange.getRequestBody().readAllBytes();
-        String bodyStr = new String(body, StandardCharsets.UTF_8);
-        Map<String, String> params = new HashMap<>();
-        for (String pair : bodyStr.split("&")) {
-            // Skip empty pairs
-            if (pair.isEmpty()) {
-                continue;
-            }
-            
-            // Find the first equals sign
-            int equalsIndex = pair.indexOf('=');
-            
-            // If there's no equals sign, skip this parameter
-            if (equalsIndex == -1) {
-                continue;
-            }
-            
-            try {
-                // Extract key (everything before the first equals sign)
-                String key = URLDecoder.decode(pair.substring(0, equalsIndex), StandardCharsets.UTF_8);
+        var body = exchange.getRequestBody().readAllBytes();
+        var bodyStr = new String(body, StandardCharsets.UTF_8);
+        
+        return Arrays.stream(bodyStr.split("&"))
+            .filter(pair -> !pair.isEmpty())
+            .map(pair -> {
+                var equalsIndex = pair.indexOf('=');
+                if (equalsIndex == -1) return null;
                 
-                // Extract value (everything after the first equals sign, or empty string if at the end)
-                String value = "";
-                if (equalsIndex < pair.length() - 1) {
-                    value = URLDecoder.decode(pair.substring(equalsIndex + 1), StandardCharsets.UTF_8);
+                try {
+                    var key = decodeUrlParameter(pair.substring(0, equalsIndex));
+                    var value = equalsIndex < pair.length() - 1 ? 
+                        decodeUrlParameter(pair.substring(equalsIndex + 1)) : "";
+                    return Map.entry(key, value);
+                } catch (IllegalArgumentException e) {
+                    Msg.warn(HttpUtils.class, "Error decoding URL parameter: " + pair + " - " + e.getMessage());
+                    return null;
                 }
-                
-                params.put(key, value);
-            } catch (IllegalArgumentException e) {
-                // Log the error but continue processing other parameters
-                Msg.warn(HttpUtils.class, "Error decoding URL parameter: " + pair + " - " + e.getMessage());
-            }
-        }
-        return params;
+            })
+            .filter(Objects::nonNull)
+    .collect(Collectors.toMap(
+        Map.Entry::getKey,
+        Map.Entry::getValue,
+        (v1, v2) -> v2 // In case of duplicate keys, keep the last
+    ));
     }
 
     /**
      * Convert a list of strings into one big newline-delimited string, applying offset & limit.
      */
     public static String paginateList(List<String> items, int offset, int limit) {
-        // Handle zero or negative limit
-        if (limit <= 0) {
-            return "";
-        }
+        if (limit <= 0 || items.isEmpty()) return "";
         
-        // Handle negative offset by treating it as 0
-        int start = Math.max(0, offset);
-        // Calculate end position
-        int end = Math.min(items.size(), start + limit);
-
-        if (start >= items.size()) {
-            return ""; // no items in range
-        }
-        List<String> sub = items.subList(start, end);
-        return String.join("\n", sub);
+        var start = Math.max(0, offset);
+        if (start >= items.size()) return "";
+        
+        return items.stream()
+            .skip(start)
+            .limit(limit)
+            .collect(Collectors.joining("\n"));
     }
 
     /**
      * Parse an integer from a string, or return defaultValue if null/invalid.
      */
     public static int parseIntOrDefault(String val, int defaultValue) {
-        if (val == null) return defaultValue;
-        try {
-            return Integer.parseInt(val);
-        }
-        catch (NumberFormatException e) {
-            return defaultValue;
-        }
+        return Optional.ofNullable(val)
+            .map(str -> {
+                try {
+                    return Integer.parseInt(str);
+                } catch (NumberFormatException e) {
+                    return defaultValue;
+                }
+            })
+            .orElse(defaultValue);
     }
 
     /**
@@ -117,27 +112,22 @@ public class HttpUtils {
      */
     public static String escapeNonAscii(String input) {
         if (input == null) return "";
-        StringBuilder sb = new StringBuilder();
-        for (char c : input.toCharArray()) {
-            if (c >= 32 && c < 127) {
-                sb.append(c);
-            }
-            else {
-                sb.append("\\x");
-                sb.append(Integer.toHexString(c & 0xFF));
-            }
-        }
-        return sb.toString();
+        
+        return input.chars()
+            .mapToObj(c -> (c >= 32 && c < 127) ? 
+                String.valueOf((char)c) : 
+                String.format("\\x%02x", c & 0xFF))
+            .collect(Collectors.joining());
     }
 
     /**
      * Send a plain text HTTP response
      */
     public static void sendResponse(HttpExchange exchange, String response) throws IOException {
-        byte[] bytes = response.getBytes(StandardCharsets.UTF_8);
+        var bytes = response.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "text/plain; charset=utf-8");
         exchange.sendResponseHeaders(200, bytes.length);
-        try (OutputStream os = exchange.getResponseBody()) {
+        try (var os = exchange.getResponseBody()) {
             os.write(bytes);
         }
     }
@@ -146,13 +136,23 @@ public class HttpUtils {
      * Escape a string for JSON output
      */
     public static String escapeJson(String text) {
-        if (text == null) {
-            return "";
-        }
-        return text.replace("\\", "\\\\")
-                  .replace("\"", "\\\"")
-                  .replace("\n", "\\n")
-                  .replace("\r", "\\r")
-                  .replace("\t", "\\t");
+        return Optional.ofNullable(text)
+            .map(str -> {
+                var replacements = Map.of(
+                    "\\", "\\\\",
+                    "\"", "\\\"",
+                    "\n", "\\n", 
+                    "\r", "\\r",
+                    "\t", "\\t"
+                );
+                
+                // Apply all replacements in one pass
+                var result = str;
+                for (var entry : replacements.entrySet()) {
+                    result = result.replace(entry.getKey(), entry.getValue());
+                }
+                return result;
+            })
+            .orElse("");
     }
 }

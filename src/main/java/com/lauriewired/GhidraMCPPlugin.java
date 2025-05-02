@@ -2,25 +2,25 @@ package com.lauriewired;
 
 import com.lauriewired.mcp.McpServerManager;
 import com.lauriewired.mcp.api.ApiHandlerRegistry;
-import com.lauriewired.mcp.services.AnalysisService;
-import com.lauriewired.mcp.services.CommentService;
-import com.lauriewired.mcp.services.DataTypeService;
-import com.lauriewired.mcp.services.FunctionService;
-import com.lauriewired.mcp.services.MemoryService;
-import com.lauriewired.mcp.services.NamespaceService;
-import com.lauriewired.mcp.services.ProgramService;
-import com.lauriewired.mcp.services.VariableService;
+import com.lauriewired.mcp.services.*;
+import com.lauriewired.mcp.utils.HttpUtils;
+import com.sun.net.httpserver.HttpExchange;
 
 import ghidra.app.plugin.PluginCategoryNames;
 import ghidra.framework.plugintool.Plugin;
 import ghidra.framework.plugintool.PluginInfo;
 import ghidra.framework.plugintool.PluginTool;
 import ghidra.framework.plugintool.util.PluginStatus;
+import ghidra.program.model.data.DataType;
+import ghidra.program.model.data.DataTypeManager;
+import ghidra.program.model.listing.Program;
 import ghidra.util.Msg;
 
 import java.io.IOException;
 import java.util.Map;
-import ghidra.program.model.listing.Program;
+import java.util.Optional;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 
 /**
  * A Ghidra plugin that starts an HTTP server to expose program data through REST APIs.
@@ -73,15 +73,18 @@ public class GhidraMCPPlugin extends Plugin {
      * Initialize all service instances
      */
     private void initializeServices() {
-        // Create service instances in dependency order
-        programService = new ProgramService(tool);
-        functionService = new FunctionService(tool, programService);
-        namespaceService = new NamespaceService(programService);
-        dataTypeService = new DataTypeService(programService);
-        analysisService = new AnalysisService(programService);
-        commentService = new CommentService(programService);
-        memoryService = new MemoryService(programService);
-        variableService = new VariableService(programService);
+        // Create all services with programService as the core dependency
+        var programService = new ProgramService(tool);
+        this.programService = programService;
+        
+        // Initialize all dependent services
+        this.functionService = new FunctionService(tool, programService);
+        this.namespaceService = new NamespaceService(programService);
+        this.dataTypeService = new DataTypeService(programService);
+        this.analysisService = new AnalysisService(programService);
+        this.commentService = new CommentService(programService);
+        this.memoryService = new MemoryService(programService);
+        this.variableService = new VariableService(programService);
         
         Msg.info(this, "All services initialized");
     }
@@ -95,8 +98,7 @@ public class GhidraMCPPlugin extends Plugin {
         
         try {
             // Start the HTTP server
-            boolean started = serverManager.startServer();
-            if (!started) {
+            if (!serverManager.startServer()) {
                 Msg.error(this, "Failed to start HTTP server");
                 return;
             }
@@ -114,8 +116,6 @@ public class GhidraMCPPlugin extends Plugin {
             
             // Register all API endpoints
             apiHandlerRegistry.registerAllEndpoints();
-            
-            // Register variable endpoints
             registerVariableEndpoints();
             
         } catch (IOException e) {
@@ -127,92 +127,99 @@ public class GhidraMCPPlugin extends Plugin {
      * Register variable-related endpoints
      */
     private void registerVariableEndpoints() {
-        if (!serverManager.isServerRunning()) {
-            return;
-        }
+        if (!serverManager.isServerRunning()) return;
         
         // Rename variable endpoint
         serverManager.getServer().createContext("/renameVariable", exchange -> {
             try {
-                Map<String, String> params = com.lauriewired.mcp.utils.HttpUtils.parsePostParams(exchange);
-                String functionName = params.get("functionName");
-                String oldName = params.get("oldName");
-                String newName = params.get("newName");
-                String usageAddress = params.get("usageAddress");
+                var params = HttpUtils.parsePostParams(exchange);
+                var functionName = params.get("functionName");
+                var oldName = params.get("oldName");
+                var newName = params.get("newName");
+                var usageAddress = params.get("usageAddress");
                 
-                String result = variableService.renameVariableInFunction(functionName, oldName, newName, usageAddress);
-                com.lauriewired.mcp.utils.HttpUtils.sendResponse(exchange, result);
+                var result = variableService.renameVariableInFunction(functionName, oldName, newName, usageAddress);
+                HttpUtils.sendResponse(exchange, result);
             } catch (IOException e) {
-                com.lauriewired.mcp.utils.HttpUtils.sendResponse(exchange, "Error: " + e.getMessage());
+                HttpUtils.sendResponse(exchange, String.format("Error: %s", e.getMessage()));
             }
         });
         
         // Split variable endpoint
         serverManager.getServer().createContext("/splitVariable", exchange -> {
             try {
-                Map<String, String> params = com.lauriewired.mcp.utils.HttpUtils.parsePostParams(exchange);
-                String functionName = params.get("functionName");
-                String variableName = params.get("variableName");
-                String usageAddress = params.get("usageAddress");
-                String newName = params.get("newName"); // Optional
+                var params = HttpUtils.parsePostParams(exchange);
+                var functionName = params.get("functionName");
+                var variableName = params.get("variableName");
+                var usageAddress = params.get("usageAddress");
                 
-                // If newName is not provided, generate a unique name
-                if (newName == null || newName.isEmpty()) {
-                    newName = variableName + "_split";
-                }
+                // Use Optional to handle the optional newName parameter
+                var newName = Optional.ofNullable(params.get("newName"))
+                    .filter(name -> !name.isEmpty())
+                    .orElse(variableName + "_split");
                 
-                String result = variableService.renameVariableInFunction(functionName, variableName, newName, usageAddress);
-                com.lauriewired.mcp.utils.HttpUtils.sendResponse(exchange, result);
+                var result = variableService.renameVariableInFunction(functionName, variableName, newName, usageAddress);
+                HttpUtils.sendResponse(exchange, result);
             } catch (IOException e) {
-                com.lauriewired.mcp.utils.HttpUtils.sendResponse(exchange, "Error: " + e.getMessage());
+                HttpUtils.sendResponse(exchange, String.format("Error: %s", e.getMessage()));
             }
         });
         
         // Set local variable type endpoint
         serverManager.getServer().createContext("/set_local_variable_type", exchange -> {
             try {
-                Map<String, String> params = com.lauriewired.mcp.utils.HttpUtils.parsePostParams(exchange);
-                String functionAddress = params.get("function_address");
-                String variableName = params.get("variable_name");
-                String newType = params.get("new_type");
+                var params = HttpUtils.parsePostParams(exchange);
+                var functionAddress = params.get("function_address");
+                var variableName = params.get("variable_name");
+                var newType = params.get("new_type");
                 
-                // Capture detailed information about setting the type
-                StringBuilder responseMsg = new StringBuilder();
-                responseMsg.append("Setting variable type: ").append(variableName)
-                          .append(" to ").append(newType)
-                          .append(" in function at ").append(functionAddress).append("\n\n");
+                // Build the response message with a formatted text block
+                var responseMsg = new StringBuilder(String.format("""
+                    Setting variable type: %s
+                    to %s
+                    in function at %s
+                    
+                    """, variableName, newType, functionAddress));
                 
-                // Attempt to find the data type in various categories
-                Program program = programService.getCurrentProgram();
-                if (program != null) {
-                    ghidra.program.model.data.DataTypeManager dtm = program.getDataTypeManager();
-                    ghidra.program.model.data.DataType directType = dataTypeService.findDataTypeByNameInAllCategories(dtm, newType);
-                    if (directType != null) {
-                        responseMsg.append("Found type: ").append(directType.getPathName()).append("\n");
-                    } else if (newType.startsWith("P") && newType.length() > 1) {
-                        String baseTypeName = newType.substring(1);
-                        ghidra.program.model.data.DataType baseType = dataTypeService.findDataTypeByNameInAllCategories(dtm, baseTypeName);
-                        if (baseType != null) {
-                            responseMsg.append("Found base type for pointer: ").append(baseType.getPathName()).append("\n");
+                // Get data type info using Optional for cleaner null handling
+                Optional.ofNullable(programService.getCurrentProgram())
+                    .ifPresent(program -> {
+                        var dtm = program.getDataTypeManager();
+                        var directType = dataTypeService.findDataTypeByNameInAllCategories(dtm, newType);
+                        
+                        if (directType != null) {
+                            responseMsg.append(String.format("Found type: %s\n", directType.getPathName()));
+                        } else if (newType.startsWith("P") && newType.length() > 1) {
+                            findPointerBaseType(dtm, newType, responseMsg);
                         } else {
-                            responseMsg.append("Base type not found for pointer: ").append(baseTypeName).append("\n");
+                            responseMsg.append(String.format("Type not found directly: %s\n", newType));
                         }
-                    } else {
-                        responseMsg.append("Type not found directly: ").append(newType).append("\n");
-                    }
-                }
+                    });
                 
                 // Try to set the type
-                boolean success = variableService.setLocalVariableType(functionAddress, variableName, newType);
+                var success = variableService.setLocalVariableType(functionAddress, variableName, newType);
+                var successMsg = success ? "Variable type set successfully" : "Failed to set variable type";
+                responseMsg.append(String.format("\nResult: %s", successMsg));
                 
-                String successMsg = success ? "Variable type set successfully" : "Failed to set variable type";
-                responseMsg.append("\nResult: ").append(successMsg);
-                
-                com.lauriewired.mcp.utils.HttpUtils.sendResponse(exchange, responseMsg.toString());
+                HttpUtils.sendResponse(exchange, responseMsg.toString());
             } catch (IOException e) {
-                com.lauriewired.mcp.utils.HttpUtils.sendResponse(exchange, "Error: " + e.getMessage());
+                HttpUtils.sendResponse(exchange, String.format("Error: %s", e.getMessage()));
             }
         });
+    }
+    
+    /**
+     * Helper method to find pointer base type
+     */
+    private void findPointerBaseType(DataTypeManager dtm, String pointerType, StringBuilder responseMsg) {
+        var baseTypeName = pointerType.substring(1);
+        var baseType = dataTypeService.findDataTypeByNameInAllCategories(dtm, baseTypeName);
+        
+        if (baseType != null) {
+            responseMsg.append(String.format("Found base type for pointer: %s\n", baseType.getPathName()));
+        } else {
+            responseMsg.append(String.format("Base type not found for pointer: %s\n", baseTypeName));
+        }
     }
 
     @Override

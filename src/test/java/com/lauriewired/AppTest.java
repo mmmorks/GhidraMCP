@@ -15,6 +15,7 @@ import org.junit.jupiter.api.DisplayName;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.sun.net.httpserver.HttpExchange;
+import com.lauriewired.mcp.utils.HttpUtils;
 
 /**
  * Unit test for simple App.
@@ -31,79 +32,79 @@ public class AppTest {
     }
     
     /**
-     * Tests for paginateList method in GhidraMCPPlugin
+     * Tests for paginateList method in HttpUtils
      */
     @Test
     @DisplayName("Test pagination functionality")
     public void testPaginateList() {
         // Test empty list
         List<String> emptyList = new ArrayList<>();
-        String emptyResult = GhidraMCPPlugin.paginateList(emptyList, 0, 10);
+        String emptyResult = HttpUtils.paginateList(emptyList, 0, 10);
         assertTrue(emptyResult.isEmpty());
 
         // Test list smaller than page size
         List<String> smallList = Arrays.asList("a", "b", "c");
-        String smallResult = GhidraMCPPlugin.paginateList(smallList, 0, 5);
+        String smallResult = HttpUtils.paginateList(smallList, 0, 5);
         assertEquals("a\nb\nc", smallResult);
         
         // Test normal pagination - first page
         List<String> testList = Arrays.asList("item1", "item2", "item3", "item4", "item5", "item6", "item7", "item8", "item9", "item10");
-        String firstPage = GhidraMCPPlugin.paginateList(testList, 0, 3);
+        String firstPage = HttpUtils.paginateList(testList, 0, 3);
         assertEquals("item1\nitem2\nitem3", firstPage);
         
         // Test normal pagination - second page
-        String secondPage = GhidraMCPPlugin.paginateList(testList, 3, 3);
+        String secondPage = HttpUtils.paginateList(testList, 3, 3);
         assertEquals("item4\nitem5\nitem6", secondPage);
         
         // Test normal pagination - last page with fewer items
-        String lastPage = GhidraMCPPlugin.paginateList(testList, 8, 3);
+        String lastPage = HttpUtils.paginateList(testList, 8, 3);
         assertEquals("item9\nitem10", lastPage);
         
         // Test offset beyond list size
-        String beyondSize = GhidraMCPPlugin.paginateList(testList, 20, 5);
+        String beyondSize = HttpUtils.paginateList(testList, 20, 5);
         assertTrue(beyondSize.isEmpty());
         
         // Test negative offset (should be treated as 0)
-        String negativeOffset = GhidraMCPPlugin.paginateList(testList, -5, 3);
+        String negativeOffset = HttpUtils.paginateList(testList, -5, 3);
         assertEquals("item1\nitem2\nitem3", negativeOffset);
         
         // Test zero limit (should return empty string)
-        String zeroLimit = GhidraMCPPlugin.paginateList(testList, 0, 0);
+        String zeroLimit = HttpUtils.paginateList(testList, 0, 0);
         assertTrue(zeroLimit.isEmpty());
         
         // Test limit larger than list size
-        String largeLimit = GhidraMCPPlugin.paginateList(testList, 0, 20);
+        String largeLimit = HttpUtils.paginateList(testList, 0, 20);
         assertEquals("item1\nitem2\nitem3\nitem4\nitem5\nitem6\nitem7\nitem8\nitem9\nitem10", largeLimit);
         
         // Test partial page at end with exact limit
-        String partialExact = GhidraMCPPlugin.paginateList(testList, 8, 2);
+        String partialExact = HttpUtils.paginateList(testList, 8, 2);
         assertEquals("item9\nitem10", partialExact);
         
         // Test offset at end of list
-        String endOffset = GhidraMCPPlugin.paginateList(testList, 10, 5);
+        String endOffset = HttpUtils.paginateList(testList, 10, 5);
         assertTrue(endOffset.isEmpty());
     }
     
     /**
-     * Tests for parseQueryParams method in GhidraMCPPlugin
+     * Tests for parseQueryParams method in HttpUtils
      */
     @Test
     @DisplayName("Test query parameter parsing")
     public void testParseQueryParams() {
         // Test case 1: Empty query string
         HttpExchange emptyExchange = createMockHttpExchange(null);
-        Map<String, String> emptyResult = GhidraMCPPlugin.parseQueryParams(emptyExchange);
+        Map<String, String> emptyResult = HttpUtils.parseQueryParams(emptyExchange);
         assertTrue(emptyResult.isEmpty(), "Empty query should return empty map");
         
         // Test case 2: Single parameter
         HttpExchange singleParamExchange = createMockHttpExchange("param=value");
-        Map<String, String> singleResult = GhidraMCPPlugin.parseQueryParams(singleParamExchange);
+        Map<String, String> singleResult = HttpUtils.parseQueryParams(singleParamExchange);
         assertEquals(1, singleResult.size(), "Should have exactly one parameter");
         assertEquals("value", singleResult.get("param"), "Parameter value should match");
         
         // Test case 3: Multiple parameters
         HttpExchange multiParamExchange = createMockHttpExchange("first=1&second=2&third=3");
-        Map<String, String> multiResult = GhidraMCPPlugin.parseQueryParams(multiParamExchange);
+        Map<String, String> multiResult = HttpUtils.parseQueryParams(multiParamExchange);
         assertEquals(3, multiResult.size(), "Should have exactly three parameters");
         assertEquals("1", multiResult.get("first"), "First parameter value should match");
         assertEquals("2", multiResult.get("second"), "Second parameter value should match");
@@ -111,24 +112,24 @@ public class AppTest {
         
         // Test case 4: URL-encoded parameters
         HttpExchange encodedExchange = createMockHttpExchange("name=John+Doe&query=hello%20world");
-        Map<String, String> encodedResult = GhidraMCPPlugin.parseQueryParams(encodedExchange);
+        Map<String, String> encodedResult = HttpUtils.parseQueryParams(encodedExchange);
         assertEquals(2, encodedResult.size(), "Should have exactly two parameters");
         assertEquals("John Doe", encodedResult.get("name"), "Name should be properly decoded");
         assertEquals("hello world", encodedResult.get("query"), "Query should be properly decoded");
         
         // Test case 5: Special characters
         HttpExchange specialCharsExchange = createMockHttpExchange("param=%21%40%23%24%25%5E%26%2A%28%29");
-        Map<String, String> specialCharsResult = GhidraMCPPlugin.parseQueryParams(specialCharsExchange);
+        Map<String, String> specialCharsResult = HttpUtils.parseQueryParams(specialCharsExchange);
         assertEquals("!@#$%^&*()", specialCharsResult.get("param"), "Special characters should be properly decoded");
         
         // Test case 6: Question mark in parameter value
         HttpExchange questionMarkExchange = createMockHttpExchange("query=what%3Fwhere%3Fwhen%3F");
-        Map<String, String> questionMarkResult = GhidraMCPPlugin.parseQueryParams(questionMarkExchange);
+        Map<String, String> questionMarkResult = HttpUtils.parseQueryParams(questionMarkExchange);
         assertEquals("what?where?when?", questionMarkResult.get("query"), "Question marks should be properly decoded");
         
         // Test case 7: Parameter with complex search query
         HttpExchange searchQueryExchange = createMockHttpExchange("search=function%3Fpattern%3D%22main%22");
-        Map<String, String> searchQueryResult = GhidraMCPPlugin.parseQueryParams(searchQueryExchange);
+        Map<String, String> searchQueryResult = HttpUtils.parseQueryParams(searchQueryExchange);
         assertEquals("function?pattern=\"main\"", searchQueryResult.get("search"), "Complex query with question marks should be properly decoded");
     }
     
@@ -140,25 +141,25 @@ public class AppTest {
     }
     
     /**
-     * Tests for parsePostParams method in GhidraMCPPlugin
+     * Tests for parsePostParams method in HttpUtils
      */
     @Test
     @DisplayName("Test POST parameter parsing")
     public void testParsePostParams() throws IOException {
         // Test case 1: Empty body
         HttpExchange emptyExchange = createMockHttpExchangeWithBody("");
-        Map<String, String> emptyResult = GhidraMCPPlugin.parsePostParams(emptyExchange);
+        Map<String, String> emptyResult = HttpUtils.parsePostParams(emptyExchange);
         assertTrue(emptyResult.isEmpty(), "Empty body should return empty map");
         
         // Test case 2: Single parameter
         HttpExchange singleParamExchange = createMockHttpExchangeWithBody("param=value");
-        Map<String, String> singleResult = GhidraMCPPlugin.parsePostParams(singleParamExchange);
+        Map<String, String> singleResult = HttpUtils.parsePostParams(singleParamExchange);
         assertEquals(1, singleResult.size(), "Should have exactly one parameter");
         assertEquals("value", singleResult.get("param"), "Parameter value should match");
         
         // Test case 3: Multiple parameters
         HttpExchange multiParamExchange = createMockHttpExchangeWithBody("first=1&second=2&third=3");
-        Map<String, String> multiResult = GhidraMCPPlugin.parsePostParams(multiParamExchange);
+        Map<String, String> multiResult = HttpUtils.parsePostParams(multiParamExchange);
         assertEquals(3, multiResult.size(), "Should have exactly three parameters");
         assertEquals("1", multiResult.get("first"), "First parameter value should match");
         assertEquals("2", multiResult.get("second"), "Second parameter value should match");
@@ -166,19 +167,19 @@ public class AppTest {
         
         // Test case 4: URL-encoded parameters
         HttpExchange encodedExchange = createMockHttpExchangeWithBody("name=John+Doe&query=hello%20world");
-        Map<String, String> encodedResult = GhidraMCPPlugin.parsePostParams(encodedExchange);
+        Map<String, String> encodedResult = HttpUtils.parsePostParams(encodedExchange);
         assertEquals(2, encodedResult.size(), "Should have exactly two parameters");
         assertEquals("John Doe", encodedResult.get("name"), "Name should be properly decoded");
         assertEquals("hello world", encodedResult.get("query"), "Query should be properly decoded");
         
         // Test case 5: Special characters
         HttpExchange specialCharsExchange = createMockHttpExchangeWithBody("param=%21%40%23%24%25%5E%26%2A%28%29");
-        Map<String, String> specialCharsResult = GhidraMCPPlugin.parsePostParams(specialCharsExchange);
+        Map<String, String> specialCharsResult = HttpUtils.parsePostParams(specialCharsExchange);
         assertEquals("!@#$%^&*()", specialCharsResult.get("param"), "Special characters should be properly decoded");
         
         // Test case 6: Malformed parameters (missing value)
         HttpExchange malformedExchange = createMockHttpExchangeWithBody("param1=value1&param2=&param3=value3");
-        Map<String, String> malformedResult = GhidraMCPPlugin.parsePostParams(malformedExchange);
+        Map<String, String> malformedResult = HttpUtils.parsePostParams(malformedExchange);
         assertEquals(3, malformedResult.size(), "Should have three parameters");
         assertEquals("value1", malformedResult.get("param1"), "First parameter value should match");
         assertEquals("", malformedResult.get("param2"), "Second parameter value should be empty");
@@ -186,7 +187,7 @@ public class AppTest {
         
         // Test case 7: Invalid URL encoding (should skip the invalid parameter but process valid ones)
         HttpExchange invalidEncodingExchange = createMockHttpExchangeWithBody("valid=ok&invalid=%invalid&another=good");
-        Map<String, String> invalidEncodingResult = GhidraMCPPlugin.parsePostParams(invalidEncodingExchange);
+        Map<String, String> invalidEncodingResult = HttpUtils.parsePostParams(invalidEncodingExchange);
         assertTrue(invalidEncodingResult.containsKey("valid"), "Valid parameter should be processed");
         assertTrue(invalidEncodingResult.containsKey("another"), "Valid parameter should be processed");
         assertEquals("ok", invalidEncodingResult.get("valid"), "Valid parameter value should match");
@@ -194,25 +195,25 @@ public class AppTest {
         
         // Test case 8: Duplicate keys (last one should win)
         HttpExchange duplicateKeysExchange = createMockHttpExchangeWithBody("key=value1&key=value2&key=value3");
-        Map<String, String> duplicateKeysResult = GhidraMCPPlugin.parsePostParams(duplicateKeysExchange);
+        Map<String, String> duplicateKeysResult = HttpUtils.parsePostParams(duplicateKeysExchange);
         assertEquals(1, duplicateKeysResult.size(), "Should have one parameter");
         assertEquals("value3", duplicateKeysResult.get("key"), "Last value should be used");
         
         // Test case 9: Parameter with no equals sign
         HttpExchange noEqualsExchange = createMockHttpExchangeWithBody("param1=value1&justkey&param2=value2");
-        Map<String, String> noEqualsResult = GhidraMCPPlugin.parsePostParams(noEqualsExchange);
+        Map<String, String> noEqualsResult = HttpUtils.parsePostParams(noEqualsExchange);
         assertEquals(2, noEqualsResult.size(), "Should have two valid parameters");
         assertEquals("value1", noEqualsResult.get("param1"), "First parameter value should match");
         assertEquals("value2", noEqualsResult.get("param2"), "Second parameter value should match");
         
         // Test case 10: Question mark in POST parameter value
         HttpExchange postQuestionMarkExchange = createMockHttpExchangeWithBody("filter=address%3F0x400000%3Fcode");
-        Map<String, String> postQuestionMarkResult = GhidraMCPPlugin.parsePostParams(postQuestionMarkExchange);
+        Map<String, String> postQuestionMarkResult = HttpUtils.parsePostParams(postQuestionMarkExchange);
         assertEquals("address?0x400000?code", postQuestionMarkResult.get("filter"), "Question marks in POST parameters should be properly decoded");
         
         // Test case 11: POST parameter with multiple question marks and other special chars
         HttpExchange complexQueryExchange = createMockHttpExchangeWithBody("query=find%3Ffunction%3D%22main%22%3Faddress%3D0x400000");
-        Map<String, String> complexQueryResult = GhidraMCPPlugin.parsePostParams(complexQueryExchange);
+        Map<String, String> complexQueryResult = HttpUtils.parsePostParams(complexQueryExchange);
         assertEquals("find?function=\"main\"?address=0x400000", complexQueryResult.get("query"), "Complex query with question marks should be properly decoded");
     }
     

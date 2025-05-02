@@ -25,16 +25,46 @@ import ghidra.util.task.ConsoleTaskMonitor;
 import javax.swing.SwingUtilities;
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Spliterators;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
 
 /**
  * Service for variable-related operations
  */
 public class VariableService {
+    // Variable information record for cleaner data handling
+    private record VariableInfo(String name, String dataType, String storage) {
+        VariableInfo(String name, String dataType) {
+            this(name, dataType, null);
+        }
+        
+        boolean hasStorage() {
+            return storage != null;
+        }
+        
+        String toJson() {
+            return String.format("""
+                {
+                  "name": "%s",
+                  "dataType": "%s"%s
+                }""",
+                HttpUtils.escapeJson(name),
+                HttpUtils.escapeJson(dataType),
+                hasStorage() ? 
+                    String.format(",\n      \"storage\": \"%s\"", HttpUtils.escapeJson(storage)) : ""
+            );
+        }
+    }
+    
     private final ProgramService programService;
     
     /**
@@ -59,41 +89,40 @@ public class VariableService {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
     
-        DecompInterface decomp = new DecompInterface();
+        var decomp = new DecompInterface();
         decomp.openProgram(program);
     
-        Function func = null;
-        for (Function f : program.getFunctionManager().getFunctions(true)) {
-            if (f.getName().equals(functionName)) {
-                func = f;
-                break;
-            }
-        }
+        // Use Optional properly with early return pattern
+        var func = StreamSupport
+            .stream(program.getFunctionManager().getFunctions(true).spliterator(), false)
+            .filter(f -> f.getName().equals(functionName))
+            .findFirst()
+            .orElse(null);
     
         if (func == null) {
             return "Function not found";
         }
     
-        DecompileResults result = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
+        var result = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
         if (result == null || !result.decompileCompleted()) {
             return "Decompilation failed";
         }
     
-        HighFunction highFunction = result.getHighFunction();
+        var highFunction = result.getHighFunction();
         if (highFunction == null) {
             return "Decompilation failed (no high function)";
         }
     
-        LocalSymbolMap localSymbolMap = highFunction.getLocalSymbolMap();
+        var localSymbolMap = highFunction.getLocalSymbolMap();
         if (localSymbolMap == null) {
             return "Decompilation failed (no local symbol map)";
         }
     
         HighSymbol highSymbol = null;
-        Iterator<HighSymbol> symbols = localSymbolMap.getSymbols();
-        while (symbols.hasNext()) {
-            HighSymbol symbol = symbols.next();
-            String symbolName = symbol.getName();
+        var symbolsIterator = localSymbolMap.getSymbols();
+        while (symbolsIterator.hasNext()) {
+            var symbol = symbolsIterator.next();
+            var symbolName = symbol.getName();
     
             if (symbolName.equals(oldVarName)) {
                 highSymbol = symbol;
@@ -111,11 +140,11 @@ public class VariableService {
         Varnode specificVarnode = null;
         if (usageAddressStr != null && !usageAddressStr.isEmpty()) {
             try {
-                Address usageAddress = program.getAddressFactory().getAddress(usageAddressStr);
-                HighVariable highVariable = highSymbol.getHighVariable();
+                var usageAddress = program.getAddressFactory().getAddress(usageAddressStr);
+                var highVariable = highSymbol.getHighVariable();
     
                 // Get all instances of this variable
-                Varnode[] instances = highVariable.getInstances();
+                var instances = highVariable.getInstances();
                 
                 Msg.info(this, "Searching for variable usage at address: " + usageAddress);
                 Msg.info(this, "Variable " + oldVarName + " has " + instances.length + " instances");
@@ -150,11 +179,11 @@ public class VariableService {
     
         boolean commitRequired = GhidraUtils.checkFullCommit(highSymbol, highFunction);
     
-        final Function finalFunction = func;
-        final HighVariable highVariable = highSymbol.getHighVariable();
-        final Varnode finalVarnode = specificVarnode != null ? specificVarnode : highVariable.getRepresentative();
+        var finalFunction = func;
+        var highVariable = highSymbol.getHighVariable();
+        var finalVarnode = specificVarnode != null ? specificVarnode : highVariable.getRepresentative();
     
-        AtomicBoolean successFlag = new AtomicBoolean(false);
+        var successFlag = new AtomicBoolean(false);
     
         try {
             SwingUtilities.invokeAndWait(() -> {
@@ -166,10 +195,10 @@ public class VariableService {
                     }
     
                     // Use the specific Varnode if provided, otherwise use the representative
-                    final HighVariable newHighVariable = highFunction.splitOutMergeGroup(highVariable, finalVarnode);
-                    final HighSymbol finalHighSymbol = newHighVariable.getSymbol();
+                    var newHighVariable = highFunction.splitOutMergeGroup(highVariable, finalVarnode);
+                    var finalHighSymbol = newHighVariable.getSymbol();
     
-                    DataType dataType = finalHighSymbol.getDataType();
+                    var dataType = finalHighSymbol.getDataType();
                     if (Undefined.isUndefined(dataType)) {
                         dataType = AbstractIntegerDataType.getUnsignedDataType(dataType.getLength(), program.getDataTypeManager());
                     }
@@ -190,7 +219,7 @@ public class VariableService {
                 }
             });
         } catch (InterruptedException | InvocationTargetException e) {
-            String errorMsg = "Failed to execute rename on Swing thread: " + e.getMessage();
+            var errorMsg = "Failed to execute rename on Swing thread: " + e.getMessage();
             Msg.error(this, errorMsg, e);
             return errorMsg;
         }
@@ -202,41 +231,40 @@ public class VariableService {
         // Get updated variable list after renaming
         try {
             // Re-decompile to get the updated state
-            DecompileResults updatedResult = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
+            var updatedResult = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
             if (updatedResult == null || !updatedResult.decompileCompleted()) {
                 return "Variable renamed, but failed to get updated variable list";
             }
             
-            HighFunction updatedHighFunction = updatedResult.getHighFunction();
+            var updatedHighFunction = updatedResult.getHighFunction();
             if (updatedHighFunction == null) {
                 return "Variable renamed, but failed to get updated high function";
             }
             
-            LocalSymbolMap updatedSymbolMap = updatedHighFunction.getLocalSymbolMap();
+            var updatedSymbolMap = updatedHighFunction.getLocalSymbolMap();
             if (updatedSymbolMap == null) {
                 return "Variable renamed, but failed to get updated symbol map";
             }
             
-            List<Map<String, String>> variableList = new ArrayList<>();
-            Iterator<HighSymbol> updatedSymbols = updatedSymbolMap.getSymbols();
-            while (updatedSymbols.hasNext()) {
-                HighSymbol symbol = updatedSymbols.next();
-                Map<String, String> varInfo = new HashMap<>();
-                varInfo.put("name", symbol.getName());
-                varInfo.put("dataType", symbol.getDataType().getName());
+            // Convert symbols to VariableInfo records
+            List<VariableInfo> variables = new ArrayList<>();
+            updatedSymbolMap.getSymbols().forEachRemaining(symbol -> {
+                String symbolName = symbol.getName();
+                String dataTypeName = symbol.getDataType().getName();
+                String storage = null;
                 
                 HighVariable var = symbol.getHighVariable();
                 if (var != null && var.getSymbol() != null) {
-                    varInfo.put("storage", var.getSymbol().getStorage().toString());
+                    storage = var.getSymbol().getStorage().toString();
                 }
                 
-                variableList.add(varInfo);
-            }
+                variables.add(new VariableInfo(symbolName, dataTypeName, storage));
+            });
             
             // Re-decompile once more to get the updated code after renaming
-            String decompiled = "";
+            var decompiled = "";
             try {
-                DecompileResults finalResult = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
+                var finalResult = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
                 if (finalResult != null && finalResult.decompileCompleted()) {
                     decompiled = finalResult.getDecompiledFunction().getC();
                 }
@@ -245,40 +273,32 @@ public class VariableService {
                 decompiled = "Decompilation unavailable";
             }
 
-            // Create enhanced JSON response
-            StringBuilder jsonResponse = new StringBuilder();
-            jsonResponse.append("{\n");
-            jsonResponse.append("  \"status\": \"Variable split and renamed\",\n");
-            jsonResponse.append("  \"originalVariable\": \"").append(HttpUtils.escapeJson(oldVarName)).append("\",\n");
-            jsonResponse.append("  \"newVariable\": \"").append(HttpUtils.escapeJson(newVarName)).append("\",\n");
+            // Create enhanced JSON response using text blocks
+            var variablesJson = variables.stream()
+                .map(VariableInfo::toJson)
+                .collect(Collectors.joining(",\n    "));
             
-            // Include split address if provided
-            if (usageAddressStr != null && !usageAddressStr.isEmpty()) {
-                jsonResponse.append("  \"splitAddress\": \"").append(HttpUtils.escapeJson(usageAddressStr)).append("\",\n");
-            }
+            var splitAddressBlock = usageAddressStr != null && !usageAddressStr.isEmpty() 
+                ? String.format("  \"splitAddress\": \"%s\",\n", HttpUtils.escapeJson(usageAddressStr))
+                : "";
             
-            jsonResponse.append("  \"variables\": [\n");
-            
-            for (int i = 0; i < variableList.size(); i++) {
-                Map<String, String> varInfo = variableList.get(i);
-                jsonResponse.append("    {\n");
-                jsonResponse.append("      \"name\": \"").append(HttpUtils.escapeJson(varInfo.get("name"))).append("\",\n");
-                jsonResponse.append("      \"dataType\": \"").append(HttpUtils.escapeJson(varInfo.get("dataType"))).append("\"");
-                if (varInfo.containsKey("storage")) {
-                    jsonResponse.append(",\n      \"storage\": \"").append(HttpUtils.escapeJson(varInfo.get("storage"))).append("\"");
-                }
-                jsonResponse.append("\n    }");
-                if (i < variableList.size() - 1) {
-                    jsonResponse.append(",");
-                }
-                jsonResponse.append("\n");
-            }
-            
-            jsonResponse.append("  ],\n");
-            jsonResponse.append("  \"decompiled\": \"").append(HttpUtils.escapeJson(decompiled)).append("\"\n");
-            jsonResponse.append("}");
-            
-            return jsonResponse.toString();
+            var jsonResponse = String.format("""
+                {
+                  "status": "Variable split and renamed",
+                  "originalVariable": "%s",
+                  "newVariable": "%s",
+                %s  "variables": [
+                    %s
+                  ],
+                  "decompiled": "%s"
+                }""",
+                HttpUtils.escapeJson(oldVarName),
+                HttpUtils.escapeJson(newVarName),
+                splitAddressBlock,
+                variablesJson,
+                HttpUtils.escapeJson(decompiled));
+                
+            return jsonResponse;
             
         } catch (Exception e) {
             String errorMsg = "Variable renamed, but failed to collect variable info: " + e.getMessage();
@@ -310,34 +330,34 @@ public class VariableService {
             SwingUtilities.invokeAndWait(() -> {
                 try {
                     // Find the function
-                    Address addr = program.getAddressFactory().getAddress(functionAddrStr);
-                    Function func = GhidraUtils.getFunctionForAddress(program, addr);
+                    var addr = program.getAddressFactory().getAddress(functionAddrStr);
+                    var func = GhidraUtils.getFunctionForAddress(program, addr);
                     
                     if (func == null) {
                         Msg.error(this, "Could not find function at address: " + functionAddrStr);
                         return;
                     }
                     
-                    DecompileResults results = GhidraUtils.decompileFunction(func, program);
+                    var results = GhidraUtils.decompileFunction(func, program);
                     if (results == null || !results.decompileCompleted()) {
                         return;
                     }
                     
-                    HighFunction highFunction = results.getHighFunction();
+                    var highFunction = results.getHighFunction();
                     if (highFunction == null) {
                         Msg.error(this, "No high function available");
                         return;
                     }
                     
                     // Find the symbol by name
-                    HighSymbol symbol = GhidraUtils.findVariableByName(highFunction, variableName);
+                    var symbol = GhidraUtils.findVariableByName(highFunction, variableName);
                     if (symbol == null) {
                         Msg.error(this, "Could not find variable '" + variableName + "' in decompiled function");
                         return;
                     }
                     
                     // Get high variable
-                    HighVariable highVar = symbol.getHighVariable();
+                    var highVar = symbol.getHighVariable();
                     if (highVar == null) {
                         Msg.error(this, "No HighVariable found for symbol: " + variableName);
                         return;
@@ -347,8 +367,8 @@ public class VariableService {
                              " with current type " + highVar.getDataType().getName());
                     
                     // Find the data type
-                    DataTypeService dataTypeService = new DataTypeService(programService);
-                    DataType dataType = dataTypeService.resolveDataType(program.getDataTypeManager(), newType);
+                    var dataTypeService = new DataTypeService(programService);
+                    var dataType = dataTypeService.resolveDataType(program.getDataTypeManager(), newType);
                     
                     if (dataType == null) {
                         Msg.error(this, "Could not resolve data type: " + newType);
@@ -402,25 +422,31 @@ public class VariableService {
      * @return matching varnode or null if no match found
      */
     private Varnode findExactVarnodeMatch(Varnode[] instances, Address usageAddress) {
-        for (Varnode instance : instances) {
-            // Check if this instance is defined at the specified address
-            PcodeOp defOp = instance.getDef();
-            if (defOp != null && defOp.getSeqnum().getTarget().equals(usageAddress)) {
-                Msg.info(this, "Found exact match with definition at " + usageAddress);
-                return instance;
-            }
-
-            // Check if this instance is used at the specified address
-            Iterator<PcodeOp> uses = instance.getDescendants();
-            while (uses.hasNext()) {
-                PcodeOp useOp = uses.next();
-                if (useOp.getSeqnum().getTarget().equals(usageAddress)) {
-                    Msg.info(this, "Found exact match with usage at " + usageAddress);
-                    return instance;
+        return Arrays.stream(instances)
+            .filter(instance -> {
+                // Check definition
+                PcodeOp defOp = instance.getDef();
+                if (defOp != null && defOp.getSeqnum().getTarget().equals(usageAddress)) {
+                    Msg.info(this, "Found exact match with definition at " + usageAddress);
+                    return true;
                 }
-            }
-        }
-        return null;
+                
+                // Check uses
+                var hasMatchingUse = StreamSupport
+                    .stream(Spliterators.spliteratorUnknownSize(
+                        instance.getDescendants(), java.util.Spliterator.ORDERED), false)
+                    .anyMatch(useOp -> {
+                        if (useOp.getSeqnum().getTarget().equals(usageAddress)) {
+                            Msg.info(this, "Found exact match with usage at " + usageAddress);
+                            return true;
+                        }
+                        return false;
+                    });
+                
+                return hasMatchingUse;
+            })
+            .findFirst()
+            .orElse(null);
     }
     
     /**
@@ -432,42 +458,41 @@ public class VariableService {
      * @return a varnode near the target address, or null if none found
      */
     private Varnode findNearbyVarnodeUsage(Varnode[] instances, Address targetAddress, int rangeBytes) {
-        long targetOffset = targetAddress.getOffset();
-        Varnode closestVarnode = null;
-        long closestDistance = Long.MAX_VALUE;
+        var targetOffset = targetAddress.getOffset();
         
-        for (Varnode instance : instances) {
-            // Check distance of definition
-            PcodeOp defOp = instance.getDef();
-            if (defOp != null) {
-                long defOffset = defOp.getSeqnum().getTarget().getOffset();
-                long distance = Math.abs(defOffset - targetOffset);
-                
-                if (distance <= rangeBytes && distance < closestDistance) {
-                    closestVarnode = instance;
-                    closestDistance = distance;
-                    Msg.info(this, "Found nearby definition at " + defOp.getSeqnum().getTarget() + 
-                             " (distance: " + distance + " bytes)");
-                }
-            }
-            
-            // Check distance of uses
-            Iterator<PcodeOp> uses = instance.getDescendants();
-            while (uses.hasNext()) {
-                PcodeOp useOp = uses.next();
-                long useOffset = useOp.getSeqnum().getTarget().getOffset();
-                long distance = Math.abs(useOffset - targetOffset);
-                
-                if (distance <= rangeBytes && distance < closestDistance) {
-                    closestVarnode = instance;
-                    closestDistance = distance;
-                    Msg.info(this, "Found nearby usage at " + useOp.getSeqnum().getTarget() + 
-                             " (distance: " + distance + " bytes)");
-                }
-            }
-        }
+        record DistanceInfo(Varnode varnode, long distance) {}
         
-        return closestVarnode;
+        return Arrays.stream(instances)
+            .map(instance -> {
+                long minDistance = Long.MAX_VALUE;
+                
+                // Check definition
+                PcodeOp defOp = instance.getDef();
+                if (defOp != null) {
+                    long defOffset = defOp.getSeqnum().getTarget().getOffset();
+                    long distance = Math.abs(defOffset - targetOffset);
+                    if (distance <= rangeBytes) {
+                        minDistance = Math.min(minDistance, distance);
+                    }
+                }
+                
+                // Check all uses
+                Iterator<PcodeOp> uses = instance.getDescendants();
+                while (uses.hasNext()) {
+                    PcodeOp useOp = uses.next();
+                    long useOffset = useOp.getSeqnum().getTarget().getOffset();
+                    long distance = Math.abs(useOffset - targetOffset);
+                    if (distance <= rangeBytes) {
+                        minDistance = Math.min(minDistance, distance);
+                    }
+                }
+                
+                return new DistanceInfo(instance, minDistance);
+            })
+            .filter(info -> info.distance() <= rangeBytes)
+            .min(Comparator.comparingLong(DistanceInfo::distance))
+            .map(DistanceInfo::varnode)
+            .orElse(null);
     }
     
     /**
@@ -481,25 +506,16 @@ public class VariableService {
             return null;
         }
         
-        // First try to find a varnode with a definition
-        for (Varnode instance : instances) {
-            if (instance.getDef() != null) {
-                Msg.info(this, "Found varnode with definition at " + instance.getDef().getSeqnum().getTarget());
-                return instance;
-            }
-        }
-        
-        // Then try to find a varnode with any uses
-        for (Varnode instance : instances) {
-            Iterator<PcodeOp> uses = instance.getDescendants();
-            if (uses.hasNext()) {
-                Msg.info(this, "Found varnode with uses");
-                return instance;
-            }
-        }
-        
-        // If all else fails, just return the first varnode
-        Msg.info(this, "Using first available varnode instance as fallback");
-        return instances[0];
+        // Try to find varnode with definition, then with uses, then fallback to first
+        return Arrays.stream(instances)
+            .filter(v -> v.getDef() != null)
+            .findFirst()
+            .or(() -> Arrays.stream(instances)
+                .filter(v -> v.getDescendants().hasNext())
+                .findFirst())
+            .orElseGet(() -> {
+                Msg.info(this, "Using first available varnode instance as fallback");
+                return instances[0];
+            });
     }
 }

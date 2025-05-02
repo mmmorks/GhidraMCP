@@ -4,6 +4,7 @@ import ghidra.app.decompiler.DecompInterface;
 import ghidra.app.decompiler.DecompileResults;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.listing.Function;
+import ghidra.program.model.listing.Parameter;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.pcode.HighFunction;
 import ghidra.program.model.pcode.HighSymbol;
@@ -15,6 +16,12 @@ import ghidra.util.Msg;
 import ghidra.util.task.ConsoleTaskMonitor;
 
 import java.util.Iterator;
+import java.util.Optional;
+import java.util.Spliterator;
+import java.util.Spliterators;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 /**
  * Utility methods for Ghidra operations in GhidraMCP
@@ -30,11 +37,8 @@ public class GhidraUtils {
             return null;
         }
         
-        Function func = program.getFunctionManager().getFunctionAt(addr);
-        if (func == null) {
-            func = program.getFunctionManager().getFunctionContaining(addr);
-        }
-        return func;
+        return Optional.ofNullable(program.getFunctionManager().getFunctionAt(addr))
+            .orElseGet(() -> program.getFunctionManager().getFunctionContaining(addr));
     }
 
     /**
@@ -45,14 +49,20 @@ public class GhidraUtils {
             return null;
         }
         
-        Iterator<HighSymbol> symbols = highFunction.getLocalSymbolMap().getSymbols();
-        while (symbols.hasNext()) {
-            HighSymbol s = symbols.next();
-            if (s.getName().equals(variableName)) {
-                return s;
-            }
-        }
-        return null;
+        return iteratorToStream(highFunction.getLocalSymbolMap().getSymbols())
+            .filter(symbol -> symbol.getName().equals(variableName))
+            .findFirst()
+            .orElse(null);
+    }
+    
+    /**
+     * Helper method to convert an Iterator to a Stream
+     */
+    private static <T> Stream<T> iteratorToStream(Iterator<T> iterator) {
+        return StreamSupport.stream(
+            Spliterators.spliteratorUnknownSize(iterator, Spliterator.ORDERED),
+            false
+        );
     }
 
     /**
@@ -64,16 +74,18 @@ public class GhidraUtils {
         }
         
         // Set up decompiler for accessing the decompiled function
-        DecompInterface decomp = new DecompInterface();
+        var decomp = new DecompInterface();
         decomp.openProgram(program);
         decomp.setSimplificationStyle("decompile"); // Full decompilation
         
         // Decompile the function
-        DecompileResults results = decomp.decompileFunction(func, 60, new ConsoleTaskMonitor());
+        var results = decomp.decompileFunction(func, 60, new ConsoleTaskMonitor());
         
         if (results == null || !results.decompileCompleted()) {
             Msg.error(GhidraUtils.class, "Could not decompile function: " + 
-                     (results != null ? results.getErrorMessage() : "Unknown error"));
+                     Optional.ofNullable(results)
+                         .map(DecompileResults::getErrorMessage)
+                         .orElse("Unknown error"));
             return null;
         }
         
@@ -88,54 +100,55 @@ public class GhidraUtils {
             return null;
         }
         
-        SymbolTable symbolTable = program.getSymbolTable();
-        SymbolIterator symbolIterator = symbolTable.getSymbols(symbolName);
+        var symbolTable = program.getSymbolTable();
+        var symbolIterator = symbolTable.getSymbols(symbolName);
         
-        if (symbolIterator.hasNext()) {
-            // Use the first matching symbol's address
-            Symbol symbol = symbolIterator.next();
-            return symbol.getAddress();
-        }
-        
-        return null;
+        return Optional.of(symbolIterator)
+            .filter(SymbolIterator::hasNext)
+            .map(SymbolIterator::next)
+            .map(Symbol::getAddress)
+            .orElse(null);
     }
     
     /**
      * Check if full commit is required for function prototype changes
      * 
      * Copied from AbstractDecompilerAction.checkFullCommit, it's protected.
-	 * Compare the given HighFunction's idea of the prototype with the Function's idea.
-	 * Return true if there is a difference. If a specific symbol is being changed,
-	 * it can be passed in to check whether or not the prototype is being affected.
+     * Compare the given HighFunction's idea of the prototype with the Function's idea.
+     * Return true if there is a difference. If a specific symbol is being changed,
+     * it can be passed in to check whether or not the prototype is being affected.
      * 
-	 * @param highSymbol (if not null) is the symbol being modified
-	 * @param hfunction is the given HighFunction
-	 * @return true if there is a difference (and a full commit is required)
-	 */
-	public static boolean checkFullCommit(HighSymbol highSymbol, HighFunction hfunction) {
-		if (highSymbol != null && !highSymbol.isParameter()) {
-			return false;
-		}
-		Function function = hfunction.getFunction();
-		ghidra.program.model.listing.Parameter[] parameters = function.getParameters();
-		LocalSymbolMap localSymbolMap = hfunction.getLocalSymbolMap();
-		int numParams = localSymbolMap.getNumParams();
-		if (numParams != parameters.length) {
-			return true;
-		}
+     * @param highSymbol (if not null) is the symbol being modified
+     * @param hfunction is the given HighFunction
+     * @return true if there is a difference (and a full commit is required)
+     */
+    public static boolean checkFullCommit(HighSymbol highSymbol, HighFunction hfunction) {
+        // Early return if this isn't a parameter
+        if (highSymbol != null && !highSymbol.isParameter()) {
+            return false;
+        }
+        
+        var function = hfunction.getFunction();
+        var parameters = function.getParameters();
+        var localSymbolMap = hfunction.getLocalSymbolMap();
+        var numParams = localSymbolMap.getNumParams();
+        
+        // Check if parameter counts match
+        if (numParams != parameters.length) {
+            return true;
+        }
 
-		for (int i = 0; i < numParams; i++) {
-			HighSymbol param = localSymbolMap.getParamSymbol(i);
-			if (param.getCategoryIndex() != i) {
-				return true;
-			}
-			ghidra.program.model.listing.VariableStorage storage = param.getStorage();
-			// Don't compare using the equals method so that DynamicVariableStorage can match
-			if (0 != storage.compareTo(parameters[i].getVariableStorage())) {
-				return true;
-			}
-		}
-
-		return false;
-	}
+        // Check if parameters match in order and storage
+        return IntStream.range(0, numParams).anyMatch(i -> {
+            var param = localSymbolMap.getParamSymbol(i);
+            
+            // Check parameter index
+            if (param.getCategoryIndex() != i) {
+                return true;
+            }
+            
+            // Check parameter storage (don't use equals for DynamicVariableStorage support)
+            return param.getStorage().compareTo(parameters[i].getVariableStorage()) != 0;
+        });
+    }
 }

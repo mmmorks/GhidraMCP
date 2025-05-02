@@ -2,22 +2,11 @@ package com.lauriewired.mcp.model;
 
 /**
  * Represents the result of a function prototype setting operation.
+ * 
+ * @param success true if the prototype was set successfully, false otherwise
+ * @param errorMessage detailed error message or warning information
  */
-public class PrototypeResult {
-    private final boolean success;
-    private final String errorMessage;
-    
-    /**
-     * Creates a new PrototypeResult.
-     *
-     * @param success true if the prototype was set successfully, false otherwise
-     * @param errorMessage detailed error message or warning information
-     */
-    public PrototypeResult(boolean success, String errorMessage) {
-        this.success = success;
-        this.errorMessage = errorMessage;
-    }
-    
+public record PrototypeResult(boolean success, String errorMessage) {
     /**
      * Checks if the operation was successful.
      *

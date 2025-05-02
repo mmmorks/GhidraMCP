@@ -9,11 +9,25 @@ import com.lauriewired.mcp.services.FunctionService;
 import com.lauriewired.mcp.services.MemoryService;
 import com.lauriewired.mcp.services.NamespaceService;
 import com.lauriewired.mcp.utils.HttpUtils;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 import ghidra.util.Msg;
 
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.Map;
+
+/**
+ * Functional interfaces for handler methods
+ */
+interface PaginatedHandler {
+    String execute(int offset, int limit);
+}
+
+interface CommentHandler {
+    boolean execute(String address, String comment);
+}
 
 /**
  * Registers and manages API endpoints for the HTTP server
@@ -66,22 +80,12 @@ public class ApiHandlerRegistry {
         
         HttpServer server = serverManager.getServer();
         
-        // Register function-related endpoints
+        // Register endpoints for all services
         registerFunctionEndpoints(server);
-        
-        // Register namespace and class endpoints
         registerNamespaceEndpoints(server);
-        
-        // Register structure and data type endpoints
         registerDataTypeEndpoints(server);
-        
-        // Register analysis endpoints
         registerAnalysisEndpoints(server);
-        
-        // Register memory and data endpoints
         registerMemoryEndpoints(server);
-        
-        // Register comments endpoints
         registerCommentEndpoints(server);
         
         Msg.info(this, "All API endpoints registered successfully");
@@ -92,12 +96,15 @@ public class ApiHandlerRegistry {
      */
     private void registerFunctionEndpoints(HttpServer server) {
         // List functions with pagination
-        server.createContext("/methods", exchange -> {
-            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-            int offset = HttpUtils.parseIntOrDefault(qparams.get("offset"), 0);
-            int limit = HttpUtils.parseIntOrDefault(qparams.get("limit"), 100);
-            String response = functionService.getAllFunctionNames(offset, limit);
-            HttpUtils.sendResponse(exchange, response);
+        server.createContext("/methods", new HttpHandler() {
+            @Override
+            public void handle(HttpExchange exchange) throws IOException {
+                Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
+                int offset = HttpUtils.parseIntOrDefault(qparams.get("offset"), 0);
+                int limit = HttpUtils.parseIntOrDefault(qparams.get("limit"), 100);
+                
+                HttpUtils.sendResponse(exchange, functionService.getAllFunctionNames(offset, limit));
+            }
         });
         
         // Decompile function by name
@@ -169,24 +176,32 @@ public class ApiHandlerRegistry {
         });
         
         // Set function prototype
-        server.createContext("/set_function_prototype", exchange -> {
-            Map<String, String> params = HttpUtils.parsePostParams(exchange);
-            String functionAddress = params.get("function_address");
-            String prototype = params.get("prototype");
-            
-            // Call the set prototype function and get detailed result
-            PrototypeResult result = functionService.setFunctionPrototype(functionAddress, prototype);
-            
-            if (result.isSuccess()) {
-                // Even with successful operations, include any warning messages for debugging
-                String successMsg = "Function prototype set successfully";
-                if (!result.getErrorMessage().isEmpty()) {
-                    successMsg += "\n\nWarnings/Debug Info:\n" + result.getErrorMessage();
+        server.createContext("/set_function_prototype", new HttpHandler() {
+            @Override
+            public void handle(HttpExchange exchange) throws IOException {
+                try {
+                    Map<String, String> params = HttpUtils.parsePostParams(exchange);
+                    String functionAddress = params.get("function_address");
+                    String prototype = params.get("prototype");
+                    
+                    // Call the set prototype function and get detailed result
+                    PrototypeResult result = functionService.setFunctionPrototype(functionAddress, prototype);
+                    
+                    // Format response based on success/failure and any messages
+                    String response;
+                    if (result.isSuccess()) {
+                        response = "Function prototype set successfully";
+                        if (!result.getErrorMessage().isEmpty()) {
+                            response += "\n\nWarnings/Debug Info:\n" + result.getErrorMessage();
+                        }
+                    } else {
+                        response = "Failed to set function prototype: " + result.getErrorMessage();
+                    }
+                    
+                    HttpUtils.sendResponse(exchange, response);
+                } catch (IOException e) {
+                    HttpUtils.sendResponse(exchange, "Error processing request: " + e.getMessage());
                 }
-                HttpUtils.sendResponse(exchange, successMsg);
-            } else {
-                // Return the detailed error message to the client
-                HttpUtils.sendResponse(exchange, "Failed to set function prototype: " + result.getErrorMessage());
             }
         });
     }
@@ -195,45 +210,20 @@ public class ApiHandlerRegistry {
      * Register namespace and class endpoints
      */
     private void registerNamespaceEndpoints(HttpServer server) {
-        // List classes
-        server.createContext("/classes", exchange -> {
-            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-            int offset = HttpUtils.parseIntOrDefault(qparams.get("offset"), 0);
-            int limit = HttpUtils.parseIntOrDefault(qparams.get("limit"), 100);
-            HttpUtils.sendResponse(exchange, namespaceService.getAllClassNames(offset, limit));
-        });
+        // Register classes endpoint
+        server.createContext("/classes", createPaginatedHandler(namespaceService::getAllClassNames));
         
-        // List namespaces
-        server.createContext("/namespaces", exchange -> {
-            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-            int offset = HttpUtils.parseIntOrDefault(qparams.get("offset"), 0);
-            int limit = HttpUtils.parseIntOrDefault(qparams.get("limit"), 100);
-            HttpUtils.sendResponse(exchange, namespaceService.listNamespaces(offset, limit));
-        });
+        // Register namespaces endpoint
+        server.createContext("/namespaces", createPaginatedHandler(namespaceService::listNamespaces));
         
-        // List symbols
-        server.createContext("/symbols", exchange -> {
-            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-            int offset = HttpUtils.parseIntOrDefault(qparams.get("offset"), 0);
-            int limit = HttpUtils.parseIntOrDefault(qparams.get("limit"), 100);
-            HttpUtils.sendResponse(exchange, namespaceService.listSymbols(offset, limit));
-        });
+        // Register symbols endpoint
+        server.createContext("/symbols", createPaginatedHandler(namespaceService::listSymbols));
         
-        // List imports
-        server.createContext("/imports", exchange -> {
-            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-            int offset = HttpUtils.parseIntOrDefault(qparams.get("offset"), 0);
-            int limit = HttpUtils.parseIntOrDefault(qparams.get("limit"), 100);
-            HttpUtils.sendResponse(exchange, namespaceService.listImports(offset, limit));
-        });
+        // Register imports endpoint
+        server.createContext("/imports", createPaginatedHandler(namespaceService::listImports));
         
-        // List exports
-        server.createContext("/exports", exchange -> {
-            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-            int offset = HttpUtils.parseIntOrDefault(qparams.get("offset"), 0);
-            int limit = HttpUtils.parseIntOrDefault(qparams.get("limit"), 100);
-            HttpUtils.sendResponse(exchange, namespaceService.listExports(offset, limit));
-        });
+        // Register exports endpoint
+        server.createContext("/exports", createPaginatedHandler(namespaceService::listExports));
         
         // Get symbol address
         server.createContext("/get_symbol_address", exchange -> {
@@ -256,20 +246,21 @@ public class ApiHandlerRegistry {
         });
         
         // Rename struct field
-        server.createContext("/renameStructField", exchange -> {
-            Map<String, String> params;
-            try {
-                params = HttpUtils.parsePostParams(exchange);
-            } catch (IOException e) {
-                HttpUtils.sendResponse(exchange, "Error parsing parameters: " + e.getMessage());
-                return;
+        server.createContext("/renameStructField", new HttpHandler() {
+            @Override
+            public void handle(HttpExchange exchange) throws IOException {
+                try {
+                    Map<String, String> params = HttpUtils.parsePostParams(exchange);
+                    String result = dataTypeService.renameStructField(
+                        params.get("structName"),
+                        params.get("oldFieldName"),
+                        params.get("newFieldName")
+                    );
+                    HttpUtils.sendResponse(exchange, result);
+                } catch (IOException e) {
+                    HttpUtils.sendResponse(exchange, "Error parsing parameters: " + e.getMessage());
+                }
             }
-            
-            String structName = params.get("structName");
-            String oldFieldName = params.get("oldFieldName");
-            String newFieldName = params.get("newFieldName");
-            String result = dataTypeService.renameStructField(structName, oldFieldName, newFieldName);
-            HttpUtils.sendResponse(exchange, result);
         });
     }
     
@@ -350,35 +341,46 @@ public class ApiHandlerRegistry {
      */
     private void registerCommentEndpoints(HttpServer server) {
         // Set decompiler comment
-        server.createContext("/set_decompiler_comment", exchange -> {
-            Map<String, String> params;
-            try {
-                params = HttpUtils.parsePostParams(exchange);
-            } catch (IOException e) {
-                HttpUtils.sendResponse(exchange, "Error parsing parameters: " + e.getMessage());
-                return;
-            }
-            
-            String address = params.get("address");
-            String comment = params.get("comment");
-            boolean success = commentService.setDecompilerComment(address, comment);
-            HttpUtils.sendResponse(exchange, success ? "Comment set successfully" : "Failed to set comment");
-        });
+        server.createContext("/set_decompiler_comment", createCommentHandler(commentService::setDecompilerComment));
         
         // Set disassembly comment
-        server.createContext("/set_disassembly_comment", exchange -> {
-            Map<String, String> params;
-            try {
-                params = HttpUtils.parsePostParams(exchange);
-            } catch (IOException e) {
-                HttpUtils.sendResponse(exchange, "Error parsing parameters: " + e.getMessage());
-                return;
+        server.createContext("/set_disassembly_comment", createCommentHandler(commentService::setDisassemblyComment));
+    }
+    
+    /**
+     * Helper method to create a pagination handler
+     */
+    private HttpHandler createPaginatedHandler(final PaginatedHandler handler) {
+        return new HttpHandler() {
+            @Override
+            public void handle(HttpExchange exchange) throws IOException {
+                Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
+                int offset = HttpUtils.parseIntOrDefault(qparams.get("offset"), 0);
+                int limit = HttpUtils.parseIntOrDefault(qparams.get("limit"), 100);
+                HttpUtils.sendResponse(exchange, handler.execute(offset, limit));
             }
-            
-            String address = params.get("address");
-            String comment = params.get("comment");
-            boolean success = commentService.setDisassemblyComment(address, comment);
-            HttpUtils.sendResponse(exchange, success ? "Comment set successfully" : "Failed to set comment");
-        });
+        };
+    }
+    
+    /**
+     * Helper method to create a comment handler
+     */
+    private HttpHandler createCommentHandler(final CommentHandler handler) {
+        return new HttpHandler() {
+            @Override
+            public void handle(HttpExchange exchange) throws IOException {
+                try {
+                    Map<String, String> params = HttpUtils.parsePostParams(exchange);
+                    String address = params.get("address");
+                    String comment = params.get("comment");
+                    boolean success = handler.execute(address, comment);
+                    
+                    HttpUtils.sendResponse(exchange, 
+                        success ? "Comment set successfully" : "Failed to set comment");
+                } catch (IOException e) {
+                    HttpUtils.sendResponse(exchange, "Error parsing parameters: " + e.getMessage());
+                }
+            }
+        };
     }
 }
