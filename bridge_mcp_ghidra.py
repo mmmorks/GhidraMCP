@@ -17,9 +17,7 @@ ghidra_server_url = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_GHIDRA_SERVER
 mcp = FastMCP("ghidra-mcp")
 
 def safe_get(endpoint: str, params: dict = None) -> list:
-    """
-    Perform a GET request with optional query parameters.
-    """
+    """Execute a GET request with optional parameters."""
     if params is None:
         params = {}
 
@@ -52,76 +50,54 @@ def safe_post(endpoint: str, data: dict | str) -> str:
 @mcp.tool()
 def list_methods(offset: int = 0, limit: int = 100) -> list:
     """
-    List all function names in the currently loaded Ghidra program with pagination.
+    List function names in the loaded Ghidra program with pagination.
     
-    In Ghidra, functions represent defined subroutines in the binary that have been
-    identified during analysis. This includes both user-defined functions and
-    automatically discovered ones.
+    Functions are defined subroutines in the binary (both user-defined and auto-discovered).
     
     Parameters:
-        offset: The starting index for pagination (0-based)
-        limit: Maximum number of function names to return
+        offset: Starting index for pagination (0-based)
+        limit: Maximum function names to return
     
-    Returns:
-        A list of strings containing function names. If no program is loaded,
-        returns a single-item list with an error message.
+    Returns: List of function names or error message if no program loaded
     
-    Example:
-        >>> list_methods(0, 10)  # Get first 10 function names
-        ['main', 'printf', 'malloc', ...]
+    Example: list_methods(0, 10) -> ['main', 'printf', 'malloc', ...]
     """
     return safe_get("methods", {"offset": offset, "limit": limit})
 
 @mcp.tool()
 def list_classes(offset: int = 0, limit: int = 100) -> list:
     """
-    List all namespace/class names in the currently loaded Ghidra program with pagination.
+    List namespace/class names in the loaded Ghidra program with pagination.
     
-    In Ghidra, namespaces organize symbols hierarchically, similar to how classes
-    organize code in object-oriented programming. This function returns all non-global
-    namespaces, which often correspond to classes in the original source code.
+    Namespaces organize symbols hierarchically, often corresponding to classes in source code.
     
     Parameters:
-        offset: The starting index for pagination (0-based)
-        limit: Maximum number of namespace/class names to return
+        offset: Starting index for pagination (0-based)
+        limit: Maximum namespace/class names to return
     
-    Returns:
-        A list of strings containing namespace/class names. If no program is loaded,
-        returns a single-item list with an error message.
+    Returns: List of namespace/class names or error message if no program loaded
     
-    Example:
-        >>> list_classes(0, 10)  # Get first 10 namespace/class names
-        ['String', 'ArrayList', 'HashMap', ...]
+    Example: list_classes(0, 10) -> ['String', 'ArrayList', 'HashMap', ...]
     """
     return safe_get("classes", {"offset": offset, "limit": limit})
 
 @mcp.tool()
 def rename_struct_field(struct_name: str, old_field_name: str, new_field_name: str) -> str:
     """
-    Rename a field within a structure data type in the Ghidra program.
+    Rename a field within a structure data type.
     
-    This function allows you to change the name of a field in a structure, which
-    improves readability and understanding of the decompiled code. The structure
-    must already exist in the Ghidra program's data type manager.
+    Improves readability of decompiled code. Structure must exist in data type manager.
     
     Parameters:
-        struct_name: The name of the structure (without path)
-        old_field_name: The current name of the field to rename. Can be either a user-defined
-                        name or an auto-generated name like "field1_0x10"
-        new_field_name: The new name to assign to the field
+        struct_name: Structure name (without path)
+        old_field_name: Current name (user-defined or auto-generated like "field1_0x10")
+        new_field_name: New name to assign
     
-    Returns:
-        A string indicating success or failure, with an error message if applicable.
+    Returns: Success or failure message
     
-    Notes:
-        - For auto-generated field names like "field1_0x10", the number after "field"
-          represents the index of the component in the structure.
-        - This operation modifies the Ghidra program and cannot be undone except by
-          renaming the field again.
+    Note: For auto-names like "field1_0x10", the number after "field" is the component index.
     
-    Example:
-        >>> rename_struct_field("HWND", "field0_0x0", "handle")
-        "Field renamed successfully"
+    Example: rename_struct_field("HWND", "field0_0x0", "handle")
     """
     return safe_post("renameStructField", {
         "structName": struct_name,
@@ -132,54 +108,36 @@ def rename_struct_field(struct_name: str, old_field_name: str, new_field_name: s
 @mcp.tool()
 def decompile_function(name: str) -> str:
     """
-    Decompile a specific function by name and return the decompiled C code.
+    Decompile a function by name to C-like pseudocode.
     
-    This function uses Ghidra's decompiler to convert assembly code into readable
-    C-like pseudocode. The decompiler attempts to reconstruct high-level constructs
-    like loops, conditionals, and function calls.
+    Converts assembly to readable code with high-level constructs (loops, conditionals).
     
     Parameters:
-        name: The name of the function to decompile. This should match exactly
-              with a function name in the program.
+        name: Function name (must match exactly)
     
-    Returns:
-        A string containing the decompiled C code if successful, or an error message
-        if the function cannot be found or decompilation fails.
+    Returns: Decompiled C code or error message
     
-    Notes:
-        - The quality of decompilation depends on how well Ghidra has analyzed the binary
-        - Variable names may be auto-generated (e.g., "local_10") unless they've been renamed
-        - Data types may be approximated based on usage patterns
+    Note: Variable names may be auto-generated (e.g., "local_10") unless renamed.
     
-    Example:
-        >>> decompile_function("main")
-        "int main(int argc, char **argv) {\\n  printf(\\"Hello, World!\\");\\n  return 0;\\n}"
+    Example: decompile_function("main") -> "int main(int argc, char **argv) {...}"
     """
     return safe_post("decompile", name)
 
 @mcp.tool()
 def list_references(address: str, offset: int = 0, limit: int = 100) -> list:
     """
-    List all references (cross-references or xrefs) to the specified address with pagination.
+    List cross-references (xrefs) to the specified address.
     
-    In reverse engineering, cross-references show where a particular address is referenced
-    from in the code. This helps track how functions, variables, or data are used throughout
-    the program.
+    Shows locations where an address is referenced from, helping track usage.
     
     Parameters:
-        address: The address to find references to, in Ghidra's address format
-                (e.g., "00401000" or "ram:00401000")
-        offset: The starting index for pagination (0-based)
-        limit: Maximum number of references to return
+        address: Target address (e.g., "00401000" or "ram:00401000")
+        offset: Starting index for pagination (0-based)
+        limit: Maximum references to return
     
-    Returns:
-        A list of strings describing each reference, including the source address,
-        reference type (call, data, etc.), and containing function if applicable.
-        If no references are found or an error occurs, returns an appropriate message.
+    Returns: References with source address, type, and containing function
     
-    Example:
-        >>> list_references("00401000")
-        ['00400f50 -> 00401000 (from CALL in main)', '00400f80 -> 00401000 (from CALL in init)']
+    Example: list_references("00401000") -> ['00400f50 -> 00401000 (from CALL in main)', ...]
     """
     return safe_get("references", {"address": address, "offset": offset, "limit": limit})
 
@@ -188,25 +146,17 @@ def rename_function(old_name: str, new_name: str) -> str:
     """
     Rename a function by its current name to a new user-defined name.
     
-    Renaming functions is a key part of the reverse engineering process, as it helps
-    document the purpose of code and improves readability of the decompiled output.
+    Documents code purpose and improves decompiled output readability.
     
     Parameters:
-        old_name: The current name of the function to rename
-        new_name: The new name to assign to the function
+        old_name: Current function name
+        new_name: New function name
     
-    Returns:
-        A string indicating success ("Renamed successfully") or failure ("Rename failed").
+    Returns: Success or failure message
     
-    Notes:
-        - Function names must be unique within the program
-        - Some names may be reserved or invalid in certain contexts
-        - This operation modifies the Ghidra program and cannot be undone except by
-          renaming the function again
+    Note: Function names must be unique within the program.
     
-    Example:
-        >>> rename_function("FUN_00401000", "initialize_system")
-        "Renamed successfully"
+    Example: rename_function("FUN_00401000", "initialize_system")
     """
     return safe_post("renameFunction", {"oldName": old_name, "newName": new_name})
 
@@ -215,75 +165,51 @@ def rename_data(address: str, new_name: str) -> str:
     """
     Rename a data label at the specified address.
     
-    Data labels identify and name data elements in the binary, such as strings,
-    arrays, structures, or other variables. Renaming these improves the readability
-    of decompiled code that references this data.
+    Labels identify data elements (strings, arrays, structures) to improve code readability.
     
     Parameters:
-        address: The address of the data to rename, in Ghidra's address format
-                (e.g., "00401000" or "ram:00401000")
-        new_name: The new name to assign to the data
+        address: Data address (e.g., "00401000" or "ram:00401000")
+        new_name: New name to assign
     
-    Returns:
-        A string indicating that the rename operation was attempted. Success or failure
-        is not directly reported in the return value.
+    Returns: Message indicating operation was attempted
     
-    Notes:
-        - This function will create a new label if one doesn't exist at the address
-        - The address must point to defined data, not code
-        - This operation modifies the Ghidra program and cannot be undone except by
-          renaming the data again
+    Note: Creates a new label if none exists at the address. Address must point to data, not code.
     
-    Example:
-        >>> rename_data("00402000", "config_table")
-        "Rename data attempted"
+    Example: rename_data("00402000", "config_table")
     """
     return safe_post("renameData", {"address": address, "newName": new_name})
 
 @mcp.tool()
 def list_structures(offset: int = 0, limit: int = 100) -> list:
     """
-    List all structure/type definitions in the program with pagination.
+    List structure/type definitions in the program with pagination.
     
-    Structures in Ghidra represent complex data types composed of multiple fields,
-    similar to C structs. This function returns a list of all structures defined
-    in the program's data type manager, along with their field information.
+    Structures represent complex data types similar to C structs.
     
     Parameters:
-        offset: The starting index for pagination (0-based)
-        limit: Maximum number of structures to return
+        offset: Starting index for pagination (0-based)
+        limit: Maximum structures to return
     
-    Returns:
-        A list of strings, each describing a structure and its fields in the format:
-        "StructName: {type1 field1, type2 field2, ...}"
-        If no program is loaded, returns a single-item list with an error message.
+    Returns: Structures with fields in format "StructName: {type1 field1, type2 field2, ...}"
     
-    Example:
-        >>> list_structures(0, 5)
-        ['POINT: {int x, int y}', 'RECT: {int left, int top, int right, int bottom}', ...]
+    Example: list_structures(0, 5) -> ['POINT: {int x, int y}', 'RECT: {int left...}', ...]
     """
     return safe_get("structures", {"offset": offset, "limit": limit})
 
 @mcp.tool()
 def list_segments(offset: int = 0, limit: int = 100) -> list:
     """
-    List all memory segments in the program with pagination.
+    List memory segments in the program with pagination.
     
-    Memory segments represent distinct regions in the binary's address space, such as
-    code (.text), data (.data), read-only data (.rodata), etc. Understanding the
-    memory layout is important for reverse engineering.
+    Shows distinct regions in binary's address space (.text, .data, .rodata, etc.)
     
     Parameters:
-        offset: The starting index for pagination (0-based)
-        limit: Maximum number of segments to return
+        offset: Starting index for pagination (0-based)
+        limit: Maximum segments to return
     
-    Returns:
-        A list of strings describing each memory segment, including name and address range.
-        If no program is loaded, returns a single-item list with an error message.
+    Returns: Memory segments with name and address range
     
-    Example:
-        >>> list_segments()
-        ['.text: 00401000 - 00410000', '.data: 00411000 - 00412000', ...]
+    Example: list_segments() -> ['.text: 00401000 - 00410000', '.data: 00411000 - 00412000', ...]
     """
     return safe_get("segments", {"offset": offset, "limit": limit})
 
@@ -292,22 +218,15 @@ def list_imports(offset: int = 0, limit: int = 100) -> list:
     """
     List imported symbols in the program with pagination.
     
-    Imported symbols represent functions or data that the program uses from external
-    libraries or modules. These are typically resolved at load time by the dynamic
-    linker. Analyzing imports helps understand the program's dependencies and
-    functionality.
+    Shows functions/data used from external libraries, resolved at load time.
     
     Parameters:
-        offset: The starting index for pagination (0-based)
-        limit: Maximum number of imported symbols to return
+        offset: Starting index for pagination (0-based)
+        limit: Maximum imports to return
     
-    Returns:
-        A list of strings describing each imported symbol and its address.
-        If no program is loaded, returns a single-item list with an error message.
+    Returns: Imported symbols with their addresses
     
-    Example:
-        >>> list_imports(0, 5)
-        ['printf -> EXTERNAL:00000000', 'malloc -> EXTERNAL:00000000', ...]
+    Example: list_imports(0, 5) -> ['printf -> EXTERNAL:00000000', 'malloc -> EXTERNAL:00000000', ...]
     """
     return safe_get("imports", {"offset": offset, "limit": limit})
 
@@ -316,77 +235,53 @@ def list_exports(offset: int = 0, limit: int = 100) -> list:
     """
     List exported functions/symbols with pagination.
     
-    Exported symbols represent functions or data that the program makes available
-    for use by other modules. In libraries, these are the public API. In executables,
-    exports are less common but may exist for plugins or dynamic interaction.
+    Shows functions/data made available to other modules (public API in libraries).
     
     Parameters:
-        offset: The starting index for pagination (0-based)
-        limit: Maximum number of exported symbols to return
+        offset: Starting index for pagination (0-based)
+        limit: Maximum exports to return
     
-    Returns:
-        A list of strings describing each exported symbol and its address.
-        If no program is loaded, returns a single-item list with an error message.
+    Returns: Exported symbols with their addresses
     
-    Example:
-        >>> list_exports(0, 5)
-        ['initialize_library -> 00401000', 'get_version -> 00401050', ...]
+    Example: list_exports(0, 5) -> ['initialize_library -> 00401000', 'get_version -> 00401050', ...]
     """
     return safe_get("exports", {"offset": offset, "limit": limit})
 
 @mcp.tool()
 def list_namespaces(offset: int = 0, limit: int = 100) -> list:
     """
-    List all non-global namespaces in the program with pagination.
+    List non-global namespaces in the program with pagination.
     
-    Namespaces in Ghidra organize symbols hierarchically, similar to namespaces in
-    programming languages. They often correspond to classes, modules, or packages
-    in the original source code.
+    Namespaces organize symbols hierarchically (like classes, modules, or packages).
     
     Parameters:
-        offset: The starting index for pagination (0-based)
-        limit: Maximum number of namespaces to return
+        offset: Starting index for pagination (0-based)
+        limit: Maximum namespaces to return
     
-    Returns:
-        A list of strings containing namespace names, excluding the global namespace.
-        If no program is loaded, returns a single-item list with an error message.
+    Returns: List of namespace names excluding global namespace
     
-    Notes:
-        - This function is similar to list_classes() but focuses specifically on
-          the namespace concept rather than implying class semantics
+    Note: Similar to list_classes() but focuses on namespace concept.
     
-    Example:
-        >>> list_namespaces(0, 5)
-        ['com', 'com.example', 'com.example.app', ...]
+    Example: list_namespaces(0, 5) -> ['com', 'com.example', 'com.example.app', ...]
     """
     return safe_get("namespaces", {"offset": offset, "limit": limit})
 
 @mcp.tool()
 def list_symbols(offset: int = 0, limit: int = 100) -> list:
     """
-    List all symbols (functions, variables, etc.) in the program with pagination.
+    List all symbols (functions, variables, labels, etc.) with pagination.
     
-    Symbols in Ghidra represent named entities in the program, including functions,
-    variables, labels, and other named elements. This comprehensive listing includes
-    all symbol types.
+    Comprehensive listing of all named entities in the program.
     
     Parameters:
-        offset: The starting index for pagination (0-based)
-        limit: Maximum number of symbols to return
+        offset: Starting index for pagination (0-based)
+        limit: Maximum symbols to return
     
-    Returns:
-        A list of strings describing each symbol and its address in the format:
-        "symbol_name -> address"
-        If no program is loaded, returns a single-item list with an error message.
+    Returns: Symbols with addresses in format "symbol_name -> address"
     
-    Notes:
-        - This is a more comprehensive listing compared to specialized functions like
-          list_methods() or list_imports()
-        - The list may be very large for complex programs
+    Note: More comprehensive than list_methods() or list_imports().
     
-    Example:
-        >>> list_symbols(0, 5)
-        ['main -> 00401000', 'gVar1 -> 00410010', 'init -> 00401100', ...]
+    Example: list_symbols(0, 5) -> ['main -> 00401000', 'gVar1 -> 00410010', ...]
     """
     return safe_get("symbols", {"offset": offset, "limit": limit})
 
@@ -395,54 +290,35 @@ def list_data_items(offset: int = 0, limit: int = 100) -> list:
     """
     List defined data labels and their values with pagination.
     
-    Data items in Ghidra represent memory locations that contain data rather than code.
-    These can include strings, arrays, structures, and primitive values that have been
-    identified and typed during analysis.
+    Shows memory locations containing data (strings, arrays, structures, primitives).
     
     Parameters:
-        offset: The starting index for pagination (0-based)
-        limit: Maximum number of data items to return
+        offset: Starting index for pagination (0-based)
+        limit: Maximum data items to return
     
-    Returns:
-        A list of strings describing each data item, including its address, label (if any),
-        and value representation. If no program is loaded, returns a single-item list
-        with an error message.
+    Returns: Data items with address, label and value
     
-    Notes:
-        - Data items without explicit labels will be shown as "(unnamed)"
-        - Non-ASCII characters in values are escaped for display
+    Note: Unlabeled items shown as "(unnamed)"
     
-    Example:
-        >>> list_data_items(0, 3)
-        ['00410000: hello_msg = "Hello, World!"', 
-         '00410010: error_code = 0x1', 
-         '00410014: (unnamed) = 0x0']
+    Example: list_data_items(0, 3) -> ['00410000: hello_msg = "Hello, World!"', ...]
     """
     return safe_get("data", {"offset": offset, "limit": limit})
 
 @mcp.tool()
 def search_functions_by_name(query: str, offset: int = 0, limit: int = 100) -> list:
     """
-    Search for functions whose name contains the given substring.
+    Search for functions by partial name match (case-insensitive).
     
-    This function allows you to find functions by partial name matches, which is
-    useful when exploring a large binary or looking for related functionality.
-    The search is case-insensitive.
+    Helps explore large binaries or find related functionality.
     
     Parameters:
-        query: The substring to search for in function names (required)
-        offset: The starting index for pagination (0-based)
-        limit: Maximum number of matching functions to return
+        query: Substring to search for in function names (required)
+        offset: Starting index for pagination (0-based)
+        limit: Maximum matches to return
     
-    Returns:
-        A list of strings describing matching functions in the format:
-        "function_name @ address"
-        If no matches are found, returns a message indicating no matches.
-        If query is empty, returns an error message.
+    Returns: Matching functions formatted as "function_name @ address"
     
-    Example:
-        >>> search_functions_by_name("init")
-        ['initialize @ 00401000', 'init_display @ 00401050', 'reinitialize @ 00401100']
+    Example: search_functions_by_name("init") -> ['initialize @ 00401000', ...]
     """
     if not query:
         return ["Error: query string is required"]
@@ -453,30 +329,14 @@ def get_function_by_address(address: str) -> str:
     """
     Get detailed information about a function at the specified address.
     
-    This function retrieves information about the function located at or containing
-    the specified address, including its name, signature, entry point, and body range.
+    Retrieves name, signature, entry point and body range for the function.
     
     Parameters:
-        address: The address to look up, in Ghidra's address format
-                (e.g., "00401000" or "ram:00401000")
+        address: Address to look up (e.g., "00401000" or "ram:00401000")
     
-    Returns:
-        A string containing detailed information about the function, including:
-        - Function name
-        - Address
-        - Function signature (parameter and return types)
-        - Entry point address
-        - Body address range (min to max)
-        
-        If no function is found at the address or an error occurs, returns an
-        appropriate error message.
+    Returns: Detailed function information or error message
     
-    Example:
-        >>> get_function_by_address("00401000")
-        "Function: main at 00401000
-        Signature: int main(int argc, char ** argv)
-        Entry: 00401000
-        Body: 00401000 - 00401050"
+    Example: get_function_by_address("00401000") -> "Function: main at 00401000..."
     """
     return "\n".join(safe_get("get_function_by_address", {"address": address}))
 
@@ -485,57 +345,32 @@ def get_current_address() -> str:
     """
     Get the address currently selected by the user in the Ghidra GUI.
     
-    This function retrieves the address that is currently selected or under the
-    cursor in Ghidra's Code Browser or Decompiler view. This is useful for
-    context-aware operations that need to work with the user's current focus.
+    Retrieves cursor location in Code Browser or Decompiler view.
     
-    Parameters:
-        None
+    Parameters: None
     
-    Returns:
-        A string containing the currently selected address in Ghidra's address format.
-        If no address is selected or the Code Viewer service is not available,
-        returns an appropriate error message.
+    Returns: Currently selected address or error message
     
-    Notes:
-        - This function requires that the Ghidra GUI is running and a program is loaded
-        - The user must have selected a location in the Code Browser or Decompiler
+    Note: Requires Ghidra GUI running with a selected location.
     
-    Example:
-        >>> get_current_address()
-        "00401234"
+    Example: get_current_address() -> "00401234"
     """
     return "\n".join(safe_get("get_current_address"))
 
 @mcp.tool()
 def get_current_function() -> str:
     """
-    Get information about the function currently selected by the user in the Ghidra GUI.
+    Get information about the function currently selected in the Ghidra GUI.
     
-    This function retrieves details about the function containing the address that
-    is currently selected in Ghidra's Code Browser or Decompiler view. This is useful
-    for context-aware operations that need to work with the user's current focus.
+    Returns details about function containing the selected address.
     
-    Parameters:
-        None
+    Parameters: None
     
-    Returns:
-        A string containing information about the current function, including:
-        - Function name
-        - Entry point address
-        - Function signature
-        
-        If no function contains the current selection, or if the Code Viewer service
-        is not available, returns an appropriate error message.
+    Returns: Current function information (name, entry point, signature) or error
     
-    Notes:
-        - This function requires that the Ghidra GUI is running and a program is loaded
-        - The user must have selected a location within a defined function
+    Note: Requires Ghidra GUI with location selected within a function.
     
-    Example:
-        >>> get_current_function()
-        "Function: main at 00401000
-        Signature: int main(int argc, char ** argv)"
+    Example: get_current_function() -> "Function: main at 00401000..."
     """
     return "\n".join(safe_get("get_current_function"))
 
@@ -544,151 +379,89 @@ def list_functions() -> list:
     """
     List all functions in the database with their addresses.
     
-    This function provides a complete listing of all functions defined in the
-    currently loaded program, along with their entry point addresses. Unlike
-    list_methods(), this function returns address information for each function.
+    Complete listing without pagination (unlike list_methods()).
     
-    Parameters:
-        None
+    Parameters: None
     
-    Returns:
-        A list of strings describing each function in the format:
-        "function_name at address"
-        If no program is loaded, returns a single-item list with an error message.
+    Returns: Functions as "function_name at address"
     
-    Notes:
-        - This function returns all functions at once without pagination
-        - For large programs with many functions, consider using list_methods()
-          with pagination instead
+    Note: For large programs, use list_methods() with pagination instead.
     
-    Example:
-        >>> list_functions()
-        ['main at 00401000', 'initialize at 00401050', 'cleanup at 00401100', ...]
+    Example: list_functions() -> ['main at 00401000', 'initialize at 00401050', ...]
     """
     return safe_get("list_functions")
 
 @mcp.tool()
 def decompile_function_by_address(address: str) -> str:
     """
-    Decompile a function at the given address and return the decompiled C code.
+    Decompile a function at the given address to C-like pseudocode.
     
-    This function uses Ghidra's decompiler to convert assembly code into readable
-    C-like pseudocode for the function at or containing the specified address.
+    Converts assembly code to readable high-level code for the specified function.
     
     Parameters:
-        address: The address of the function to decompile, in Ghidra's address format
-                (e.g., "00401000" or "ram:00401000"). This can be either the entry point
-                of the function or any address within the function body.
+        address: Function address (e.g., "00401000") - can be entry point or any address within function
     
-    Returns:
-        A string containing the decompiled C code if successful, or an error message
-        if the function cannot be found or decompilation fails.
+    Returns: Decompiled C code or error message
     
-    Notes:
-        - The quality of decompilation depends on how well Ghidra has analyzed the binary
-        - Variable names may be auto-generated (e.g., "local_10") unless they've been renamed
-        - Data types may be approximated based on usage patterns
-        - This function will first try to find a function exactly at the given address,
-          and if not found, will look for a function containing the address
+    Note: Variable names may be auto-generated unless renamed. Tries exact address match first.
     
-    Example:
-        >>> decompile_function_by_address("00401000")
-        "int main(int argc, char **argv) {\\n  printf(\\"Hello, World!\\");\\n  return 0;\\n}"
+    Example: decompile_function_by_address("00401000") -> "int main(int argc, char **argv) {...}"
     """
     return "\n".join(safe_get("decompile_function", {"address": address}))
 
 @mcp.tool()
 def disassemble_function(address: str) -> list:
     """
-    Get assembly code (address: instruction; comment) for a function.
+    Get assembly code for a function with address and comments.
     
-    This function retrieves the assembly instructions for the function at or containing
-    the specified address. Each instruction is returned with its address and any
-    associated end-of-line comments.
+    Retrieves assembly instructions for function at or containing the specified address.
     
     Parameters:
-        address: The address of the function to disassemble, in Ghidra's address format
-                (e.g., "00401000" or "ram:00401000"). This can be either the entry point
-                of the function or any address within the function body.
+        address: Function address (e.g., "00401000") - can be entry point or any address within
     
-    Returns:
-        A list of strings, each representing one assembly instruction in the format:
-        "address: instruction [; comment]"
-        If no function is found at the address or an error occurs, returns an
-        appropriate error message.
+    Returns: List of assembly instructions with format "address: instruction [; comment]"
     
-    Notes:
-        - The assembly syntax depends on the processor architecture of the binary
-        - Comments shown are end-of-line (EOL) comments from the Ghidra database
-        - This function will first try to find a function exactly at the given address,
-          and if not found, will look for a function containing the address
+    Note: Assembly syntax depends on processor architecture. Shows EOL comments if present.
     
-    Example:
-        >>> disassemble_function("00401000")
-        ['00401000: PUSH EBP', '00401001: MOV EBP,ESP', '00401003: CALL printf ; Print greeting']
+    Example: disassemble_function("00401000") -> ['00401000: PUSH EBP', '00401001: MOV EBP,ESP', ...]
     """
     return safe_get("disassemble_function", {"address": address})
 
 @mcp.tool()
 def set_decompiler_comment(address: str, comment: str) -> str:
     """
-    Set a comment for a given address in the function pseudocode.
+    Set a comment for an address in the decompiled pseudocode view.
     
-    This function adds a pre-comment to the specified address in the decompiled
-    C-like pseudocode view. Comments help document the code and explain its purpose
-    or behavior, which is especially valuable in reverse engineering.
+    Adds a pre-comment to document code purpose or behavior in decompiled output.
     
     Parameters:
-        address: The address where the comment should be placed, in Ghidra's address format
-                (e.g., "00401000" or "ram:00401000")
-        comment: The text of the comment to add
+        address: Target address (e.g., "00401000" or "ram:00401000")
+        comment: Comment text to add
     
-    Returns:
-        A string indicating success ("Comment set successfully") or failure
-        ("Failed to set comment") with any error details.
+    Returns: Success or failure message with details
     
-    Notes:
-        - Comments are stored in the Ghidra program database and will persist
-          between sessions
-        - This adds a PRE_COMMENT, which appears before the line in the decompiler view
-        - This operation modifies the Ghidra program and cannot be undone except by
-          removing or changing the comment
+    Note: Comments persist in Ghidra database between sessions. Appears before the line.
     
-    Example:
-        >>> set_decompiler_comment("00401010", "Initialize the configuration")
-        "Comment set successfully"
+    Example: set_decompiler_comment("00401010", "Initialize the configuration")
     """
     return safe_post("set_decompiler_comment", {"address": address, "comment": comment})
 
 @mcp.tool()
 def set_disassembly_comment(address: str, comment: str) -> str:
     """
-    Set a comment for a given address in the function disassembly view.
+    Set a comment for an address in the assembly listing view.
     
-    This function adds an end-of-line (EOL) comment to the specified address in the
-    assembly listing view. Comments help document the code and explain its purpose
-    or behavior, which is especially valuable in reverse engineering.
+    Adds an end-of-line (EOL) comment to document the instruction's purpose.
     
     Parameters:
-        address: The address where the comment should be placed, in Ghidra's address format
-                (e.g., "00401000" or "ram:00401000")
-        comment: The text of the comment to add
+        address: Target address (e.g., "00401000" or "ram:00401000")
+        comment: Comment text to add
     
-    Returns:
-        A string indicating success ("Comment set successfully") or failure
-        ("Failed to set comment") with any error details.
+    Returns: Success or failure message with details
     
-    Notes:
-        - Comments are stored in the Ghidra program database and will persist
-          between sessions
-        - This adds an EOL_COMMENT, which appears at the end of the line in the
-          disassembly view
-        - This operation modifies the Ghidra program and cannot be undone except by
-          removing or changing the comment
+    Note: Comments persist in Ghidra database. Appears at the end of the line.
     
-    Example:
-        >>> set_disassembly_comment("00401010", "Initialize EAX register")
-        "Comment set successfully"
+    Example: set_disassembly_comment("00401010", "Initialize EAX register")
     """
     return safe_post("set_disassembly_comment", {"address": address, "comment": comment})
 
@@ -697,31 +470,17 @@ def rename_function_by_address(function_address: str, new_name: str) -> str:
     """
     Rename a function identified by its address.
     
-    This function changes the name of a function at the specified address, which
-    improves readability and understanding of the program. Unlike rename_function(),
-    which requires the current function name, this function identifies the target
-    function by its address.
+    Alternative to rename_function() that uses address instead of current name.
     
     Parameters:
-        function_address: The address of the function to rename, in Ghidra's address format
-                          (e.g., "00401000" or "ram:00401000")
-        new_name: The new name to assign to the function
+        function_address: Address of function (e.g., "00401000")
+        new_name: New name to assign
     
-    Returns:
-        A string indicating success ("Function renamed successfully") or failure
-        ("Failed to rename function") with any error details.
+    Returns: Success or failure message
     
-    Notes:
-        - Function names must be unique within the program
-        - Some names may be reserved or invalid in certain contexts
-        - This operation modifies the Ghidra program and cannot be undone except by
-          renaming the function again
-        - This function will look for a function exactly at the given address, or
-          containing the address if no exact match is found
+    Note: Function names must be unique. Will find function at or containing the address.
     
-    Example:
-        >>> rename_function_by_address("00401000", "initialize_system")
-        "Function renamed successfully"
+    Example: rename_function_by_address("00401000", "initialize_system")
     """
     return safe_post("rename_function_by_address", {"function_address": function_address, "new_name": new_name})
 
@@ -730,75 +489,37 @@ def set_function_prototype(function_address: str, prototype: str) -> str:
     """
     Set or modify a function's signature/prototype.
     
-    This function changes the signature of a function at the specified address,
-    including its return type, parameter types, and parameter names. This is
-    particularly useful for improving the decompiler output by providing more
-    accurate type information.
+    Changes return type, parameter types and names to improve decompiler output.
     
     Parameters:
-        function_address: The address of the function to modify, in Ghidra's address format
-                          (e.g., "00401000" or "ram:00401000")
-        prototype: The new function prototype in C-style syntax, including return type,
-                   function name, and parameters. For example:
-                   "int main(int argc, char **argv)"
+        function_address: Function address (e.g., "00401000")
+        prototype: C-style function signature (e.g., "int main(int argc, char **argv)")
     
-    Returns:
-        A string indicating success or failure, with additional details or error messages.
-        Successful operations may include warnings or debug information.
+    Returns: Success or failure message with details
     
-    Notes:
-        - The prototype must follow C syntax rules
-        - The function name in the prototype is ignored; only the types matter
-        - Parameter names will be applied to the function's variables
-        - This operation modifies the Ghidra program and cannot be undone except by
-          setting the prototype again
-        - This function may affect the decompiler output significantly
+    Note: Function name in prototype is ignored; only types matter. Parameter names are applied.
     
-    Example:
-        >>> set_function_prototype("00401000", "int process_data(char *buffer, size_t length)")
-        "Function prototype set successfully"
+    Example: set_function_prototype("00401000", "int process_data(char *buffer, size_t length)")
     """
     return safe_post("set_function_prototype", {"function_address": function_address, "prototype": prototype})
 
 @mcp.tool()
 def set_local_variable_type(function_address: str, variable_name: str, new_type: str) -> str:
     """
-    Set or change the data type of a local variable in a function.
+    Set data type for a local variable in a function.
     
-    This function modifies the data type of a local variable within a function,
-    which can improve the accuracy of the decompiler output and help in understanding
-    the variable's purpose and usage.
+    Improves decompiler output and clarifies variable purpose.
     
     Parameters:
-        function_address: The address of the function containing the variable,
-                          in Ghidra's address format (e.g., "00401000")
-        variable_name: The name of the variable whose type should be changed
-        new_type: The new data type to assign, as a string. This can be:
-                  - A built-in type (e.g., "int", "char", "float")
-                  - A pointer type (e.g., "char *" or "PCHAR" for Windows-style pointers)
-                  - A structure name (e.g., "POINT" or "FILE")
+        function_address: Function address (e.g., "00401000")
+        variable_name: Variable name to change
+        new_type: New data type as string ("int", "char *", "POINT", etc.)
     
-    Returns:
-        A string containing detailed information about the operation, including:
-        - The variable and type being set
-        - Whether the type was found in the data type manager
-        - Success or failure status
+    Returns: Detailed operation info (variable, type resolution, success/failure)
     
-    Notes:
-        - If the exact type is not found, the function will try to resolve it using
-          common naming conventions or fall back to a default type
-        - Windows-style pointer types (e.g., "PVOID" for "void*") are supported
-        - This operation modifies the Ghidra program and cannot be undone except by
-          changing the type again
-        - This function uses Ghidra's high-level variable system (HighVariable)
+    Note: Supports built-in types, pointers, and structures. Windows-style types also supported.
     
-    Example:
-        >>> set_local_variable_type("00401000", "local_10", "POINT")
-        "Setting variable type: local_10 to POINT in function at 00401000
-        
-        Found type: /POINT
-        
-        Result: Variable type set successfully"
+    Example: set_local_variable_type("00401000", "local_10", "POINT")
     """
     return safe_post("set_local_variable_type", {"function_address": function_address, "variable_name": variable_name, "new_type": new_type})
 
@@ -806,38 +527,19 @@ def set_local_variable_type(function_address: str, variable_name: str, new_type:
 def rename_variable(function_name: str, old_name: str, new_name: str) -> dict:
     """
     Rename a local variable within a function identified by name.
-
-    This function changes the name of a local variable within a function's scope
-    which improves readability of the decompiled code. Unlike rename_local_variable()
-    which identifies the function by address, this function uses the function's name.
-
+    
+    Improves readability of decompiled code by using meaningful variable names.
+    
     Parameters:
-        function_name: The name of the function containing the variable
-        old_name: The current name of the variable to rename
-        new_name: The new name to assign to the variable
-
-    Returns:
-        A dictionary containing:
-        - 'status': A string indicating success ("Variable renamed") or failure with an error message
-        - 'variables': A list of dictionaries, each containing information about a variable in the function:
-            - 'name': The variable name
-            - 'dataType': The variable's data type
-
-    Notes:
-        - This operation affects how the variable appears in the decompiler view
-        - Variable names must be unique within the function's scope
-        - This operation modifies the Ghidra program and cannot be undone except by
-          renaming the variable again
-        - If multiple functions have the same name, the first one found will be used
-
-    Example:
-        >>> result = rename_variable("main", "local_10", "configValue")
-        >>> print(result['status'])
-        "Variable renamed"
-        >>> print(len(result['variables']))
-        5
-        >>> print(result['variables'][0]['name'])
-        "configValue"
+        function_name: Name of function containing the variable
+        old_name: Current variable name
+        new_name: New variable name to assign
+    
+    Returns: Dictionary with status and list of variables in the function
+    
+    Note: Uses function name rather than address. Variable names must be unique within scope.
+    
+    Example: rename_variable("main", "local_10", "configValue")
     """
     return safe_post("renameVariable", {
         "functionName": function_name,
@@ -850,48 +552,17 @@ def analyze_control_flow(address: str) -> str:
     """
     Analyze the control flow of a function at the given address.
     
-    This function performs control flow analysis on the specified function and
-    returns a detailed textual representation of its control flow graph (CFG).
-    The CFG shows how basic blocks are connected through different types of
-    control flow transfers (jumps, calls, returns).
+    Creates a textual control flow graph (CFG) showing how basic blocks connect.
     
     Parameters:
-        address: The address of the function to analyze, in Ghidra's address format
-                (e.g., "00401000" or "ram:00401000"). This can be either the entry point
-                of the function or any address within the function body.
+        address: Function address (e.g., "00401000") - entry point or any address within
     
-    Returns:
-        A multi-line string containing a detailed description of the function's
-        control flow graph, including:
-        - Basic blocks with their address ranges
-        - Flow types between blocks (conditional/unconditional jumps, calls, returns)
-        - Instructions within each block
-        
-        If no function is found at the address or an error occurs, returns an
-        appropriate error message.
+    Returns: Detailed CFG with blocks, jumps, and instructions
     
-    Notes:
-        - Basic blocks are sequences of instructions with a single entry point and
-          a single exit point (no branches in or out except at the beginning and end)
-        - This analysis uses Ghidra's BasicBlockModel to identify blocks and their
-          relationships
-        - Understanding control flow is essential for comprehending program logic,
-          especially for complex functions with multiple branches and loops
+    Note: Basic blocks are instruction sequences with single entry/exit points.
+    Essential for understanding branching and loops.
     
-    Example:
-        >>> analyze_control_flow("00401000")
-        "Control Flow Analysis for function: main at 00401000
-        
-        Block at 00401000 (00401000 - 00401010)
-          - Conditional Jump to 00401020
-          - Fallthrough to 00401011
-          Instructions:
-            00401000: PUSH EBP
-            00401001: MOV EBP,ESP
-            00401003: CMP EAX,0
-            00401006: JZ 00401020
-            ...
-        "
+    Example: analyze_control_flow("00401000") -> "Control Flow Analysis for function:..."
     """
     return "\n".join(safe_get("analyze_control_flow", {"address": address}))
 
@@ -900,48 +571,17 @@ def analyze_data_flow(address: str, variable: str) -> str:
     """
     Analyze the data flow for a variable in a function.
     
-    This function performs data flow analysis on a specific variable within the
-    specified function. It tracks where the variable is defined (written to) and
-    where it is used (read from) throughout the function's execution paths.
+    Tracks where a variable is defined (written) and used (read) throughout execution paths.
     
     Parameters:
-        address: The address of the function to analyze, in Ghidra's address format
-                (e.g., "00401000" or "ram:00401000")
-        variable: The name of the variable to track within the function
+        address: Function address (e.g., "00401000")
+        variable: Variable name to track
     
-    Returns:
-        A multi-line string containing a detailed analysis of the variable's data flow,
-        including:
-        - Variable information (name, type, storage locations)
-        - All definitions (where the variable is assigned values)
-        - All uses (where the variable's value is read)
-        - The instructions associated with each definition and use
-        
-        If the function or variable is not found, or an error occurs, returns an
-        appropriate error message.
+    Returns: Detailed analysis with variable info, definitions and uses
     
-    Notes:
-        - This analysis uses Ghidra's decompiler and PCode operations to track
-          variable usage at a low level
-        - Data flow analysis helps understand how values propagate through a program
-        - This is particularly useful for understanding complex algorithms or
-          identifying potential vulnerabilities
-        - The analysis works with Ghidra's high-level variables (HighVariable)
+    Note: Helps understand value propagation and useful for analyzing algorithms.
     
-    Example:
-        >>> analyze_data_flow("00401000", "local_10")
-        "Data Flow Analysis for variable 'local_10' in function main at 00401000
-        
-        Variable information:
-          Name: local_10
-          Type: int
-          Storage: EBP-0x10
-        
-        Variable definitions and uses:
-          00401010: DEFINE: COPY - MOV EAX,0x5
-          00401015: USE: INT_ADD - ADD EAX,EBX
-          ...
-        "
+    Example: analyze_data_flow("00401000", "local_10") -> "Data Flow Analysis..."
     """
     return "\n".join(safe_get("analyze_data_flow", {"address": address, "variable": variable}))
 
@@ -950,47 +590,17 @@ def analyze_call_graph(address: str, depth: int = 2) -> str:
     """
     Analyze the call graph starting from a function.
     
-    This function generates a hierarchical representation of function calls starting
-    from the specified function. It shows which functions are called by the starting
-    function, which functions those functions call, and so on up to the specified depth.
+    Creates hierarchical representation of function calls to specified depth.
     
     Parameters:
-        address: The address of the function to start from, in Ghidra's address format
-                (e.g., "00401000" or "ram:00401000")
-        depth: The maximum depth to traverse in the call hierarchy (default: 2, max: 5).
-               Higher values provide more comprehensive analysis but may produce
-               very large outputs.
+        address: Starting function address (e.g., "00401000")
+        depth: Maximum call depth to traverse (default: 2, max: 5)
     
-    Returns:
-        A multi-line string containing a hierarchical representation of the call graph,
-        showing:
-        - The hierarchy of function calls with proper indentation
-        - Function names and addresses at each level
-        - Cycle detection to avoid infinite recursion (marked as "already visited")
-        
-        If the function is not found or an error occurs, returns an appropriate
-        error message.
+    Returns: Hierarchical call graph with function names and addresses
     
-    Notes:
-        - This analysis only considers static function calls that can be determined
-          from the code (not dynamic calls through function pointers)
-        - The depth is limited to 5 to prevent excessive output
-        - Understanding call graphs is essential for comprehending program structure
-          and data/control flow between functions
-        - This can help identify important functions and understand program architecture
+    Note: Only considers static function calls. Helps understand program structure.
     
-    Example:
-        >>> analyze_call_graph("00401000", 3)
-        "Call Graph Analysis for function: main at 00401000 (depth: 3)
-        
-        - main at 00401000
-          - initialize at 00401050
-            - allocate_memory at 00401100
-            - setup_defaults at 00401200
-          - process_input at 00401300
-            - validate_data at 00401400
-          - cleanup at 00401500 (already visited)
-        "
+    Example: analyze_call_graph("00401000", 3) -> "Call Graph Analysis..."
     """
     return "\n".join(safe_get("analyze_call_graph", {"address": address, "depth": depth}))
 
@@ -999,31 +609,16 @@ def get_symbol_address(symbol_name: str) -> str:
     """
     Get the memory address of a named symbol in the program.
     
-    This function looks up a symbol by name in the current program's symbol table
-    and returns its memory address. Symbols can be functions, variables, labels,
-    or any other named entity in the binary.
+    Looks up symbols (functions, variables, labels) by name in the symbol table.
     
     Parameters:
-        symbol_name: The name of the symbol to look up. Must match exactly with
-                     a symbol name in the program.
+        symbol_name: Symbol name (case-sensitive, exact match required)
     
-    Returns:
-        A string containing the memory address of the symbol in Ghidra's address format
-        (e.g., "00401000"). If the symbol is not found or multiple symbols with the
-        same name exist, returns an appropriate error message.
+    Returns: Memory address in Ghidra's format or error message
     
-    Notes:
-        - This function is case-sensitive and requires an exact match with the symbol name
-        - For functions, this returns the entry point address
-        - For data, this returns the address where the data is stored
-        - This is useful for cross-referencing symbols or finding the location of
-          specific functions or variables in the binary
+    Note: For functions, returns entry point; for data, returns storage location.
     
-    Example:
-        >>> get_symbol_address("main")
-        "00401000"
-        >>> get_symbol_address("gConfigData")
-        "00403A20"
+    Example: get_symbol_address("main") -> "00401000"
     """
     return "\n".join(safe_get("get_symbol_address", {"symbol_name": symbol_name}))
 
