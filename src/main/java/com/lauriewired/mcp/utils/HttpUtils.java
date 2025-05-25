@@ -1,14 +1,17 @@
 package com.lauriewired.mcp.utils;
 
-import com.sun.net.httpserver.HttpExchange;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
-import java.util.stream.Stream;
+
+import com.sun.net.httpserver.HttpExchange;
+
 import ghidra.util.Msg;
 
 /**
@@ -136,23 +139,16 @@ public class HttpUtils {
      * Escape a string for JSON output
      */
     public static String escapeJson(String text) {
-        return Optional.ofNullable(text)
-            .map(str -> {
-                var replacements = Map.of(
-                    "\\", "\\\\",
-                    "\"", "\\\"",
-                    "\n", "\\n", 
-                    "\r", "\\r",
-                    "\t", "\\t"
-                );
-                
-                // Apply all replacements in one pass
-                var result = str;
-                for (var entry : replacements.entrySet()) {
-                    result = result.replace(entry.getKey(), entry.getValue());
-                }
-                return result;
-            })
-            .orElse("");
+        if (text == null) {
+            return null;
+        }
+        
+        // Order matters: escape backslashes first, then other characters
+        return text
+            .replace("\\", "\\\\")  // Must be first
+            .replace("\"", "\\\"")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+            .replace("\t", "\\t");
     }
 }

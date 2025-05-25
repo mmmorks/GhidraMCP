@@ -1,32 +1,30 @@
 package com.lauriewired.mcp.services;
 
+import java.lang.reflect.InvocationTargetException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+import javax.swing.SwingUtilities;
+
 import com.lauriewired.mcp.model.PrototypeResult;
 import com.lauriewired.mcp.utils.GhidraUtils;
+
 import ghidra.app.decompiler.DecompInterface;
 import ghidra.app.decompiler.DecompileResults;
 import ghidra.app.services.CodeViewerService;
 import ghidra.framework.plugintool.PluginTool;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.listing.Function;
-import ghidra.program.model.listing.FunctionManager;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.InstructionIterator;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
-import ghidra.program.model.pcode.HighFunction;
-import ghidra.program.model.pcode.HighFunctionDBUtil;
-import ghidra.program.util.ProgramLocation;
 import ghidra.program.model.symbol.SourceType;
+import ghidra.program.util.ProgramLocation;
 import ghidra.util.Msg;
 import ghidra.util.task.ConsoleTaskMonitor;
-
-import javax.swing.SwingUtilities;
-import java.lang.reflect.InvocationTargetException;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.List;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Service class for function-related operations
@@ -55,12 +53,15 @@ public class FunctionService {
      */
     public String getAllFunctionNames(int offset, int limit) {
         Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
+        if (program == null) return "";
 
         List<String> names = new ArrayList<>();
         for (Function f : program.getFunctionManager().getFunctions(true)) {
             names.add(f.getName());
         }
+        
+        if (names.isEmpty()) return "";
+        
         return String.join("\n", names.subList(
                 Math.min(offset, names.size()),
                 Math.min(offset + limit, names.size())
@@ -163,6 +164,8 @@ public class FunctionService {
      * @return address or error message
      */
     public String getCurrentAddress() {
+        if (tool == null) return "No tool available";
+        
         CodeViewerService service = tool.getService(CodeViewerService.class);
         if (service == null) return "Code viewer service not available";
         
@@ -176,6 +179,8 @@ public class FunctionService {
      * @return function details or error message
      */
     public String getCurrentFunction() {
+        if (tool == null) return "No tool available";
+        
         CodeViewerService service = tool.getService(CodeViewerService.class);
         if (service == null) return "Code viewer service not available";
         

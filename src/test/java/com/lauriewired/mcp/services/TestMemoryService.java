@@ -1,11 +1,7 @@
 package com.lauriewired.mcp.services;
 
-import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicBoolean;
-
-import javax.swing.SwingUtilities;
 
 import com.lauriewired.mcp.utils.HttpUtils;
 
@@ -17,23 +13,23 @@ import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.symbol.SourceType;
 import ghidra.program.model.symbol.Symbol;
 import ghidra.program.model.symbol.SymbolTable;
-import ghidra.util.Msg;
 import ghidra.util.exception.DuplicateNameException;
 import ghidra.util.exception.InvalidInputException;
 
 /**
- * Service for memory and data-related operations
+ * Test-friendly version of MemoryService that uses TestProgramService
  */
-public class MemoryService {
-    private final ProgramService programService;
+public class TestMemoryService extends MemoryService {
+    private final TestProgramService testProgramService;
 
     /**
-     * Creates a new MemoryService
+     * Creates a new TestMemoryService
      *
-     * @param programService the program service for accessing the current program
+     * @param testProgramService the test program service for accessing the current program
      */
-    public MemoryService(ProgramService programService) {
-        this.programService = programService;
+    public TestMemoryService(TestProgramService testProgramService) {
+        super(testProgramService);
+        this.testProgramService = testProgramService;
     }
 
     /**
@@ -43,8 +39,9 @@ public class MemoryService {
      * @param limit maximum number of segments to return
      * @return list of memory segments with their address ranges
      */
+    @Override
     public String listSegments(int offset, int limit) {
-        Program program = programService.getCurrentProgram();
+        Program program = testProgramService.getCurrentProgram();
         if (program == null) return "No program loaded";
 
         List<String> lines = new ArrayList<>();
@@ -64,8 +61,9 @@ public class MemoryService {
      * @param limit maximum number of data items to return
      * @return list of data items with their addresses, labels, and values
      */
+    @Override
     public String listDefinedData(int offset, int limit) {
-        Program program = programService.getCurrentProgram();
+        Program program = testProgramService.getCurrentProgram();
         if (program == null) return "No program loaded";
 
         List<String> lines = new ArrayList<>();
@@ -89,57 +87,50 @@ public class MemoryService {
 
     /**
      * Rename a data label at the specified address
+     * For testing, we'll simplify this to avoid Swing threading issues
      *
      * @param addressStr address of the data to rename
      * @param newName new label name
      * @return true if successful, false otherwise
      */
+    @Override
     public boolean renameDataAtAddress(String addressStr, String newName) {
-        Program program = programService.getCurrentProgram();
+        Program program = testProgramService.getCurrentProgram();
         if (program == null) return false;
 
-        AtomicBoolean successFlag = new AtomicBoolean(false);
+        // For testing, we'll run directly without Swing
+        int tx = program.startTransaction("Rename data");
+        boolean success = false;
         try {
-            SwingUtilities.invokeAndWait(() -> {
-                int tx = program.startTransaction("Rename data");
-                try {
-                    Address addr = program.getAddressFactory().getAddress(addressStr);
-                    if (addr == null) {
-                        Msg.error(this, "Invalid address: " + addressStr);
-                        return;
-                    }
-                    
-                    // Check if data exists at this address
-                    if (program.getListing().getDefinedDataAt(addr) != null) {
-                        SymbolTable symTable = program.getSymbolTable();
-                        Symbol symbol = symTable.getPrimarySymbol(addr);
-                        
-                        if (symbol != null) {
-                            symbol.setName(newName, SourceType.USER_DEFINED);
-                            successFlag.set(true);
-                        } else {
-                            try {
-                                symTable.createLabel(addr, newName, SourceType.USER_DEFINED);
-                                successFlag.set(true);
-                            } catch (InvalidInputException e) {
-                                Msg.error(this, "Failed to create label: " + e.getMessage());
-                            }
-                        }
-                    } else {
-                        Msg.error(this, "No defined data at address: " + addressStr);
+            Address addr = program.getAddressFactory().getAddress(addressStr);
+            if (addr == null) {
+                return false;
+            }
+            
+            // Check if data exists at this address
+            if (program.getListing().getDefinedDataAt(addr) != null) {
+                SymbolTable symTable = program.getSymbolTable();
+                Symbol symbol = symTable.getPrimarySymbol(addr);
+                
+                if (symbol != null) {
+                    symbol.setName(newName, SourceType.USER_DEFINED);
+                    success = true;
+                } else {
+                    try {
+                        symTable.createLabel(addr, newName, SourceType.USER_DEFINED);
+                        success = true;
+                    } catch (InvalidInputException e) {
+                        // Error creating label
                     }
                 }
-                catch (DuplicateNameException | InvalidInputException e) {
-                    Msg.error(this, "Rename data error", e);
-                }
-                finally {
-                    program.endTransaction(tx, successFlag.get());
-                }
-            });
+            }
         }
-        catch (InterruptedException | InvocationTargetException e) {
-            Msg.error(this, "Failed to execute rename data on Swing thread", e);
+        catch (DuplicateNameException | InvalidInputException e) {
+            // Rename error
         }
-        return successFlag.get();
+        finally {
+            program.endTransaction(tx, success);
+        }
+        return success;
     }
 }

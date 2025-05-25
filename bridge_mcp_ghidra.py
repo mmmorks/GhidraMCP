@@ -606,6 +606,71 @@ def analyze_call_graph(address: str, depth: int = 2) -> str:
     return "\n".join(safe_get("analyze_call_graph", {"address": address, "depth": depth}))
 
 @mcp.tool()
+def search_memory(query: str, as_string: bool = True, block_name: str = None, limit: int = 10) -> str:
+    """
+    Search program memory for byte patterns or strings.
+    
+    Searches initialized memory blocks for specified patterns and shows context around matches.
+    
+    Parameters:
+        query: The pattern to search for (string or hex bytes like "00 FF 32")
+        as_string: True to search for UTF-8 string, False to search for hex bytes
+        block_name: Optional memory block name to restrict search
+        limit: Maximum number of results to return
+    
+    Returns: Memory matches with address, label, and context bytes
+    
+    Example: search_memory("Password", True) -> matches of "Password" string in memory
+    """
+    params = {
+        "query": query,
+        "asString": "true" if as_string else "false",
+        "limit": limit
+    }
+    if block_name:
+        params["blockName"] = block_name
+    
+    return "\n".join(safe_get("searchMemory", params))
+
+@mcp.tool()
+def search_disassembly(query: str, offset: int = 0, limit: int = 10) -> list:
+    """
+    Search for patterns in disassembled code using regex.
+    
+    Searches instruction mnemonics, operands, and comments in functions.
+    
+    Parameters:
+        query: Regex pattern to search for in assembly instructions
+        offset: Starting index for pagination
+        limit: Maximum number of results to return
+    
+    Returns: Matching instructions with function context and nearby instructions
+    
+    Example: search_disassembly("mov.*eax") -> finds MOV instructions using EAX register
+    """
+    return safe_get("searchDisassembly", {"query": query, "offset": offset, "limit": limit})
+
+@mcp.tool()
+def search_decompiled(query: str, offset: int = 0, limit: int = 5) -> str:
+    """
+    Search for patterns in decompiled C-like code using regex.
+    
+    Searches variables, expressions, and comments in decompiled functions.
+    
+    Parameters:
+        query: Regex pattern to search for in decompiled code
+        offset: Starting index for pagination
+        limit: Maximum number of functions to search/return
+    
+    Returns: Matching code fragments with function context and surrounding lines
+    
+    Note: This is resource-intensive as each function must be decompiled.
+    
+    Example: search_decompiled("malloc\\(.*\\)") -> finds malloc calls in decompiled code
+    """
+    return "\n".join(safe_get("searchDecompiled", {"query": query, "offset": offset, "limit": limit}))
+
+@mcp.tool()
 def get_symbol_address(symbol_name: str) -> str:
     """
     Get the memory address of a named symbol in the program.

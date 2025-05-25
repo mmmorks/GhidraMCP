@@ -1,26 +1,29 @@
 package com.lauriewired;
 
+import java.io.IOException;
+import java.util.Map;
+import java.util.Optional;
+
 import com.lauriewired.mcp.McpServerManager;
 import com.lauriewired.mcp.api.ApiHandlerRegistry;
-import com.lauriewired.mcp.services.*;
+import com.lauriewired.mcp.services.AnalysisService;
+import com.lauriewired.mcp.services.CommentService;
+import com.lauriewired.mcp.services.DataTypeService;
+import com.lauriewired.mcp.services.FunctionService;
+import com.lauriewired.mcp.services.MemoryService;
+import com.lauriewired.mcp.services.NamespaceService;
+import com.lauriewired.mcp.services.ProgramService;
+import com.lauriewired.mcp.services.SearchService;
+import com.lauriewired.mcp.services.VariableService;
 import com.lauriewired.mcp.utils.HttpUtils;
-import com.sun.net.httpserver.HttpExchange;
 
 import ghidra.app.plugin.PluginCategoryNames;
 import ghidra.framework.plugintool.Plugin;
 import ghidra.framework.plugintool.PluginInfo;
 import ghidra.framework.plugintool.PluginTool;
 import ghidra.framework.plugintool.util.PluginStatus;
-import ghidra.program.model.data.DataType;
 import ghidra.program.model.data.DataTypeManager;
-import ghidra.program.model.listing.Program;
 import ghidra.util.Msg;
-
-import java.io.IOException;
-import java.util.Map;
-import java.util.Optional;
-import java.util.function.BiConsumer;
-import java.util.function.Consumer;
 
 /**
  * A Ghidra plugin that starts an HTTP server to expose program data through REST APIs.
@@ -49,6 +52,7 @@ public class GhidraMCPPlugin extends Plugin {
     private CommentService commentService;
     private MemoryService memoryService;
     private VariableService variableService;
+    private SearchService searchService;
 
     /**
      * Plugin constructor
@@ -85,6 +89,7 @@ public class GhidraMCPPlugin extends Plugin {
         this.commentService = new CommentService(programService);
         this.memoryService = new MemoryService(programService);
         this.variableService = new VariableService(programService);
+        this.searchService = new SearchService(programService);
         
         Msg.info(this, "All services initialized");
     }
@@ -116,6 +121,7 @@ public class GhidraMCPPlugin extends Plugin {
             
             // Register all API endpoints
             apiHandlerRegistry.registerAllEndpoints();
+            registerSearchEndpoints();
             registerVariableEndpoints();
             
         } catch (IOException e) {
@@ -123,6 +129,59 @@ public class GhidraMCPPlugin extends Plugin {
         }
     }
     
+    /**
+     * Register search-related endpoints
+     */
+    private void registerSearchEndpoints() {
+        if (!serverManager.isServerRunning()) return;
+        
+        // Memory search endpoint
+        serverManager.getServer().createContext("/searchMemory", exchange -> {
+            try {
+                Map<String, String> params = HttpUtils.parseQueryParams(exchange);
+                String query = params.get("query");
+                boolean asString = "true".equalsIgnoreCase(params.get("asString"));
+                String blockName = params.get("blockName");
+                int limit = Integer.parseInt(params.getOrDefault("limit", "10"));
+                
+                String result = searchService.searchMemory(query, asString, blockName, limit);
+                HttpUtils.sendResponse(exchange, result);
+            } catch (Exception e) {
+                HttpUtils.sendResponse(exchange, "Error processing search request: " + e.getMessage());
+            }
+        });
+        
+        // Disassembly search endpoint
+        serverManager.getServer().createContext("/searchDisassembly", exchange -> {
+            try {
+                Map<String, String> params = HttpUtils.parseQueryParams(exchange);
+                String query = params.get("query");
+                int offset = Integer.parseInt(params.getOrDefault("offset", "0"));
+                int limit = Integer.parseInt(params.getOrDefault("limit", "10"));
+                
+                String result = searchService.searchDisassembly(query, offset, limit);
+                HttpUtils.sendResponse(exchange, result);
+            } catch (Exception e) {
+                HttpUtils.sendResponse(exchange, "Error processing disassembly search: " + e.getMessage());
+            }
+        });
+        
+        // Decompiled code search endpoint
+        serverManager.getServer().createContext("/searchDecompiled", exchange -> {
+            try {
+                Map<String, String> params = HttpUtils.parseQueryParams(exchange);
+                String query = params.get("query");
+                int offset = Integer.parseInt(params.getOrDefault("offset", "0"));
+                int limit = Integer.parseInt(params.getOrDefault("limit", "5"));
+                
+                String result = searchService.searchDecompiledCode(query, offset, limit);
+                HttpUtils.sendResponse(exchange, result);
+            } catch (Exception e) {
+                HttpUtils.sendResponse(exchange, "Error processing decompiled code search: " + e.getMessage());
+            }
+        });
+    }
+
     /**
      * Register variable-related endpoints
      */
