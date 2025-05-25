@@ -8,6 +8,9 @@ import com.lauriewired.mcp.services.DataTypeService;
 import com.lauriewired.mcp.services.FunctionService;
 import com.lauriewired.mcp.services.MemoryService;
 import com.lauriewired.mcp.services.NamespaceService;
+import com.lauriewired.mcp.services.ProgramService;
+import com.lauriewired.mcp.services.SearchService;
+import com.lauriewired.mcp.services.VariableService;
 import com.lauriewired.mcp.utils.HttpUtils;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
@@ -17,6 +20,7 @@ import ghidra.util.Msg;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Functional interfaces for handler methods
@@ -40,6 +44,9 @@ public class ApiHandlerRegistry {
     private final AnalysisService analysisService;
     private final CommentService commentService;
     private final MemoryService memoryService;
+    private final ProgramService programService;
+    private final SearchService searchService;
+    private final VariableService variableService;
     
     /**
      * Creates a new ApiHandlerRegistry
@@ -51,6 +58,9 @@ public class ApiHandlerRegistry {
      * @param analysisService the analysis service
      * @param commentService the comment service
      * @param memoryService the memory service
+     * @param programService the program service
+     * @param searchService the search service
+     * @param variableService the variable service
      */
     public ApiHandlerRegistry(
             McpServerManager serverManager,
@@ -59,7 +69,10 @@ public class ApiHandlerRegistry {
             DataTypeService dataTypeService,
             AnalysisService analysisService,
             CommentService commentService,
-            MemoryService memoryService) {
+            MemoryService memoryService,
+            ProgramService programService,
+            SearchService searchService,
+            VariableService variableService) {
         this.serverManager = serverManager;
         this.functionService = functionService;
         this.namespaceService = namespaceService;
@@ -67,6 +80,9 @@ public class ApiHandlerRegistry {
         this.analysisService = analysisService;
         this.commentService = commentService;
         this.memoryService = memoryService;
+        this.programService = programService;
+        this.searchService = searchService;
+        this.variableService = variableService;
     }
     
     /**
@@ -87,6 +103,8 @@ public class ApiHandlerRegistry {
         registerAnalysisEndpoints(server);
         registerMemoryEndpoints(server);
         registerCommentEndpoints(server);
+        registerSearchEndpoints(server);
+        registerVariableEndpoints(server);
         
         Msg.info(this, "All API endpoints registered successfully");
     }
@@ -262,6 +280,80 @@ public class ApiHandlerRegistry {
                 }
             }
         });
+        
+        // Create structure
+        server.createContext("/create_structure", exchange -> {
+            try {
+                Map<String, String> params = HttpUtils.parsePostParams(exchange);
+                String structName = params.get("name");
+                int size = HttpUtils.parseIntOrDefault(params.get("size"), 0);
+                String categoryPath = params.get("category_path");
+                
+                String result = dataTypeService.createStructure(structName, size, categoryPath);
+                HttpUtils.sendResponse(exchange, result);
+            } catch (IOException e) {
+                HttpUtils.sendResponse(exchange, "Error parsing parameters: " + e.getMessage());
+            }
+        });
+        
+        // Add structure field
+        server.createContext("/add_structure_field", exchange -> {
+            try {
+                Map<String, String> params = HttpUtils.parsePostParams(exchange);
+                String structName = params.get("struct_name");
+                String fieldName = params.get("field_name");
+                String fieldType = params.get("field_type");
+                int fieldSize = HttpUtils.parseIntOrDefault(params.get("field_size"), -1);
+                int offset = HttpUtils.parseIntOrDefault(params.get("offset"), -1);
+                String comment = params.get("comment");
+                
+                String result = dataTypeService.addStructureField(structName, fieldName, fieldType,
+                                                                 fieldSize, offset, comment);
+                HttpUtils.sendResponse(exchange, result);
+            } catch (IOException e) {
+                HttpUtils.sendResponse(exchange, "Error parsing parameters: " + e.getMessage());
+            }
+        });
+        
+        // Create enum
+        server.createContext("/create_enum", exchange -> {
+            try {
+                Map<String, String> params = HttpUtils.parsePostParams(exchange);
+                String enumName = params.get("name");
+                int size = HttpUtils.parseIntOrDefault(params.get("size"), 4);
+                String categoryPath = params.get("category_path");
+                
+                String result = dataTypeService.createEnum(enumName, size, categoryPath);
+                HttpUtils.sendResponse(exchange, result);
+            } catch (IOException e) {
+                HttpUtils.sendResponse(exchange, "Error parsing parameters: " + e.getMessage());
+            }
+        });
+        
+        // Add enum value
+        server.createContext("/add_enum_value", exchange -> {
+            try {
+                Map<String, String> params = HttpUtils.parsePostParams(exchange);
+                String enumName = params.get("enum_name");
+                String valueName = params.get("value_name");
+                long value = Long.parseLong(params.getOrDefault("value", "0"));
+                
+                String result = dataTypeService.addEnumValue(enumName, valueName, value);
+                HttpUtils.sendResponse(exchange, result);
+            } catch (IOException e) {
+                HttpUtils.sendResponse(exchange, "Error parsing parameters: " + e.getMessage());
+            } catch (NumberFormatException e) {
+                HttpUtils.sendResponse(exchange, "Invalid numeric value: " + e.getMessage());
+            }
+        });
+        
+        // List enums
+        server.createContext("/enums", exchange -> {
+            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
+            int offset = HttpUtils.parseIntOrDefault(qparams.get("offset"), 0);
+            int limit = HttpUtils.parseIntOrDefault(qparams.get("limit"), 100);
+            HttpUtils.sendResponse(exchange, dataTypeService.listEnums(offset, limit));
+        });
     }
     
     /**
@@ -348,6 +440,154 @@ public class ApiHandlerRegistry {
     }
     
     /**
+     * Register search-related endpoints
+     */
+    private void registerSearchEndpoints(HttpServer server) {
+        // Memory search endpoint
+        server.createContext("/searchMemory", exchange -> {
+            try {
+                Map<String, String> params = HttpUtils.parseQueryParams(exchange);
+                String query = params.get("query");
+                boolean asString = "true".equalsIgnoreCase(params.get("asString"));
+                String blockName = params.get("blockName");
+                int limit = Integer.parseInt(params.getOrDefault("limit", "10"));
+                
+                String result = searchService.searchMemory(query, asString, blockName, limit);
+                HttpUtils.sendResponse(exchange, result);
+            } catch (Exception e) {
+                HttpUtils.sendResponse(exchange, "Error processing search request: " + e.getMessage());
+            }
+        });
+        
+        // Disassembly search endpoint
+        server.createContext("/searchDisassembly", exchange -> {
+            try {
+                Map<String, String> params = HttpUtils.parseQueryParams(exchange);
+                String query = params.get("query");
+                int offset = Integer.parseInt(params.getOrDefault("offset", "0"));
+                int limit = Integer.parseInt(params.getOrDefault("limit", "10"));
+                
+                String result = searchService.searchDisassembly(query, offset, limit);
+                HttpUtils.sendResponse(exchange, result);
+            } catch (Exception e) {
+                HttpUtils.sendResponse(exchange, "Error processing disassembly search: " + e.getMessage());
+            }
+        });
+        
+        // Decompiled code search endpoint
+        server.createContext("/searchDecompiled", exchange -> {
+            try {
+                Map<String, String> params = HttpUtils.parseQueryParams(exchange);
+                String query = params.get("query");
+                int offset = Integer.parseInt(params.getOrDefault("offset", "0"));
+                int limit = Integer.parseInt(params.getOrDefault("limit", "5"));
+                
+                String result = searchService.searchDecompiledCode(query, offset, limit);
+                HttpUtils.sendResponse(exchange, result);
+            } catch (Exception e) {
+                HttpUtils.sendResponse(exchange, "Error processing decompiled code search: " + e.getMessage());
+            }
+        });
+    }
+
+    /**
+     * Register variable-related endpoints
+     */
+    private void registerVariableEndpoints(HttpServer server) {
+        // Rename variable endpoint
+        server.createContext("/renameVariable", exchange -> {
+            try {
+                var params = HttpUtils.parsePostParams(exchange);
+                var functionName = params.get("functionName");
+                var oldName = params.get("oldName");
+                var newName = params.get("newName");
+                var usageAddress = params.get("usageAddress");
+                
+                var result = variableService.renameVariableInFunction(functionName, oldName, newName, usageAddress);
+                HttpUtils.sendResponse(exchange, result);
+            } catch (IOException e) {
+                HttpUtils.sendResponse(exchange, String.format("Error: %s", e.getMessage()));
+            }
+        });
+        
+        // Split variable endpoint
+        server.createContext("/splitVariable", exchange -> {
+            try {
+                var params = HttpUtils.parsePostParams(exchange);
+                var functionName = params.get("functionName");
+                var variableName = params.get("variableName");
+                var usageAddress = params.get("usageAddress");
+                
+                // Use Optional to handle the optional newName parameter
+                var newName = Optional.ofNullable(params.get("newName"))
+                    .filter(name -> !name.isEmpty())
+                    .orElse(variableName + "_split");
+                
+                var result = variableService.renameVariableInFunction(functionName, variableName, newName, usageAddress);
+                HttpUtils.sendResponse(exchange, result);
+            } catch (IOException e) {
+                HttpUtils.sendResponse(exchange, String.format("Error: %s", e.getMessage()));
+            }
+        });
+        
+        // Set local variable type endpoint
+        server.createContext("/set_local_variable_type", exchange -> {
+            try {
+                var params = HttpUtils.parsePostParams(exchange);
+                var functionAddress = params.get("function_address");
+                var variableName = params.get("variable_name");
+                var newType = params.get("new_type");
+                
+                // Build the response message with a formatted text block
+                var responseMsg = new StringBuilder(String.format("""
+                    Setting variable type: %s
+                    to %s
+                    in function at %s
+                    
+                    """, variableName, newType, functionAddress));
+                
+                // Get data type info using Optional for cleaner null handling
+                Optional.ofNullable(programService.getCurrentProgram())
+                    .ifPresent(program -> {
+                        var dtm = program.getDataTypeManager();
+                        var directType = dataTypeService.findDataTypeByNameInAllCategories(dtm, newType);
+                        
+                        if (directType != null) {
+                            responseMsg.append(String.format("Found type: %s\n", directType.getPathName()));
+                        } else if (newType.startsWith("P") && newType.length() > 1) {
+                            findPointerBaseType(dtm, newType, responseMsg);
+                        } else {
+                            responseMsg.append(String.format("Type not found directly: %s\n", newType));
+                        }
+                    });
+                
+                // Try to set the type
+                var success = variableService.setLocalVariableType(functionAddress, variableName, newType);
+                var successMsg = success ? "Variable type set successfully" : "Failed to set variable type";
+                responseMsg.append(String.format("\nResult: %s", successMsg));
+                
+                HttpUtils.sendResponse(exchange, responseMsg.toString());
+            } catch (IOException e) {
+                HttpUtils.sendResponse(exchange, String.format("Error: %s", e.getMessage()));
+            }
+        });
+    }
+    
+    /**
+     * Helper method to find pointer base type
+     */
+    private void findPointerBaseType(ghidra.program.model.data.DataTypeManager dtm, String pointerType, StringBuilder responseMsg) {
+        var baseTypeName = pointerType.substring(1);
+        var baseType = dataTypeService.findDataTypeByNameInAllCategories(dtm, baseTypeName);
+        
+        if (baseType != null) {
+            responseMsg.append(String.format("Found base type for pointer: %s\n", baseType.getPathName()));
+        } else {
+            responseMsg.append(String.format("Base type not found for pointer: %s\n", baseTypeName));
+        }
+    }
+    
+    /**
      * Helper method to create a pagination handler
      */
     private HttpHandler createPaginatedHandler(final PaginatedHandler handler) {
@@ -375,7 +615,7 @@ public class ApiHandlerRegistry {
                     String comment = params.get("comment");
                     boolean success = handler.execute(address, comment);
                     
-                    HttpUtils.sendResponse(exchange, 
+                    HttpUtils.sendResponse(exchange,
                         success ? "Comment set successfully" : "Failed to set comment");
                 } catch (IOException e) {
                     HttpUtils.sendResponse(exchange, "Error parsing parameters: " + e.getMessage());

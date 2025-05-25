@@ -197,6 +197,126 @@ def list_structures(offset: int = 0, limit: int = 100) -> list:
     return safe_get("structures", {"offset": offset, "limit": limit})
 
 @mcp.tool()
+def create_structure(name: str, size: int = 0, category_path: str = "") -> str:
+    """
+    Create a new structure data type in Ghidra.
+    
+    Creates a structure with the specified name and optional size/category.
+    
+    Parameters:
+        name: Name of the structure to create (required)
+        size: Size in bytes (0 for auto-size based on fields)
+        category_path: Category path like "/MyStructures" (empty for root)
+    
+    Returns: Success message with path or error message
+    
+    Note: Structure names must be unique. Use add_structure_field to add fields.
+    
+    Example: create_structure("MY_STRUCT", 0, "/CustomTypes") -> "Structure 'MY_STRUCT' created successfully at /CustomTypes"
+    """
+    return safe_post("create_structure", {
+        "name": name,
+        "size": size,
+        "category_path": category_path
+    })
+
+@mcp.tool()
+def add_structure_field(struct_name: str, field_name: str, field_type: str,
+                       field_size: int = -1, offset: int = -1, comment: str = "") -> str:
+    """
+    Add a field to an existing structure.
+    
+    Adds a new field with specified type at given offset or appends to end.
+    
+    Parameters:
+        struct_name: Name of the structure to modify (required)
+        field_name: Name for the new field (optional, can be empty)
+        field_type: Data type like "int", "char", "DWORD", or another struct name (required)
+        field_size: Size in bytes for fixed-size types (-1 for default)
+        offset: Offset in structure to insert at (-1 to append)
+        comment: Optional comment for the field
+    
+    Returns: Success or error message
+    
+    Note: Field types can be built-in types, typedefs, or other structures/enums.
+    
+    Example: add_structure_field("MY_STRUCT", "count", "int") -> "Field 'count' added to structure 'MY_STRUCT'"
+    """
+    return safe_post("add_structure_field", {
+        "struct_name": struct_name,
+        "field_name": field_name,
+        "field_type": field_type,
+        "field_size": field_size,
+        "offset": offset,
+        "comment": comment
+    })
+
+@mcp.tool()
+def create_enum(name: str, size: int = 4, category_path: str = "") -> str:
+    """
+    Create a new enum data type in Ghidra.
+    
+    Creates an enumeration with the specified name and size.
+    
+    Parameters:
+        name: Name of the enum to create (required)
+        size: Size in bytes - must be 1, 2, 4, or 8 (default: 4)
+        category_path: Category path like "/MyEnums" (empty for root)
+    
+    Returns: Success message with path or error message
+    
+    Note: Enum names must be unique. Use add_enum_value to add values.
+    
+    Example: create_enum("MY_FLAGS", 4, "/CustomTypes") -> "Enum 'MY_FLAGS' created successfully at /CustomTypes"
+    """
+    return safe_post("create_enum", {
+        "name": name,
+        "size": size,
+        "category_path": category_path
+    })
+
+@mcp.tool()
+def add_enum_value(enum_name: str, value_name: str, value: int) -> str:
+    """
+    Add a value to an existing enum.
+    
+    Adds a named constant with numeric value to the enumeration.
+    
+    Parameters:
+        enum_name: Name of the enum to modify (required)
+        value_name: Name for the enum constant (required)
+        value: Numeric value for the constant (required)
+    
+    Returns: Success or error message
+    
+    Note: Value names must be unique within the enum. Values can be negative.
+    
+    Example: add_enum_value("MY_FLAGS", "FLAG_ENABLED", 0x01) -> "Value 'FLAG_ENABLED' (1) added to enum 'MY_FLAGS'"
+    """
+    return safe_post("add_enum_value", {
+        "enum_name": enum_name,
+        "value_name": value_name,
+        "value": value
+    })
+
+@mcp.tool()
+def list_enums(offset: int = 0, limit: int = 100) -> list:
+    """
+    List all enum definitions in the program.
+    
+    Shows enumerations with their values for understanding constants.
+    
+    Parameters:
+        offset: Starting index for pagination (0-based)
+        limit: Maximum enums to return
+    
+    Returns: List of enums with format "EnumName (size bytes): {VALUE1=1, VALUE2=2, ...}"
+    
+    Example: list_enums(0, 5) -> ['ErrorCode (4 bytes): {SUCCESS=0, ERROR_FILE_NOT_FOUND=2, ...}', ...]
+    """
+    return safe_get("enums", {"offset": offset, "limit": limit})
+
+@mcp.tool()
 def list_segments(offset: int = 0, limit: int = 100) -> list:
     """
     List memory segments in the program with pagination.
@@ -524,7 +644,7 @@ def set_local_variable_type(function_address: str, variable_name: str, new_type:
     return safe_post("set_local_variable_type", {"function_address": function_address, "variable_name": variable_name, "new_type": new_type})
 
 @mcp.tool()
-def rename_variable(function_name: str, old_name: str, new_name: str) -> dict:
+def rename_variable(function_name: str, old_name: str, new_name: str) -> str:
     """
     Rename a local variable within a function identified by name.
     
@@ -606,7 +726,7 @@ def analyze_call_graph(address: str, depth: int = 2) -> str:
     return "\n".join(safe_get("analyze_call_graph", {"address": address, "depth": depth}))
 
 @mcp.tool()
-def search_memory(query: str, as_string: bool = True, block_name: str = None, limit: int = 10) -> str:
+def search_memory(query: str, as_string: bool = True, block_name: str = "", limit: int = 10) -> str:
     """
     Search program memory for byte patterns or strings.
     

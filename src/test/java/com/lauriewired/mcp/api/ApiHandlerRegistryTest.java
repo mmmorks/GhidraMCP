@@ -22,6 +22,9 @@ import com.lauriewired.mcp.services.DataTypeService;
 import com.lauriewired.mcp.services.FunctionService;
 import com.lauriewired.mcp.services.MemoryService;
 import com.lauriewired.mcp.services.NamespaceService;
+import com.lauriewired.mcp.services.ProgramService;
+import com.lauriewired.mcp.services.SearchService;
+import com.lauriewired.mcp.services.VariableService;
 import com.sun.net.httpserver.HttpContext;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
@@ -54,6 +57,15 @@ class ApiHandlerRegistryTest {
     private CommentService mockCommentService;
     
     @Mock
+    private ProgramService mockProgramService;
+    
+    @Mock
+    private SearchService mockSearchService;
+    
+    @Mock
+    private VariableService mockVariableService;
+    
+    @Mock
     private HttpContext mockHttpContext;
 
     private ApiHandlerRegistry registry;
@@ -67,7 +79,10 @@ class ApiHandlerRegistryTest {
             mockDataTypeService,
             mockAnalysisService,
             mockCommentService,
-            mockMemoryService
+            mockMemoryService,
+            mockProgramService,
+            mockSearchService,
+            mockVariableService
         );
     }
 
@@ -84,7 +99,10 @@ class ApiHandlerRegistryTest {
             mockDataTypeService,
             mockAnalysisService,
             mockCommentService,
-            mockMemoryService
+            mockMemoryService,
+            mockProgramService,
+            mockSearchService,
+            mockVariableService
         );
         assertNotNull(testRegistry);
     }
@@ -137,6 +155,16 @@ class ApiHandlerRegistryTest {
         // Comment endpoints
         verify(mockHttpServer).createContext(eq("/set_decompiler_comment"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/set_disassembly_comment"), any(HttpHandler.class));
+        
+        // Search endpoints
+        verify(mockHttpServer).createContext(eq("/searchMemory"), any(HttpHandler.class));
+        verify(mockHttpServer).createContext(eq("/searchDisassembly"), any(HttpHandler.class));
+        verify(mockHttpServer).createContext(eq("/searchDecompiled"), any(HttpHandler.class));
+        
+        // Variable endpoints
+        verify(mockHttpServer).createContext(eq("/renameVariable"), any(HttpHandler.class));
+        verify(mockHttpServer).createContext(eq("/splitVariable"), any(HttpHandler.class));
+        verify(mockHttpServer).createContext(eq("/set_local_variable_type"), any(HttpHandler.class));
     }
 
     @Test
@@ -162,7 +190,7 @@ class ApiHandlerRegistryTest {
 
         registry.registerAllEndpoints();
 
-        // Verify the expected number of endpoints were registered
-        verify(mockHttpServer, times(29)).createContext(anyString(), any(HttpHandler.class));
+        // Verify the expected number of endpoints were registered (now includes search and variable endpoints)
+        verify(mockHttpServer, times(40)).createContext(anyString(), any(HttpHandler.class));
     }
 }
