@@ -17,6 +17,7 @@ import ghidra.program.model.data.CategoryPath;
 import ghidra.program.model.data.DataType;
 import ghidra.program.model.data.DataTypeComponent;
 import ghidra.program.model.data.DataTypeManager;
+import ghidra.program.model.data.Enum;
 import ghidra.program.model.data.EnumDataType;
 import ghidra.program.model.data.ProgramBasedDataTypeManager;
 import ghidra.program.model.data.Structure;
@@ -222,38 +223,37 @@ public class DataTypeService {
         
         // Handle common built-in types
         switch (typeName.toLowerCase()) {
-            case "int":
-            case "long":
+            case "int", "long" -> {
                 return dtm.getDataType("/int");
-            case "uint":
-            case "unsigned int":
-            case "unsigned long":
-            case "dword":
+            }
+            case "uint", "unsigned int", "unsigned long", "dword" -> {
                 return dtm.getDataType("/uint");
-            case "short":
+            }
+            case "short" -> {
                 return dtm.getDataType("/short");
-            case "ushort":
-            case "unsigned short":
-            case "word":
+            }
+            case "ushort", "unsigned short", "word" -> {
                 return dtm.getDataType("/ushort");
-            case "char":
-            case "byte":
+            }
+            case "char", "byte" -> {
                 return dtm.getDataType("/char");
-            case "uchar":
-            case "unsigned char":
+            }
+            case "uchar", "unsigned char" -> {
                 return dtm.getDataType("/uchar");
-            case "longlong":
-            case "__int64":
+            }
+            case "longlong", "__int64" -> {
                 return dtm.getDataType("/longlong");
-            case "ulonglong":
-            case "unsigned __int64":
+            }
+            case "ulonglong", "unsigned __int64" -> {
                 return dtm.getDataType("/ulonglong");
-            case "bool":
-            case "boolean":
+            }
+            case "bool", "boolean" -> {
                 return dtm.getDataType("/bool");
-            case "void":
+            }
+            case "void" -> {
                 return dtm.getDataType("/void");
-            default:
+            }
+            default -> {
                 // Try as a direct path
                 DataType directType = dtm.getDataType("/" + typeName);
                 if (directType != null) {
@@ -263,6 +263,7 @@ public class DataTypeService {
                 // Fallback to int if we couldn't find it
                 Msg.warn(this, "Unknown type: " + typeName + ", defaulting to int");
                 return dtm.getDataType("/int");
+            }
         }
     }
 
@@ -428,7 +429,7 @@ public class DataTypeService {
                     
                     // Check if enum already exists
                     DataType existing = findDataTypeByNameInAllCategories(dtm, enumName);
-                    if (existing != null && existing instanceof EnumDataType) {
+                    if (existing != null && existing instanceof Enum) {
                         resultMessage.set("Enum '" + enumName + "' already exists");
                         return;
                     }
@@ -490,18 +491,13 @@ public class DataTypeService {
                     
                     // Find the enum
                     DataType dt = findDataTypeByNameInAllCategories(dtm, enumName);
-                    if (!(dt instanceof EnumDataType)) {
-                        resultMessage.set("Enum '" + enumName + "' not found");
-                        return;
-                    }
-                    
-                    EnumDataType enumType = (EnumDataType) dt;
-                    
-                    // Add the value
-                    enumType.add(valueName, value);
-                    
-                    resultMessage.set("Value '" + valueName + "' (" + value +
+                    if (dt instanceof Enum enumType) {
+                        enumType.add(valueName, value);
+                        resultMessage.set("Value '" + valueName + "' (" + value +
                                     ") added to enum '" + enumName + "'");
+                    } else {
+                        resultMessage.set("Enum '" + enumName + "' not found");
+                    }
                 }
                 catch (Exception e) {
                     Msg.error(this, "Error adding enum value", e);
@@ -533,21 +529,21 @@ public class DataTypeService {
         if (program == null) return "No program loaded";
 
         ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
-        List<EnumDataType> enums = new ArrayList<>();
+        List<Enum> enums = new ArrayList<>();
         
         // Get all enums from the data type manager
         Iterator<DataType> allTypes = dtm.getAllDataTypes();
         while (allTypes.hasNext()) {
             DataType dt = allTypes.next();
-            if (dt instanceof EnumDataType) {
-                enums.add((EnumDataType) dt);
+            if (dt instanceof Enum enumDataType) {
+                enums.add(enumDataType);
             }
         }
         
-        Collections.sort(enums, Comparator.comparing(EnumDataType::getName));
+        Collections.sort(enums, Comparator.comparing(Enum::getName));
         
         List<String> lines = new ArrayList<>();
-        for (EnumDataType enumType : enums) {
+        for (Enum enumType : enums) {
             StringBuilder sb = new StringBuilder();
             sb.append(enumType.getName()).append(" (").append(enumType.getLength()).append(" bytes): {");
             
