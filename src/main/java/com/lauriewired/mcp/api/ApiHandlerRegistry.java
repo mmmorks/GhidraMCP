@@ -426,6 +426,21 @@ public class ApiHandlerRegistry {
             boolean success = memoryService.renameDataAtAddress(params.get("address"), params.get("newName"));
             HttpUtils.sendResponse(exchange, success ? "Renamed successfully" : "Rename failed");
         });
+        
+        // Set memory data type
+        server.createContext("/set_memory_data_type", exchange -> {
+            try {
+                Map<String, String> params = HttpUtils.parsePostParams(exchange);
+                String address = params.get("address");
+                String dataType = params.get("data_type");
+                boolean clearExisting = "true".equalsIgnoreCase(params.get("clear_existing"));
+                
+                String result = memoryService.setMemoryDataType(address, dataType, clearExisting);
+                HttpUtils.sendResponse(exchange, result);
+            } catch (IOException e) {
+                HttpUtils.sendResponse(exchange, "Error parsing parameters: " + e.getMessage());
+            }
+        });
     }
     
     /**

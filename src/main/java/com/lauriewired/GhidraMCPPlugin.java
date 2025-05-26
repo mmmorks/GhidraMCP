@@ -79,7 +79,7 @@ public class GhidraMCPPlugin extends Plugin {
         this.dataTypeService = new DataTypeService(programService);
         this.analysisService = new AnalysisService(programService);
         this.commentService = new CommentService(programService);
-        this.memoryService = new MemoryService(programService);
+        this.memoryService = new MemoryService(programService, dataTypeService);
         this.variableService = new VariableService(programService);
         this.searchService = new SearchService(programService);
         

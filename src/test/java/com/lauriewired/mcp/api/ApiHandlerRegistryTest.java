@@ -124,6 +124,9 @@ class ApiHandlerRegistryTest {
         verify(mockHttpServer).createContext(eq("/decompile"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/renameFunction"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/get_function_by_address"), any(HttpHandler.class));
+        verify(mockHttpServer).createContext(eq("/get_current_address"), any(HttpHandler.class));
+        verify(mockHttpServer).createContext(eq("/get_current_function"), any(HttpHandler.class));
+        verify(mockHttpServer).createContext(eq("/list_functions"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/decompile_function"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/disassemble_function"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/rename_function_by_address"), any(HttpHandler.class));
@@ -131,6 +134,7 @@ class ApiHandlerRegistryTest {
         verify(mockHttpServer).createContext(eq("/set_function_prototype"), any(HttpHandler.class));
 
         // Namespace endpoints
+        verify(mockHttpServer).createContext(eq("/classes"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/namespaces"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/symbols"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/imports"), any(HttpHandler.class));
@@ -140,6 +144,11 @@ class ApiHandlerRegistryTest {
         // DataType endpoints
         verify(mockHttpServer).createContext(eq("/structures"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/renameStructField"), any(HttpHandler.class));
+        verify(mockHttpServer).createContext(eq("/create_structure"), any(HttpHandler.class));
+        verify(mockHttpServer).createContext(eq("/add_structure_field"), any(HttpHandler.class));
+        verify(mockHttpServer).createContext(eq("/create_enum"), any(HttpHandler.class));
+        verify(mockHttpServer).createContext(eq("/add_enum_value"), any(HttpHandler.class));
+        verify(mockHttpServer).createContext(eq("/enums"), any(HttpHandler.class));
 
         // Analysis endpoints
         verify(mockHttpServer).createContext(eq("/references"), any(HttpHandler.class));
@@ -151,6 +160,7 @@ class ApiHandlerRegistryTest {
         verify(mockHttpServer).createContext(eq("/segments"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/data"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/renameData"), any(HttpHandler.class));
+        verify(mockHttpServer).createContext(eq("/set_memory_data_type"), any(HttpHandler.class));
 
         // Comment endpoints
         verify(mockHttpServer).createContext(eq("/set_decompiler_comment"), any(HttpHandler.class));
@@ -190,7 +200,7 @@ class ApiHandlerRegistryTest {
 
         registry.registerAllEndpoints();
 
-        // Verify the expected number of endpoints were registered (now includes search and variable endpoints)
-        verify(mockHttpServer, times(40)).createContext(anyString(), any(HttpHandler.class));
+        // Verify the expected number of endpoints were registered
+        verify(mockHttpServer, times(41)).createContext(anyString(), any(HttpHandler.class));
     }
 }

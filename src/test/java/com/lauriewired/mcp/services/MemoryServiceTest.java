@@ -17,6 +17,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import ghidra.app.services.ProgramManager;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressFactory;
+import ghidra.program.model.data.DataType;
+import ghidra.program.model.data.DataTypeManager;
+import ghidra.program.model.data.ProgramBasedDataTypeManager;
 import ghidra.program.model.listing.Data;
 import ghidra.program.model.listing.DataIterator;
 import ghidra.program.model.listing.Listing;
@@ -35,8 +38,10 @@ public class MemoryServiceTest {
 
     private MemoryService memoryService;
     private ProgramService programService;
+    private DataTypeService dataTypeService;
     private TestMemoryService testMemoryService;
     private TestProgramService testProgramService;
+    private TestDataTypeService testDataTypeService;
     
     @Mock
     private MockablePluginTool mockTool;
@@ -88,16 +93,21 @@ public class MemoryServiceTest {
     
     @Mock
     private Symbol mockSymbol;
+    
+    @Mock
+    private ProgramBasedDataTypeManager mockDataTypeManager;
 
     @BeforeEach
     void setUp() {
         // Test with null tool since we can't easily mock PluginTool
         programService = new ProgramService(null);
-        memoryService = new MemoryService(programService);
+        dataTypeService = new DataTypeService(programService);
+        memoryService = new MemoryService(programService, dataTypeService);
         
         // Setup for happy path tests
         testProgramService = new TestProgramService(mockTool);
-        testMemoryService = new TestMemoryService(testProgramService);
+        testDataTypeService = new TestDataTypeService(testProgramService);
+        testMemoryService = new TestMemoryService(testProgramService, testDataTypeService);
     }
 
     @Test
@@ -427,4 +437,82 @@ public class MemoryServiceTest {
         assertFalse(result);
         verify(mockProgram).endTransaction(1, false);
     }
+    
+    // Tests for setMemoryDataType
+    
+    @Test
+    @DisplayName("setMemoryDataType returns error when no program is loaded")
+    void testSetMemoryDataType_NoProgram() {
+        String result = memoryService.setMemoryDataType("0x1000", "int", true);
+        assertEquals("No program loaded", result);
+    }
+    
+    @Test
+    @DisplayName("setMemoryDataType returns error when DataTypeService is null")
+    void testSetMemoryDataType_NoDataTypeService() {
+        // Setup mock to return a program
+        when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
+        when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
+        
+        // Create MemoryService without DataTypeService using TestMemoryService
+        TestMemoryService memoryServiceNoDataType = new TestMemoryService(testProgramService);
+        String result = memoryServiceNoDataType.setMemoryDataType("0x1000", "int", true);
+        assertEquals("DataTypeService not available", result);
+    }
+    
+    
+    @Test
+    @DisplayName("setMemoryDataType returns error for invalid address")
+    void testSetMemoryDataType_InvalidAddress() {
+        // Setup mocks
+        when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
+        when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
+        when(mockProgram.getAddressFactory()).thenReturn(mockAddressFactory);
+        
+        // Mock invalid address
+        when(mockAddressFactory.getAddress("invalid")).thenReturn(null);
+        
+        // Mock transaction
+        when(mockProgram.startTransaction(anyString())).thenReturn(1);
+        
+        // Execute
+        String result = testMemoryService.setMemoryDataType("invalid", "int", true);
+        
+        // Verify
+        assertEquals("Invalid address: invalid", result);
+        verify(mockProgram).endTransaction(1, false);
+    }
+    
+    @Test
+    @DisplayName("setMemoryDataType returns error when data type not found")
+    void testSetMemoryDataType_DataTypeNotFound() {
+        // Setup mocks
+        when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
+        when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
+        when(mockProgram.getAddressFactory()).thenReturn(mockAddressFactory);
+        when(mockProgram.getDataTypeManager()).thenReturn(mockDataTypeManager);
+        
+        // Mock address
+        when(mockAddressFactory.getAddress("0x1000")).thenReturn(mockDataAddr);
+        
+        // Mock transaction
+        when(mockProgram.startTransaction(anyString())).thenReturn(1);
+        
+        // Create test service with null data type resolution
+        TestDataTypeService mockTestDataTypeService = new TestDataTypeService(testProgramService) {
+            @Override
+            public DataType resolveDataType(DataTypeManager dtm, String typeName) {
+                return null;
+            }
+        };
+        TestMemoryService testMemoryServiceWithMock = new TestMemoryService(testProgramService, mockTestDataTypeService);
+        
+        // Execute
+        String result = testMemoryServiceWithMock.setMemoryDataType("0x1000", "unknown_type", true);
+        
+        // Verify
+        assertEquals("Data type not found: unknown_type", result);
+        verify(mockProgram).endTransaction(1, false);
+    }
+    
 }

@@ -6,13 +6,17 @@ import java.util.List;
 import com.lauriewired.mcp.utils.HttpUtils;
 
 import ghidra.program.model.address.Address;
+import ghidra.program.model.data.DataType;
+import ghidra.program.model.data.DataTypeManager;
 import ghidra.program.model.listing.Data;
 import ghidra.program.model.listing.DataIterator;
+import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.symbol.SourceType;
 import ghidra.program.model.symbol.Symbol;
 import ghidra.program.model.symbol.SymbolTable;
+import ghidra.program.model.util.CodeUnitInsertionException;
 import ghidra.util.exception.DuplicateNameException;
 import ghidra.util.exception.InvalidInputException;
 
@@ -21,6 +25,7 @@ import ghidra.util.exception.InvalidInputException;
  */
 public class TestMemoryService extends MemoryService {
     private final TestProgramService testProgramService;
+    private final TestDataTypeService testDataTypeService;
 
     /**
      * Creates a new TestMemoryService
@@ -30,6 +35,19 @@ public class TestMemoryService extends MemoryService {
     public TestMemoryService(TestProgramService testProgramService) {
         super(testProgramService);
         this.testProgramService = testProgramService;
+        this.testDataTypeService = null;
+    }
+    
+    /**
+     * Creates a new TestMemoryService with DataTypeService
+     *
+     * @param testProgramService the test program service for accessing the current program
+     * @param testDataTypeService the test data type service for resolving data types
+     */
+    public TestMemoryService(TestProgramService testProgramService, TestDataTypeService testDataTypeService) {
+        super(testProgramService, testDataTypeService);
+        this.testProgramService = testProgramService;
+        this.testDataTypeService = testDataTypeService;
     }
 
     /**
@@ -132,5 +150,82 @@ public class TestMemoryService extends MemoryService {
             program.endTransaction(tx, success);
         }
         return success;
+    }
+    
+    /**
+     * Set the data type at a specific memory address
+     * For testing, we'll simplify this to avoid Swing threading issues
+     *
+     * @param addressStr address where to set the data type
+     * @param dataTypeName name of the data type to set
+     * @param clearExisting whether to clear existing data at the address first
+     * @return status message
+     */
+    @Override
+    public String setMemoryDataType(String addressStr, String dataTypeName, boolean clearExisting) {
+        Program program = testProgramService.getCurrentProgram();
+        if (program == null) return "No program loaded";
+        if (testDataTypeService == null) return "DataTypeService not available";
+        
+        // For testing, we'll run directly without Swing
+        int tx = program.startTransaction("Set memory data type");
+        String resultMessage;
+        boolean success = false;
+        
+        try {
+            Address addr = program.getAddressFactory().getAddress(addressStr);
+            if (addr == null) {
+                resultMessage = "Invalid address: " + addressStr;
+                return resultMessage;
+            }
+            
+            // Get the data type manager and resolve the type
+            DataTypeManager dtm = program.getDataTypeManager();
+            DataType dataType = testDataTypeService.resolveDataType(dtm, dataTypeName);
+            
+            if (dataType == null) {
+                resultMessage = "Data type not found: " + dataTypeName;
+                return resultMessage;
+            }
+            
+            Listing listing = program.getListing();
+            
+            // Clear existing data if requested
+            if (clearExisting) {
+                Data existingData = listing.getDataAt(addr);
+                if (existingData != null) {
+                    listing.clearCodeUnits(addr, addr.add(existingData.getLength() - 1), false);
+                }
+            }
+            
+            // Create the data at the address
+            try {
+                Data newData = listing.createData(addr, dataType);
+                resultMessage = String.format("Data type '%s' (%d bytes) set at address %s",
+                    dataType.getName(),
+                    newData.getLength(),
+                    addr.toString());
+                success = true;
+            } catch (CodeUnitInsertionException e) {
+                // Try to provide more specific error information
+                if (e.getMessage().contains("Conflicting")) {
+                    resultMessage = "Failed to set data type: Conflicting data exists at address. " +
+                                   "Try setting clear_existing=true to overwrite.";
+                } else if (e.getMessage().contains("Insufficient")) {
+                    resultMessage = "Failed to set data type: Insufficient space. " +
+                                   "The data type requires more bytes than available.";
+                } else {
+                    resultMessage = "Failed to set data type: " + e.getMessage();
+                }
+            }
+        }
+        catch (Exception e) {
+            resultMessage = "Failed to set memory data type: " + e.getMessage();
+        }
+        finally {
+            program.endTransaction(tx, success);
+        }
+        
+        return resultMessage;
     }
 }

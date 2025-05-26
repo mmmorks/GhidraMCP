@@ -808,5 +808,32 @@ def get_symbol_address(symbol_name: str) -> str:
     """
     return "\n".join(safe_get("get_symbol_address", {"symbol_name": symbol_name}))
 
+@mcp.tool()
+def set_memory_data_type(address: str, data_type: str, clear_existing: bool = True) -> str:
+    """
+    Set the data type at a specific memory address.
+    
+    Creates or modifies data at the specified address with the given type.
+    This is useful for defining structures, arrays, strings, or other data types
+    at specific memory locations.
+    
+    Parameters:
+        address: Memory address (e.g., "00401000" or "ram:00401000")
+        data_type: Data type name ("int", "char[20]", "POINT", etc.)
+        clear_existing: Whether to clear existing data at the address first (default: True)
+    
+    Returns: Success message with details or error message
+    
+    Note: The data type can be a built-in type, structure, enum, or array.
+    Array syntax: "type[size]" e.g., "char[256]" for a string buffer.
+    
+    Example: set_memory_data_type("00402000", "POINT") -> "Data type 'POINT' set at address 00402000"
+    """
+    return safe_post("set_memory_data_type", {
+        "address": address,
+        "data_type": data_type,
+        "clear_existing": "true" if clear_existing else "false"
+    })
+
 if __name__ == "__main__":
     mcp.run()
