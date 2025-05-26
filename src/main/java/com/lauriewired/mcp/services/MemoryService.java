@@ -13,8 +13,10 @@ import com.lauriewired.mcp.utils.HttpUtils;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.data.DataType;
 import ghidra.program.model.data.DataTypeManager;
+import ghidra.program.model.listing.CodeUnit;
 import ghidra.program.model.listing.Data;
 import ghidra.program.model.listing.DataIterator;
+import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.MemoryBlock;
@@ -198,10 +200,16 @@ public class MemoryService {
                     
                     // Clear existing data if requested
                     if (clearExisting) {
-                        Data existingData = listing.getDataAt(addr);
-                        if (existingData != null) {
-                            listing.clearCodeUnits(addr, addr.add(existingData.getLength() - 1), false);
+                        // Calculate the size needed for the new data type
+                        int sizeNeeded = dataType.getLength();
+                        if (sizeNeeded <= 0) {
+                            // For dynamic types, try to get a reasonable default
+                            sizeNeeded = 1;
                         }
+                        
+                        // Clear any existing code units (data or instructions) in the range
+                        Address endAddr = addr.add(sizeNeeded - 1);
+                        listing.clearCodeUnits(addr, endAddr, false);
                     }
                     
                     // Create the data at the address
@@ -213,14 +221,28 @@ public class MemoryService {
                             addr.toString()));
                     } catch (CodeUnitInsertionException e) {
                         // Try to provide more specific error information
-                        if (e.getMessage().contains("Conflicting")) {
-                            resultMessage.set("Failed to set data type: Conflicting data exists at address. " +
-                                           "Try setting clear_existing=true to overwrite.");
-                        } else if (e.getMessage().contains("Insufficient")) {
-                            resultMessage.set("Failed to set data type: Insufficient space. " +
-                                           "The data type requires more bytes than available.");
+                        String errorMsg = e.getMessage();
+                        if (errorMsg.contains("Conflicting")) {
+                            // Check what's actually at the address
+                            CodeUnit cu = listing.getCodeUnitAt(addr);
+                            if (cu instanceof Instruction) {
+                                resultMessage.set("Failed to set data type: Instructions exist at address. " +
+                                               "Use clear_existing=true to overwrite instructions.");
+                            } else if (cu instanceof Data) {
+                                Data existingData = (Data) cu;
+                                resultMessage.set(String.format("Failed to set data type: Existing data '%s' at address. " +
+                                               "Use clear_existing=true to overwrite.",
+                                               existingData.getDataType().getName()));
+                            } else {
+                                resultMessage.set("Failed to set data type: Conflicting code units exist at address. " +
+                                               "Try setting clear_existing=true to overwrite.");
+                            }
+                        } else if (errorMsg.contains("Insufficient")) {
+                            resultMessage.set(String.format("Failed to set data type: Insufficient space. " +
+                                           "The data type '%s' requires %d bytes but there's not enough space available.",
+                                           dataType.getName(), dataType.getLength()));
                         } else {
-                            resultMessage.set("Failed to set data type: " + e.getMessage());
+                            resultMessage.set("Failed to set data type: " + errorMsg);
                         }
                     }
                 }
