@@ -16,7 +16,7 @@ ghidra_server_url = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_GHIDRA_SERVER
 
 mcp = FastMCP("ghidra-mcp")
 
-def safe_get(endpoint: str, params: dict = None) -> list:
+def safe_get(endpoint: str, params: dict | None = None) -> list:
     """Execute a GET request with optional parameters."""
     if params is None:
         params = {}
@@ -62,7 +62,7 @@ def list_methods(offset: int = 0, limit: int = 100) -> list:
     
     Example: list_methods(0, 10) -> ['main', 'printf', 'malloc', ...]
     """
-    return safe_get("methods", {"offset": offset, "limit": limit})
+    return safe_get("list_methods", {"offset": offset, "limit": limit})
 
 @mcp.tool()
 def list_classes(offset: int = 0, limit: int = 100) -> list:
@@ -79,7 +79,7 @@ def list_classes(offset: int = 0, limit: int = 100) -> list:
     
     Example: list_classes(0, 10) -> ['String', 'ArrayList', 'HashMap', ...]
     """
-    return safe_get("classes", {"offset": offset, "limit": limit})
+    return safe_get("list_classes", {"offset": offset, "limit": limit})
 
 @mcp.tool()
 def rename_struct_field(struct_name: str, old_field_name: str, new_field_name: str) -> str:
@@ -99,10 +99,10 @@ def rename_struct_field(struct_name: str, old_field_name: str, new_field_name: s
     
     Example: rename_struct_field("HWND", "field0_0x0", "handle")
     """
-    return safe_post("renameStructField", {
-        "structName": struct_name,
-        "oldFieldName": old_field_name, 
-        "newFieldName": new_field_name
+    return safe_post("rename_struct_field", {
+        "struct_name": struct_name,
+        "old_field_name": old_field_name,
+        "new_field_name": new_field_name
     })
 
 @mcp.tool()
@@ -121,7 +121,7 @@ def decompile_function(name: str) -> str:
     
     Example: decompile_function("main") -> "int main(int argc, char **argv) {...}"
     """
-    return safe_post("decompile", name)
+    return safe_post("decompile_function", name)
 
 @mcp.tool()
 def list_references(address: str, offset: int = 0, limit: int = 100) -> list:
@@ -139,7 +139,7 @@ def list_references(address: str, offset: int = 0, limit: int = 100) -> list:
     
     Example: list_references("00401000") -> ['00400f50 -> 00401000 (from CALL in main)', ...]
     """
-    return safe_get("references", {"address": address, "offset": offset, "limit": limit})
+    return safe_get("list_references", {"address": address, "offset": offset, "limit": limit})
 
 @mcp.tool()
 def rename_function(old_name: str, new_name: str) -> str:
@@ -158,7 +158,7 @@ def rename_function(old_name: str, new_name: str) -> str:
     
     Example: rename_function("FUN_00401000", "initialize_system")
     """
-    return safe_post("renameFunction", {"oldName": old_name, "newName": new_name})
+    return safe_post("rename_function", {"old_name": old_name, "new_name": new_name})
 
 @mcp.tool()
 def rename_data(address: str, new_name: str) -> str:
@@ -177,7 +177,7 @@ def rename_data(address: str, new_name: str) -> str:
     
     Example: rename_data("00402000", "config_table")
     """
-    return safe_post("renameData", {"address": address, "newName": new_name})
+    return safe_post("rename_data", {"address": address, "new_name": new_name})
 
 @mcp.tool()
 def list_structures(offset: int = 0, limit: int = 100) -> list:
@@ -194,7 +194,7 @@ def list_structures(offset: int = 0, limit: int = 100) -> list:
     
     Example: list_structures(0, 5) -> ['POINT: {int x, int y}', 'RECT: {int left...}', ...]
     """
-    return safe_get("structures", {"offset": offset, "limit": limit})
+    return safe_get("list_structures", {"offset": offset, "limit": limit})
 
 @mcp.tool()
 def create_structure(name: str, size: int = 0, category_path: str = "") -> str:
@@ -314,7 +314,7 @@ def list_enums(offset: int = 0, limit: int = 100) -> list:
     
     Example: list_enums(0, 5) -> ['ErrorCode (4 bytes): {SUCCESS=0, ERROR_FILE_NOT_FOUND=2, ...}', ...]
     """
-    return safe_get("enums", {"offset": offset, "limit": limit})
+    return safe_get("list_enums", {"offset": offset, "limit": limit})
 
 @mcp.tool()
 def list_segments(offset: int = 0, limit: int = 100) -> list:
@@ -331,7 +331,7 @@ def list_segments(offset: int = 0, limit: int = 100) -> list:
     
     Example: list_segments() -> ['.text: 00401000 - 00410000', '.data: 00411000 - 00412000', ...]
     """
-    return safe_get("segments", {"offset": offset, "limit": limit})
+    return safe_get("list_segments", {"offset": offset, "limit": limit})
 
 @mcp.tool()
 def list_imports(offset: int = 0, limit: int = 100) -> list:
@@ -348,7 +348,7 @@ def list_imports(offset: int = 0, limit: int = 100) -> list:
     
     Example: list_imports(0, 5) -> ['printf -> EXTERNAL:00000000', 'malloc -> EXTERNAL:00000000', ...]
     """
-    return safe_get("imports", {"offset": offset, "limit": limit})
+    return safe_get("list_imports", {"offset": offset, "limit": limit})
 
 @mcp.tool()
 def list_exports(offset: int = 0, limit: int = 100) -> list:
@@ -365,7 +365,7 @@ def list_exports(offset: int = 0, limit: int = 100) -> list:
     
     Example: list_exports(0, 5) -> ['initialize_library -> 00401000', 'get_version -> 00401050', ...]
     """
-    return safe_get("exports", {"offset": offset, "limit": limit})
+    return safe_get("list_exports", {"offset": offset, "limit": limit})
 
 @mcp.tool()
 def list_namespaces(offset: int = 0, limit: int = 100) -> list:
@@ -384,7 +384,7 @@ def list_namespaces(offset: int = 0, limit: int = 100) -> list:
     
     Example: list_namespaces(0, 5) -> ['com', 'com.example', 'com.example.app', ...]
     """
-    return safe_get("namespaces", {"offset": offset, "limit": limit})
+    return safe_get("list_namespaces", {"offset": offset, "limit": limit})
 
 @mcp.tool()
 def list_symbols(offset: int = 0, limit: int = 100) -> list:
@@ -403,7 +403,7 @@ def list_symbols(offset: int = 0, limit: int = 100) -> list:
     
     Example: list_symbols(0, 5) -> ['main -> 00401000', 'gVar1 -> 00410010', ...]
     """
-    return safe_get("symbols", {"offset": offset, "limit": limit})
+    return safe_get("list_symbols", {"offset": offset, "limit": limit})
 
 @mcp.tool()
 def list_data_items(offset: int = 0, limit: int = 100) -> list:
@@ -422,7 +422,7 @@ def list_data_items(offset: int = 0, limit: int = 100) -> list:
     
     Example: list_data_items(0, 3) -> ['00410000: hello_msg = "Hello, World!"', ...]
     """
-    return safe_get("data", {"offset": offset, "limit": limit})
+    return safe_get("list_data_items", {"offset": offset, "limit": limit})
 
 @mcp.tool()
 def search_functions_by_name(query: str, offset: int = 0, limit: int = 100) -> list:
@@ -442,7 +442,7 @@ def search_functions_by_name(query: str, offset: int = 0, limit: int = 100) -> l
     """
     if not query:
         return ["Error: query string is required"]
-    return safe_get("searchFunctions", {"query": query, "offset": offset, "limit": limit})
+    return safe_get("search_functions_by_name", {"query": query, "offset": offset, "limit": limit})
 
 @mcp.tool()
 def get_function_by_address(address: str) -> str:
@@ -527,7 +527,7 @@ def decompile_function_by_address(address: str) -> str:
     
     Example: decompile_function_by_address("00401000") -> "int main(int argc, char **argv) {...}"
     """
-    return "\n".join(safe_get("decompile_function", {"address": address}))
+    return "\n".join(safe_get("decompile_function_by_address", {"address": address}))
 
 @mcp.tool()
 def disassemble_function(address: str) -> list:
@@ -662,10 +662,10 @@ def rename_variable(function_name: str, old_name: str, new_name: str) -> str:
     
     Example: rename_variable("main", "local_10", "configValue")
     """
-    return safe_post("renameVariable", {
-        "functionName": function_name,
-        "oldName": old_name,
-        "newName": new_name
+    return safe_post("rename_variable", {
+        "function_name": function_name,
+        "old_name": old_name,
+        "new_name": new_name
     })
 
 @mcp.tool()
@@ -744,13 +744,13 @@ def search_memory(query: str, as_string: bool = True, block_name: str = "", limi
     """
     params = {
         "query": query,
-        "asString": "true" if as_string else "false",
+        "as_string": "true" if as_string else "false",
         "limit": limit
     }
     if block_name:
-        params["blockName"] = block_name
+        params["block_name"] = block_name
     
-    return "\n".join(safe_get("searchMemory", params))
+    return "\n".join(safe_get("search_memory", params))
 
 @mcp.tool()
 def search_disassembly(query: str, offset: int = 0, limit: int = 10) -> list:
@@ -768,7 +768,7 @@ def search_disassembly(query: str, offset: int = 0, limit: int = 10) -> list:
     
     Example: search_disassembly("mov.*eax") -> finds MOV instructions using EAX register
     """
-    return safe_get("searchDisassembly", {"query": query, "offset": offset, "limit": limit})
+    return safe_get("search_disassembly", {"query": query, "offset": offset, "limit": limit})
 
 @mcp.tool()
 def search_decompiled(query: str, offset: int = 0, limit: int = 5) -> str:
@@ -788,7 +788,7 @@ def search_decompiled(query: str, offset: int = 0, limit: int = 5) -> str:
     
     Example: search_decompiled("malloc\\(.*\\)") -> finds malloc calls in decompiled code
     """
-    return "\n".join(safe_get("searchDecompiled", {"query": query, "offset": offset, "limit": limit}))
+    return "\n".join(safe_get("search_decompiled", {"query": query, "offset": offset, "limit": limit}))
 
 @mcp.tool()
 def get_symbol_address(symbol_name: str) -> str:

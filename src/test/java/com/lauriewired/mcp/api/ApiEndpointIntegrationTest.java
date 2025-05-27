@@ -2,6 +2,7 @@ package com.lauriewired.mcp.api;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.net.URI;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -83,6 +84,7 @@ public class ApiEndpointIntegrationTest {
     private ApiHandlerRegistry apiHandlerRegistry;
     
     @BeforeEach
+    @SuppressWarnings("unused")
     void setUp() {
         // Create registry with all services
         apiHandlerRegistry = new ApiHandlerRegistry(
@@ -124,9 +126,13 @@ public class ApiEndpointIntegrationTest {
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
         
         // Setup mock exchange
+        when(mockExchange.getRequestURI()).thenReturn(URI.create("/set_memory_data_type"));
+        when(mockExchange.getRequestMethod()).thenReturn("POST");
         when(mockExchange.getRequestBody()).thenReturn(inputStream);
         when(mockExchange.getResponseBody()).thenReturn(outputStream);
         when(mockExchange.getResponseHeaders()).thenReturn(mockHeaders);
+        when(mockExchange.getRequestHeaders()).thenReturn(mockHeaders);
+        when(mockHeaders.getFirst("Content-Type")).thenReturn("application/x-www-form-urlencoded");
         
         // Setup mock service response
         when(mockMemoryService.setMemoryDataType("0x1000", "int", true))
@@ -158,9 +164,13 @@ public class ApiEndpointIntegrationTest {
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
         
         // Setup mock exchange
+        when(mockExchange.getRequestURI()).thenReturn(URI.create("/set_memory_data_type"));
+        when(mockExchange.getRequestMethod()).thenReturn("POST");
         when(mockExchange.getRequestBody()).thenReturn(inputStream);
         when(mockExchange.getResponseBody()).thenReturn(outputStream);
         when(mockExchange.getResponseHeaders()).thenReturn(mockHeaders);
+        when(mockExchange.getRequestHeaders()).thenReturn(mockHeaders);
+        when(mockHeaders.getFirst("Content-Type")).thenReturn("application/x-www-form-urlencoded");
         
         // Setup mock service response
         when(mockMemoryService.setMemoryDataType("0x2000", "char[20]", false))
@@ -192,9 +202,13 @@ public class ApiEndpointIntegrationTest {
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
         
         // Setup mock exchange
+        when(mockExchange.getRequestURI()).thenReturn(URI.create("/set_memory_data_type"));
+        when(mockExchange.getRequestMethod()).thenReturn("POST");
         when(mockExchange.getRequestBody()).thenReturn(inputStream);
         when(mockExchange.getResponseBody()).thenReturn(outputStream);
         when(mockExchange.getResponseHeaders()).thenReturn(mockHeaders);
+        when(mockExchange.getRequestHeaders()).thenReturn(mockHeaders);
+        when(mockHeaders.getFirst("Content-Type")).thenReturn("application/x-www-form-urlencoded");
         
         // Setup mock service response
         when(mockMemoryService.setMemoryDataType("0x3000", "POINT", false))

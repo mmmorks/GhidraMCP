@@ -1,5 +1,9 @@
 package com.lauriewired.mcp.api;
 
+import java.io.IOException;
+import java.util.Map;
+import java.util.Optional;
+
 import com.lauriewired.mcp.McpServerManager;
 import com.lauriewired.mcp.model.PrototypeResult;
 import com.lauriewired.mcp.services.AnalysisService;
@@ -11,16 +15,13 @@ import com.lauriewired.mcp.services.NamespaceService;
 import com.lauriewired.mcp.services.ProgramService;
 import com.lauriewired.mcp.services.SearchService;
 import com.lauriewired.mcp.services.VariableService;
+import com.lauriewired.mcp.telemetry.TelemetryInterceptor;
+import com.lauriewired.mcp.telemetry.TelemetryLogger;
 import com.lauriewired.mcp.utils.HttpUtils;
-import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
-import ghidra.util.Msg;
 
-import java.io.IOException;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Optional;
+import ghidra.util.Msg;
 
 /**
  * Functional interfaces for handler methods
@@ -47,6 +48,7 @@ public class ApiHandlerRegistry {
     private final ProgramService programService;
     private final SearchService searchService;
     private final VariableService variableService;
+    private final TelemetryLogger telemetryLogger;
     
     /**
      * Creates a new ApiHandlerRegistry
@@ -83,6 +85,7 @@ public class ApiHandlerRegistry {
         this.programService = programService;
         this.searchService = searchService;
         this.variableService = variableService;
+        this.telemetryLogger = new TelemetryLogger();
     }
     
     /**
@@ -110,73 +113,96 @@ public class ApiHandlerRegistry {
     }
     
     /**
+     * Shutdown the telemetry logger and save final reports
+     */
+    public void shutdown() {
+        if (telemetryLogger != null) {
+            telemetryLogger.shutdown();
+            Msg.info(this, "Telemetry logger shut down successfully");
+        }
+    }
+    
+    /**
+     * Wrap a handler with telemetry logging
+     */
+    private HttpHandler wrapWithTelemetry(HttpHandler handler, String toolName, String endpoint) {
+        return new TelemetryInterceptor(handler, telemetryLogger, toolName, endpoint);
+    }
+    
+    /**
+     * Register an endpoint with automatic telemetry wrapping using standardized naming
+     * This method uses the tool name as the endpoint path (with leading slash)
+     */
+    private void registerEndpoint(HttpServer server, String toolName, HttpHandler handler) {
+        String endpoint = "/" + toolName;
+        server.createContext(endpoint, wrapWithTelemetry(handler, toolName, endpoint));
+    }
+    
+    /**
      * Register function-related endpoints
      */
     private void registerFunctionEndpoints(HttpServer server) {
         // List functions with pagination
-        server.createContext("/methods", new HttpHandler() {
-            @Override
-            public void handle(HttpExchange exchange) throws IOException {
-                Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-                int offset = HttpUtils.parseIntOrDefault(qparams.get("offset"), 0);
-                int limit = HttpUtils.parseIntOrDefault(qparams.get("limit"), 100);
-                
-                HttpUtils.sendResponse(exchange, functionService.getAllFunctionNames(offset, limit));
-            }
+        registerEndpoint(server, "list_methods", exchange -> {
+            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
+            int offset = HttpUtils.parseIntOrDefault(qparams.get("offset"), 0);
+            int limit = HttpUtils.parseIntOrDefault(qparams.get("limit"), 100);
+            
+            HttpUtils.sendResponse(exchange, functionService.getAllFunctionNames(offset, limit));
         });
         
         // Decompile function by name
-        server.createContext("/decompile", exchange -> {
+        registerEndpoint(server, "decompile_function", exchange -> {
             String name = new String(exchange.getRequestBody().readAllBytes());
             HttpUtils.sendResponse(exchange, functionService.decompileFunctionByName(name));
         });
         
         // Rename function
-        server.createContext("/renameFunction", exchange -> {
+        registerEndpoint(server, "rename_function", exchange -> {
             Map<String, String> params = HttpUtils.parsePostParams(exchange);
-            String response = functionService.renameFunction(params.get("oldName"), params.get("newName"))
+            String response = functionService.renameFunction(params.get("old_name"), params.get("new_name"))
                     ? "Renamed successfully" : "Rename failed";
             HttpUtils.sendResponse(exchange, response);
         });
         
         // Get function by address
-        server.createContext("/get_function_by_address", exchange -> {
+        registerEndpoint(server, "get_function_by_address", exchange -> {
             Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
             String address = qparams.get("address");
             HttpUtils.sendResponse(exchange, functionService.getFunctionByAddress(address));
         });
         
         // Get current address
-        server.createContext("/get_current_address", exchange -> {
+        registerEndpoint(server, "get_current_address", exchange -> {
             HttpUtils.sendResponse(exchange, functionService.getCurrentAddress());
         });
         
         // Get current function
-        server.createContext("/get_current_function", exchange -> {
+        registerEndpoint(server, "get_current_function", exchange -> {
             HttpUtils.sendResponse(exchange, functionService.getCurrentFunction());
         });
         
         // List all functions
-        server.createContext("/list_functions", exchange -> {
+        registerEndpoint(server, "list_functions", exchange -> {
             HttpUtils.sendResponse(exchange, functionService.listFunctions());
         });
         
         // Decompile function by address
-        server.createContext("/decompile_function", exchange -> {
+        registerEndpoint(server, "decompile_function_by_address", exchange -> {
             Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
             String address = qparams.get("address");
             HttpUtils.sendResponse(exchange, functionService.decompileFunctionByAddress(address));
         });
         
         // Disassemble function
-        server.createContext("/disassemble_function", exchange -> {
+        registerEndpoint(server, "disassemble_function", exchange -> {
             Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
             String address = qparams.get("address");
             HttpUtils.sendResponse(exchange, functionService.disassembleFunction(address));
         });
         
         // Rename function by address
-        server.createContext("/rename_function_by_address", exchange -> {
+        registerEndpoint(server, "rename_function_by_address", exchange -> {
             Map<String, String> params = HttpUtils.parsePostParams(exchange);
             String functionAddress = params.get("function_address");
             String newName = params.get("new_name");
@@ -185,7 +211,7 @@ public class ApiHandlerRegistry {
         });
         
         // Search functions by name
-        server.createContext("/searchFunctions", exchange -> {
+        registerEndpoint(server, "search_functions_by_name", exchange -> {
             Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
             String searchTerm = qparams.get("query");
             int offset = HttpUtils.parseIntOrDefault(qparams.get("offset"), 0);
@@ -194,32 +220,29 @@ public class ApiHandlerRegistry {
         });
         
         // Set function prototype
-        server.createContext("/set_function_prototype", new HttpHandler() {
-            @Override
-            public void handle(HttpExchange exchange) throws IOException {
-                try {
-                    Map<String, String> params = HttpUtils.parsePostParams(exchange);
-                    String functionAddress = params.get("function_address");
-                    String prototype = params.get("prototype");
-                    
-                    // Call the set prototype function and get detailed result
-                    PrototypeResult result = functionService.setFunctionPrototype(functionAddress, prototype);
-                    
-                    // Format response based on success/failure and any messages
-                    String response;
-                    if (result.isSuccess()) {
-                        response = "Function prototype set successfully";
-                        if (!result.getErrorMessage().isEmpty()) {
-                            response += "\n\nWarnings/Debug Info:\n" + result.getErrorMessage();
-                        }
-                    } else {
-                        response = "Failed to set function prototype: " + result.getErrorMessage();
+        registerEndpoint(server, "set_function_prototype", exchange -> {
+            try {
+                Map<String, String> params = HttpUtils.parsePostParams(exchange);
+                String functionAddress = params.get("function_address");
+                String prototype = params.get("prototype");
+                
+                // Call the set prototype function and get detailed result
+                PrototypeResult result = functionService.setFunctionPrototype(functionAddress, prototype);
+                
+                // Format response based on success/failure and any messages
+                String response;
+                if (result.isSuccess()) {
+                    response = "Function prototype set successfully";
+                    if (!result.getErrorMessage().isEmpty()) {
+                        response += "\n\nWarnings/Debug Info:\n" + result.getErrorMessage();
                     }
-                    
-                    HttpUtils.sendResponse(exchange, response);
-                } catch (IOException e) {
-                    HttpUtils.sendResponse(exchange, "Error processing request: " + e.getMessage());
+                } else {
+                    response = "Failed to set function prototype: " + result.getErrorMessage();
                 }
+                
+                HttpUtils.sendResponse(exchange, response);
+            } catch (IOException e) {
+                HttpUtils.sendResponse(exchange, "Error processing request: " + e.getMessage());
             }
         });
     }
@@ -229,22 +252,27 @@ public class ApiHandlerRegistry {
      */
     private void registerNamespaceEndpoints(HttpServer server) {
         // Register classes endpoint
-        server.createContext("/classes", createPaginatedHandler(namespaceService::getAllClassNames));
+        registerEndpoint(server, "list_classes",
+            createPaginatedHandler(namespaceService::getAllClassNames));
         
         // Register namespaces endpoint
-        server.createContext("/namespaces", createPaginatedHandler(namespaceService::listNamespaces));
+        registerEndpoint(server, "list_namespaces",
+            createPaginatedHandler(namespaceService::listNamespaces));
         
         // Register symbols endpoint
-        server.createContext("/symbols", createPaginatedHandler(namespaceService::listSymbols));
+        registerEndpoint(server, "list_symbols",
+            createPaginatedHandler(namespaceService::listSymbols));
         
         // Register imports endpoint
-        server.createContext("/imports", createPaginatedHandler(namespaceService::listImports));
+        registerEndpoint(server, "list_imports",
+            createPaginatedHandler(namespaceService::listImports));
         
         // Register exports endpoint
-        server.createContext("/exports", createPaginatedHandler(namespaceService::listExports));
+        registerEndpoint(server, "list_exports",
+            createPaginatedHandler(namespaceService::listExports));
         
         // Get symbol address
-        server.createContext("/get_symbol_address", exchange -> {
+        registerEndpoint(server, "get_symbol_address", exchange -> {
             Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
             String symbolName = qparams.get("symbol_name");
             HttpUtils.sendResponse(exchange, namespaceService.getSymbolAddress(symbolName));
@@ -256,7 +284,7 @@ public class ApiHandlerRegistry {
      */
     private void registerDataTypeEndpoints(HttpServer server) {
         // List structures
-        server.createContext("/structures", exchange -> {
+        registerEndpoint(server, "list_structures", exchange -> {
             Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
             int offset = HttpUtils.parseIntOrDefault(qparams.get("offset"), 0);
             int limit = HttpUtils.parseIntOrDefault(qparams.get("limit"), 100);
@@ -264,25 +292,22 @@ public class ApiHandlerRegistry {
         });
         
         // Rename struct field
-        server.createContext("/renameStructField", new HttpHandler() {
-            @Override
-            public void handle(HttpExchange exchange) throws IOException {
-                try {
-                    Map<String, String> params = HttpUtils.parsePostParams(exchange);
-                    String result = dataTypeService.renameStructField(
-                        params.get("structName"),
-                        params.get("oldFieldName"),
-                        params.get("newFieldName")
-                    );
-                    HttpUtils.sendResponse(exchange, result);
-                } catch (IOException e) {
-                    HttpUtils.sendResponse(exchange, "Error parsing parameters: " + e.getMessage());
-                }
+        registerEndpoint(server, "rename_struct_field", exchange -> {
+            try {
+                Map<String, String> params = HttpUtils.parsePostParams(exchange);
+                String result = dataTypeService.renameStructField(
+                        params.get("struct_name"),
+                        params.get("old_field_name"),
+                        params.get("new_field_name")
+                );
+                HttpUtils.sendResponse(exchange, result);
+            } catch (IOException e) {
+                HttpUtils.sendResponse(exchange, "Error parsing parameters: " + e.getMessage());
             }
         });
         
         // Create structure
-        server.createContext("/create_structure", exchange -> {
+        registerEndpoint(server, "create_structure", exchange -> {
             try {
                 Map<String, String> params = HttpUtils.parsePostParams(exchange);
                 String structName = params.get("name");
@@ -297,7 +322,7 @@ public class ApiHandlerRegistry {
         });
         
         // Add structure field
-        server.createContext("/add_structure_field", exchange -> {
+        registerEndpoint(server, "add_structure_field", exchange -> {
             try {
                 Map<String, String> params = HttpUtils.parsePostParams(exchange);
                 String structName = params.get("struct_name");
@@ -316,7 +341,7 @@ public class ApiHandlerRegistry {
         });
         
         // Create enum
-        server.createContext("/create_enum", exchange -> {
+        registerEndpoint(server, "create_enum", exchange -> {
             try {
                 Map<String, String> params = HttpUtils.parsePostParams(exchange);
                 String enumName = params.get("name");
@@ -331,7 +356,7 @@ public class ApiHandlerRegistry {
         });
         
         // Add enum value
-        server.createContext("/add_enum_value", exchange -> {
+        registerEndpoint(server, "add_enum_value", exchange -> {
             try {
                 Map<String, String> params = HttpUtils.parsePostParams(exchange);
                 String enumName = params.get("enum_name");
@@ -348,7 +373,7 @@ public class ApiHandlerRegistry {
         });
         
         // List enums
-        server.createContext("/enums", exchange -> {
+        registerEndpoint(server, "list_enums", exchange -> {
             Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
             int offset = HttpUtils.parseIntOrDefault(qparams.get("offset"), 0);
             int limit = HttpUtils.parseIntOrDefault(qparams.get("limit"), 100);
@@ -361,7 +386,7 @@ public class ApiHandlerRegistry {
      */
     private void registerAnalysisEndpoints(HttpServer server) {
         // List references
-        server.createContext("/references", exchange -> {
+        registerEndpoint(server, "list_references", exchange -> {
             Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
             String address = qparams.get("address");
             int offset = HttpUtils.parseIntOrDefault(qparams.get("offset"), 0);
@@ -370,14 +395,14 @@ public class ApiHandlerRegistry {
         });
         
         // Analyze control flow
-        server.createContext("/analyze_control_flow", exchange -> {
+        registerEndpoint(server, "analyze_control_flow", exchange -> {
             Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
             String address = qparams.get("address");
             HttpUtils.sendResponse(exchange, analysisService.analyzeControlFlow(address));
         });
         
         // Analyze data flow
-        server.createContext("/analyze_data_flow", exchange -> {
+        registerEndpoint(server, "analyze_data_flow", exchange -> {
             Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
             String address = qparams.get("address");
             String variableName = qparams.get("variable");
@@ -385,7 +410,7 @@ public class ApiHandlerRegistry {
         });
         
         // Analyze call graph
-        server.createContext("/analyze_call_graph", exchange -> {
+        registerEndpoint(server, "analyze_call_graph", exchange -> {
             Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
             String address = qparams.get("address");
             int depth = HttpUtils.parseIntOrDefault(qparams.get("depth"), 2);
@@ -398,7 +423,7 @@ public class ApiHandlerRegistry {
      */
     private void registerMemoryEndpoints(HttpServer server) {
         // List segments
-        server.createContext("/segments", exchange -> {
+        registerEndpoint(server, "list_segments", exchange -> {
             Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
             int offset = HttpUtils.parseIntOrDefault(qparams.get("offset"), 0);
             int limit = HttpUtils.parseIntOrDefault(qparams.get("limit"), 100);
@@ -406,7 +431,7 @@ public class ApiHandlerRegistry {
         });
         
         // List data items
-        server.createContext("/data", exchange -> {
+        registerEndpoint(server, "list_data_items", exchange -> {
             Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
             int offset = HttpUtils.parseIntOrDefault(qparams.get("offset"), 0);
             int limit = HttpUtils.parseIntOrDefault(qparams.get("limit"), 100);
@@ -414,7 +439,7 @@ public class ApiHandlerRegistry {
         });
         
         // Rename data
-        server.createContext("/renameData", exchange -> {
+        registerEndpoint(server, "rename_data", exchange -> {
             Map<String, String> params;
             try {
                 params = HttpUtils.parsePostParams(exchange);
@@ -423,12 +448,12 @@ public class ApiHandlerRegistry {
                 return;
             }
             
-            boolean success = memoryService.renameDataAtAddress(params.get("address"), params.get("newName"));
+            boolean success = memoryService.renameDataAtAddress(params.get("address"), params.get("new_name"));
             HttpUtils.sendResponse(exchange, success ? "Renamed successfully" : "Rename failed");
         });
         
         // Set memory data type
-        server.createContext("/set_memory_data_type", exchange -> {
+        registerEndpoint(server, "set_memory_data_type", exchange -> {
             try {
                 Map<String, String> params = HttpUtils.parsePostParams(exchange);
                 String address = params.get("address");
@@ -448,10 +473,12 @@ public class ApiHandlerRegistry {
      */
     private void registerCommentEndpoints(HttpServer server) {
         // Set decompiler comment
-        server.createContext("/set_decompiler_comment", createCommentHandler(commentService::setDecompilerComment));
+        registerEndpoint(server, "set_decompiler_comment",
+            createCommentHandler(commentService::setDecompilerComment));
         
         // Set disassembly comment
-        server.createContext("/set_disassembly_comment", createCommentHandler(commentService::setDisassemblyComment));
+        registerEndpoint(server, "set_disassembly_comment",
+            createCommentHandler(commentService::setDisassemblyComment));
     }
     
     /**
@@ -459,23 +486,23 @@ public class ApiHandlerRegistry {
      */
     private void registerSearchEndpoints(HttpServer server) {
         // Memory search endpoint
-        server.createContext("/searchMemory", exchange -> {
+        registerEndpoint(server, "search_memory", exchange -> {
             try {
                 Map<String, String> params = HttpUtils.parseQueryParams(exchange);
                 String query = params.get("query");
-                boolean asString = "true".equalsIgnoreCase(params.get("asString"));
-                String blockName = params.get("blockName");
+                boolean asString = "true".equalsIgnoreCase(params.get("as_string"));
+                String blockName = params.get("block_name");
                 int limit = Integer.parseInt(params.getOrDefault("limit", "10"));
                 
                 String result = searchService.searchMemory(query, asString, blockName, limit);
                 HttpUtils.sendResponse(exchange, result);
-            } catch (Exception e) {
+            } catch (IOException | RuntimeException e) {
                 HttpUtils.sendResponse(exchange, "Error processing search request: " + e.getMessage());
             }
         });
         
         // Disassembly search endpoint
-        server.createContext("/searchDisassembly", exchange -> {
+        registerEndpoint(server, "search_disassembly", exchange -> {
             try {
                 Map<String, String> params = HttpUtils.parseQueryParams(exchange);
                 String query = params.get("query");
@@ -484,13 +511,13 @@ public class ApiHandlerRegistry {
                 
                 String result = searchService.searchDisassembly(query, offset, limit);
                 HttpUtils.sendResponse(exchange, result);
-            } catch (Exception e) {
+            } catch (RuntimeException | IOException e) {
                 HttpUtils.sendResponse(exchange, "Error processing disassembly search: " + e.getMessage());
             }
         });
         
         // Decompiled code search endpoint
-        server.createContext("/searchDecompiled", exchange -> {
+        registerEndpoint(server, "search_decompiled", exchange -> {
             try {
                 Map<String, String> params = HttpUtils.parseQueryParams(exchange);
                 String query = params.get("query");
@@ -499,7 +526,7 @@ public class ApiHandlerRegistry {
                 
                 String result = searchService.searchDecompiledCode(query, offset, limit);
                 HttpUtils.sendResponse(exchange, result);
-            } catch (Exception e) {
+            } catch (IOException | RuntimeException e) {
                 HttpUtils.sendResponse(exchange, "Error processing decompiled code search: " + e.getMessage());
             }
         });
@@ -510,13 +537,13 @@ public class ApiHandlerRegistry {
      */
     private void registerVariableEndpoints(HttpServer server) {
         // Rename variable endpoint
-        server.createContext("/renameVariable", exchange -> {
+        registerEndpoint(server, "rename_variable", exchange -> {
             try {
                 var params = HttpUtils.parsePostParams(exchange);
-                var functionName = params.get("functionName");
-                var oldName = params.get("oldName");
-                var newName = params.get("newName");
-                var usageAddress = params.get("usageAddress");
+                var functionName = params.get("function_name");
+                var oldName = params.get("old_name");
+                var newName = params.get("new_name");
+                var usageAddress = params.get("usage_address");
                 
                 var result = variableService.renameVariableInFunction(functionName, oldName, newName, usageAddress);
                 HttpUtils.sendResponse(exchange, result);
@@ -526,15 +553,15 @@ public class ApiHandlerRegistry {
         });
         
         // Split variable endpoint
-        server.createContext("/splitVariable", exchange -> {
+        registerEndpoint(server, "split_variable", exchange -> {
             try {
                 var params = HttpUtils.parsePostParams(exchange);
-                var functionName = params.get("functionName");
-                var variableName = params.get("variableName");
-                var usageAddress = params.get("usageAddress");
+                var functionName = params.get("function_name");
+                var variableName = params.get("variable_name");
+                var usageAddress = params.get("usage_address");
                 
-                // Use Optional to handle the optional newName parameter
-                var newName = Optional.ofNullable(params.get("newName"))
+                // Use Optional to handle the optional new_name parameter
+                var newName = Optional.ofNullable(params.get("new_name"))
                     .filter(name -> !name.isEmpty())
                     .orElse(variableName + "_split");
                 
@@ -546,7 +573,7 @@ public class ApiHandlerRegistry {
         });
         
         // Set local variable type endpoint
-        server.createContext("/set_local_variable_type", exchange -> {
+        registerEndpoint(server, "set_local_variable_type", exchange -> {
             try {
                 var params = HttpUtils.parsePostParams(exchange);
                 var functionAddress = params.get("function_address");
@@ -606,14 +633,11 @@ public class ApiHandlerRegistry {
      * Helper method to create a pagination handler
      */
     private HttpHandler createPaginatedHandler(final PaginatedHandler handler) {
-        return new HttpHandler() {
-            @Override
-            public void handle(HttpExchange exchange) throws IOException {
-                Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-                int offset = HttpUtils.parseIntOrDefault(qparams.get("offset"), 0);
-                int limit = HttpUtils.parseIntOrDefault(qparams.get("limit"), 100);
-                HttpUtils.sendResponse(exchange, handler.execute(offset, limit));
-            }
+        return exchange -> {
+            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
+            int offset = HttpUtils.parseIntOrDefault(qparams.get("offset"), 0);
+            int limit = HttpUtils.parseIntOrDefault(qparams.get("limit"), 100);
+            HttpUtils.sendResponse(exchange, handler.execute(offset, limit));
         };
     }
     
@@ -621,20 +645,17 @@ public class ApiHandlerRegistry {
      * Helper method to create a comment handler
      */
     private HttpHandler createCommentHandler(final CommentHandler handler) {
-        return new HttpHandler() {
-            @Override
-            public void handle(HttpExchange exchange) throws IOException {
-                try {
-                    Map<String, String> params = HttpUtils.parsePostParams(exchange);
-                    String address = params.get("address");
-                    String comment = params.get("comment");
-                    boolean success = handler.execute(address, comment);
-                    
-                    HttpUtils.sendResponse(exchange,
+        return exchange -> {
+            try {
+                Map<String, String> params = HttpUtils.parsePostParams(exchange);
+                String address = params.get("address");
+                String comment = params.get("comment");
+                boolean success = handler.execute(address, comment);
+                
+                HttpUtils.sendResponse(exchange,
                         success ? "Comment set successfully" : "Failed to set comment");
-                } catch (IOException e) {
-                    HttpUtils.sendResponse(exchange, "Error parsing parameters: " + e.getMessage());
-                }
+            } catch (IOException e) {
+                HttpUtils.sendResponse(exchange, "Error parsing parameters: " + e.getMessage());
             }
         };
     }

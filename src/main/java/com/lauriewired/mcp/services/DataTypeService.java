@@ -123,7 +123,7 @@ public class DataTypeService {
                         }
                     }
                 }
-                catch (Exception e) {
+                catch (RuntimeException e) {
                     Msg.error(this, "Error renaming struct field", e);
                 }
                 finally {
@@ -383,7 +383,7 @@ public class DataTypeService {
                     resultMessage.set("Field '" + (fieldName != null ? fieldName : "unnamed") +
                                     "' added to structure '" + structName + "'");
                 }
-                catch (Exception e) {
+                catch (RuntimeException e) {
                     Msg.error(this, "Error adding structure field", e);
                     resultMessage.set("Failed to add field: " + e.getMessage());
                 }

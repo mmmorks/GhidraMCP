@@ -15,6 +15,7 @@ public class CommentServiceTest {
     private ProgramService programService;
 
     @BeforeEach
+    @SuppressWarnings("unused")
     void setUp() {
         // Test with null tool since we can't easily mock PluginTool
         programService = new ProgramService(null);

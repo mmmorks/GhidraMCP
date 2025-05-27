@@ -89,6 +89,15 @@
       <systemPath>${project.basedir}/lib/FileSystem.jar</systemPath>
     </dependency>
 
+    <!-- Gson for JSON serialization -->
+    <dependency>
+      <groupId>com.google.code.gson</groupId>
+      <artifactId>gson</artifactId>
+      <version>2.9.0</version>
+      <scope>system</scope>
+      <systemPath>${project.basedir}/lib/gson-2.9.0.jar</systemPath>
+    </dependency>
+
     <!-- Apache Commons Text for JSON escaping -->
     <dependency>
       <groupId>org.apache.commons</groupId>

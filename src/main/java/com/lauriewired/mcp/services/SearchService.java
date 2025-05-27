@@ -536,9 +536,6 @@ public class SearchService {
             
             // If found a match in this function
             if (matcher.find()) {
-                // Reset the matcher to find the position
-                matcher = pattern.matcher(decompiled);
-                
                 // Build a nice result with context
                 StringBuilder result = new StringBuilder();
                 result.append(String.format("Function: %s at %s\n", function.getName(), function.getEntryPoint()));

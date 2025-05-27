@@ -228,8 +228,7 @@ public class MemoryService {
                             if (cu instanceof Instruction) {
                                 resultMessage.set("Failed to set data type: Instructions exist at address. " +
                                                "Use clear_existing=true to overwrite instructions.");
-                            } else if (cu instanceof Data) {
-                                Data existingData = (Data) cu;
+                            } else if (cu instanceof Data existingData) {
                                 resultMessage.set(String.format("Failed to set data type: Existing data '%s' at address. " +
                                                "Use clear_existing=true to overwrite.",
                                                existingData.getDataType().getName()));
@@ -246,7 +245,7 @@ public class MemoryService {
                         }
                     }
                 }
-                catch (Exception e) {
+                catch (RuntimeException e) {
                     Msg.error(this, "Error setting memory data type", e);
                     resultMessage.set("Failed to set memory data type: " + e.getMessage());
                 }

@@ -24,6 +24,8 @@ import ghidra.program.model.listing.Program;
 import ghidra.program.model.symbol.SourceType;
 import ghidra.program.util.ProgramLocation;
 import ghidra.util.Msg;
+import ghidra.util.exception.DuplicateNameException;
+import ghidra.util.exception.InvalidInputException;
 import ghidra.util.task.ConsoleTaskMonitor;
 
 /**
@@ -117,7 +119,7 @@ public class FunctionService {
                             break;
                         }
                     }
-                } catch (Exception e) {
+                } catch (InvalidInputException | DuplicateNameException | RuntimeException e) {
                     Msg.error(this, "Error renaming function", e);
                 } finally {
                     program.endTransaction(tx, successFlag.get());
@@ -319,7 +321,7 @@ public class FunctionService {
                     
                     func.setName(newName, SourceType.USER_DEFINED);
                     success.set(true);
-                } catch (Exception e) {
+                } catch (InvalidInputException | DuplicateNameException | RuntimeException e) {
                     Msg.error(this, "Error renaming function by address", e);
                 } finally {
                     program.endTransaction(tx, success.get());
@@ -445,6 +447,7 @@ public class FunctionService {
     /**
      * Parse and apply the function signature with error handling
      */
+    @SuppressWarnings("UseSpecificCatch")
     private void parseFunctionSignatureAndApply(Program program, Address addr, String prototype,
                                               AtomicBoolean success, StringBuilder errorMessage) {
         // Use ApplyFunctionSignatureCmd to parse and apply the signature

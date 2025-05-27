@@ -124,9 +124,16 @@ public class GhidraMCPPlugin extends Plugin {
 
     @Override
     public void dispose() {
+        // Shutdown telemetry logger first to capture final metrics
+        if (apiHandlerRegistry != null) {
+            apiHandlerRegistry.shutdown();
+        }
+        
+        // Then stop the server
         if (serverManager != null) {
             serverManager.stopServer();
         }
+        
         super.dispose();
     }
 }
