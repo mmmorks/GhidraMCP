@@ -6,6 +6,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -557,5 +558,207 @@ public class DataTypeService {
         }
         
         return HttpUtils.paginateList(lines, offset, limit);
+    }
+    
+    /**
+     * Get detailed information about a structure including all fields
+     *
+     * @param structureName name of the structure to get details for
+     * @return detailed structure information
+     */
+    public String getStructureDetails(String structureName) {
+        Program program = programService.getCurrentProgram();
+        if (program == null) return "No program loaded";
+        if (structureName == null || structureName.isEmpty()) return "Structure name is required";
+        
+        ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
+        
+        // Find the structure by name
+        DataType dataType = dtm.getDataType("/" + structureName);
+        if (dataType == null) {
+            // Try searching in all categories
+            Iterator<DataType> allTypes = dtm.getAllDataTypes();
+            while (allTypes.hasNext()) {
+                DataType dt = allTypes.next();
+                if (dt.getName().equals(structureName) && dt instanceof Structure) {
+                    dataType = dt;
+                    break;
+                }
+            }
+        }
+        
+        if (dataType == null || !(dataType instanceof Structure)) {
+            return "Structure not found: " + structureName;
+        }
+        
+        Structure struct = (Structure) dataType;
+        StringBuilder result = new StringBuilder();
+        
+        // Structure header information
+        result.append("Structure: ").append(struct.getName()).append("\n");
+        result.append("Category: ").append(struct.getCategoryPath()).append("\n");
+        result.append("Size: ").append(struct.getLength()).append(" bytes\n");
+        result.append("Alignment: ").append(struct.getAlignment()).append("\n");
+        result.append("Packed: ").append(struct.isPackingEnabled() ? "Yes" : "No").append("\n");
+        result.append("Description: ").append(struct.getDescription() != null ? struct.getDescription() : "None").append("\n");
+        result.append("\nFields:\n");
+        
+        // List all fields
+        DataTypeComponent[] components = struct.getComponents();
+        if (components.length == 0) {
+            result.append("  (no fields defined)\n");
+        } else {
+            for (DataTypeComponent comp : components) {
+                result.append(String.format("  [%04X] %s: %s (%d bytes)",
+                    comp.getOffset(),
+                    comp.getFieldName() != null ? comp.getFieldName() : "(unnamed)",
+                    comp.getDataType().getName(),
+                    comp.getLength()));
+                
+                if (comp.getComment() != null) {
+                    result.append(" // ").append(comp.getComment());
+                }
+                result.append("\n");
+            }
+        }
+        
+        // Show undefined components if any
+        DataTypeComponent[] definedComponents = struct.getDefinedComponents();
+        if (definedComponents.length < components.length) {
+            result.append("\nUndefined regions:\n");
+            int lastEnd = 0;
+            for (DataTypeComponent comp : definedComponents) {
+                if (comp.getOffset() > lastEnd) {
+                    result.append(String.format("  [%04X-%04X] undefined (%d bytes)\n",
+                        lastEnd, comp.getOffset() - 1, comp.getOffset() - lastEnd));
+                }
+                lastEnd = comp.getOffset() + comp.getLength();
+            }
+            if (lastEnd < struct.getLength()) {
+                result.append(String.format("  [%04X-%04X] undefined (%d bytes)\n",
+                    lastEnd, struct.getLength() - 1, struct.getLength() - lastEnd));
+            }
+        }
+        
+        return result.toString();
+    }
+    
+    /**
+     * Get detailed information about an enum including all values
+     *
+     * @param enumName name of the enum to get details for
+     * @return detailed enum information
+     */
+    public String getEnumDetails(String enumName) {
+        Program program = programService.getCurrentProgram();
+        if (program == null) return "No program loaded";
+        if (enumName == null || enumName.isEmpty()) return "Enum name is required";
+        
+        ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
+        
+        // Find the enum by name
+        DataType dataType = dtm.getDataType("/" + enumName);
+        if (dataType == null) {
+            // Try searching in all categories
+            Iterator<DataType> allTypes = dtm.getAllDataTypes();
+            while (allTypes.hasNext()) {
+                DataType dt = allTypes.next();
+                if (dt.getName().equals(enumName) && dt instanceof Enum) {
+                    dataType = dt;
+                    break;
+                }
+            }
+        }
+        
+        if (dataType == null || !(dataType instanceof Enum)) {
+            return "Enum not found: " + enumName;
+        }
+        
+        Enum enumType = (Enum) dataType;
+        StringBuilder result = new StringBuilder();
+        
+        // Enum header information
+        result.append("Enum: ").append(enumType.getName()).append("\n");
+        result.append("Category: ").append(enumType.getCategoryPath()).append("\n");
+        result.append("Size: ").append(enumType.getLength()).append(" bytes\n");
+        result.append("Description: ").append(enumType.getDescription() != null ? enumType.getDescription() : "None").append("\n");
+        result.append("\nValues:\n");
+        
+        // List all values sorted by numeric value
+        String[] names = enumType.getNames();
+        List<Map.Entry<String, Long>> entries = new ArrayList<>();
+        for (String name : names) {
+            entries.add(Map.entry(name, enumType.getValue(name)));
+        }
+        entries.sort(Map.Entry.comparingByValue());
+        
+        if (entries.isEmpty()) {
+            result.append("  (no values defined)\n");
+        } else {
+            for (Map.Entry<String, Long> entry : entries) {
+                result.append(String.format("  %s = 0x%X (%d)\n",
+                    entry.getKey(),
+                    entry.getValue(),
+                    entry.getValue()));
+            }
+        }
+        
+        return result.toString();
+    }
+    
+    /**
+     * List all fields of a structure
+     *
+     * @param structureName name of the structure
+     * @return list of structure fields with detailed information
+     */
+    public String listStructureFields(String structureName) {
+        Program program = programService.getCurrentProgram();
+        if (program == null) return "No program loaded";
+        if (structureName == null || structureName.isEmpty()) return "Structure name is required";
+        
+        ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
+        
+        // Find the structure by name
+        DataType dataType = dtm.getDataType("/" + structureName);
+        if (dataType == null) {
+            // Try searching in all categories
+            Iterator<DataType> allTypes = dtm.getAllDataTypes();
+            while (allTypes.hasNext()) {
+                DataType dt = allTypes.next();
+                if (dt.getName().equals(structureName) && dt instanceof Structure) {
+                    dataType = dt;
+                    break;
+                }
+            }
+        }
+        
+        if (dataType == null || !(dataType instanceof Structure)) {
+            return "Structure not found: " + structureName;
+        }
+        
+        Structure struct = (Structure) dataType;
+        DataTypeComponent[] components = struct.getComponents();
+        
+        if (components.length == 0) {
+            return "Structure " + structureName + " has no fields defined";
+        }
+        
+        List<String> fields = new ArrayList<>();
+        for (DataTypeComponent comp : components) {
+            String fieldInfo = String.format("Offset: 0x%04X, Name: %s, Type: %s, Size: %d bytes",
+                comp.getOffset(),
+                comp.getFieldName() != null ? comp.getFieldName() : "(unnamed)",
+                comp.getDataType().getName(),
+                comp.getLength());
+            
+            if (comp.getComment() != null) {
+                fieldInfo += ", Comment: " + comp.getComment();
+            }
+            
+            fields.add(fieldInfo);
+        }
+        
+        return String.join("\n", fields);
     }
 }

@@ -1,6 +1,17 @@
 package com.lauriewired.mcp.services;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
 import com.lauriewired.mcp.utils.GhidraUtils;
+
 import ghidra.app.decompiler.DecompileResults;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressIterator;
@@ -21,18 +32,8 @@ import ghidra.program.model.pcode.PcodeOp;
 import ghidra.program.model.pcode.Varnode;
 import ghidra.program.model.symbol.Reference;
 import ghidra.program.model.symbol.ReferenceManager;
-import ghidra.util.Msg;
+import ghidra.program.model.symbol.Symbol;
 import ghidra.util.task.ConsoleTaskMonitor;
-
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
 /**
  * Service for advanced program analysis operations
@@ -416,6 +417,234 @@ public class AnalysisService {
             return String.join("\n", paginatedRefs);
         } catch (Exception e) {
             return "Error getting references: " + e.getMessage();
+        }
+    }
+    
+    /**
+     * List all references from a specific address
+     *
+     * @param nameOrAddress name or address to find references from
+     * @param offset starting index for pagination
+     * @param limit maximum number of references to return
+     * @return list of references from the specified address
+     */
+    public String listReferencesFrom(String nameOrAddress, int offset, int limit) {
+        Program program = programService.getCurrentProgram();
+        if (program == null) return "No program loaded";
+        if (nameOrAddress == null) return "Address or name is required";
+
+        List<String> refs = new ArrayList<>();
+        try {
+            // Try to get the address directly first (if addressStr is a hex address)
+            Address addr = program.getAddressFactory().getAddress(nameOrAddress);
+
+            // If addr is null or we couldn't get it directly, try to find it as a symbol name
+            if (addr == null) {
+                addr = GhidraUtils.getSymbolAddress(program, nameOrAddress);
+            }
+            
+            if (addr == null) {
+                return "Could not resolve address for " + nameOrAddress;
+            }
+            
+            ReferenceManager refMgr = program.getReferenceManager();
+            
+            // Get references from this address
+            for (Reference ref : refMgr.getReferencesFrom(addr)) {
+                Address toAddr = ref.getToAddress();
+                ghidra.program.model.symbol.RefType refType = ref.getReferenceType();
+                
+                // Get symbol at destination if it exists
+                Symbol destSymbol = program.getSymbolTable().getPrimarySymbol(toAddr);
+                String destName = destSymbol != null ? destSymbol.getName() : "unnamed";
+                
+                // Get function containing the destination if it exists
+                Function func = program.getFunctionManager().getFunctionContaining(toAddr);
+                String funcName = func != null ? func.getName() : "not in function";
+                
+                refs.add(String.format("%s -> %s (%s) [%s in %s]",
+                    addr, toAddr, destName, refType.getName(), funcName));
+            }
+
+            if (refs.isEmpty()) {
+                return "No references found from " + nameOrAddress + " (address: " + addr + ")";
+            }
+
+            Collections.sort(refs);
+            
+            // Apply pagination
+            List<String> paginatedRefs = refs.subList(
+                Math.min(offset, refs.size()),
+                Math.min(offset + limit, refs.size())
+            );
+            
+            return String.join("\n", paginatedRefs);
+        } catch (Exception e) {
+            return "Error getting references from: " + e.getMessage();
+        }
+    }
+    
+    /**
+     * Get all functions that call a specific function
+     *
+     * @param functionName name of the function to find callers for
+     * @return list of functions that call the specified function
+     */
+    public String getFunctionCallers(String functionName) {
+        Program program = programService.getCurrentProgram();
+        if (program == null) return "No program loaded";
+        if (functionName == null || functionName.isEmpty()) return "Function name is required";
+        
+        try {
+            // Find the function by name
+            Function targetFunc = null;
+            for (Function func : program.getFunctionManager().getFunctions(true)) {
+                if (func.getName().equals(functionName)) {
+                    targetFunc = func;
+                    break;
+                }
+            }
+            
+            if (targetFunc == null) {
+                return "Function not found: " + functionName;
+            }
+            
+            Set<Function> callers = new HashSet<>();
+            ReferenceManager refMgr = program.getReferenceManager();
+            
+            // Get all references to the function's entry point
+            for (Reference ref : refMgr.getReferencesTo(targetFunc.getEntryPoint())) {
+                if (ref.getReferenceType().isCall()) {
+                    Address fromAddr = ref.getFromAddress();
+                    Function callerFunc = program.getFunctionManager().getFunctionContaining(fromAddr);
+                    if (callerFunc != null) {
+                        callers.add(callerFunc);
+                    }
+                }
+            }
+            
+            if (callers.isEmpty()) {
+                return "No callers found for function: " + functionName;
+            }
+            
+            // Sort callers by name
+            List<Function> sortedCallers = new ArrayList<>(callers);
+            sortedCallers.sort(Comparator.comparing(Function::getName));
+            
+            StringBuilder result = new StringBuilder();
+            result.append("Functions that call ").append(functionName).append(":\n");
+            for (Function caller : sortedCallers) {
+                result.append("  - ").append(caller.getName())
+                      .append(" at ").append(caller.getEntryPoint()).append("\n");
+            }
+            
+            return result.toString();
+        } catch (Exception e) {
+            return "Error getting function callers: " + e.getMessage();
+        }
+    }
+    
+    /**
+     * Get the complete call hierarchy for a function
+     *
+     * @param functionName name of the function to analyze
+     * @param depth maximum depth to traverse (both callers and callees)
+     * @return hierarchical representation of callers and callees
+     */
+    public String getCallHierarchy(String functionName, int depth) {
+        Program program = programService.getCurrentProgram();
+        if (program == null) return "No program loaded";
+        if (functionName == null || functionName.isEmpty()) return "Function name is required";
+        
+        // Limit depth to prevent excessive output
+        depth = Math.min(Math.max(depth, 1), 5);
+        
+        try {
+            // Find the function by name
+            Function targetFunc = null;
+            for (Function func : program.getFunctionManager().getFunctions(true)) {
+                if (func.getName().equals(functionName)) {
+                    targetFunc = func;
+                    break;
+                }
+            }
+            
+            if (targetFunc == null) {
+                return "Function not found: " + functionName;
+            }
+            
+            StringBuilder result = new StringBuilder();
+            result.append("Call Hierarchy for function: ").append(functionName)
+                  .append(" at ").append(targetFunc.getEntryPoint())
+                  .append(" (depth: ").append(depth).append(")\n\n");
+            
+            // Get callers
+            result.append("CALLERS (functions that call ").append(functionName).append("):\n");
+            Set<Function> visitedCallers = new HashSet<>();
+            buildCallerHierarchy(targetFunc, result, visitedCallers, 0, depth);
+            
+            result.append("\n");
+            
+            // Get callees (reuse existing analyzeCallGraph logic)
+            result.append("CALLEES (functions called by ").append(functionName).append("):\n");
+            Set<Function> visitedCallees = new HashSet<>();
+            buildCallGraph(targetFunc, result, visitedCallees, 0, depth);
+            
+            return result.toString();
+        } catch (Exception e) {
+            return "Error getting call hierarchy: " + e.getMessage();
+        }
+    }
+    
+    /**
+     * Recursive helper method to build the caller hierarchy
+     */
+    private void buildCallerHierarchy(Function func, StringBuilder result, Set<Function> visited,
+                                    int currentDepth, int maxDepth) {
+        // Add indentation based on depth
+        String indent = "  ".repeat(currentDepth);
+        
+        // Print the current function
+        result.append(indent).append("- ").append(func.getName())
+              .append(" at ").append(func.getEntryPoint());
+        
+        // Check if we've already visited this function or reached max depth
+        if (visited.contains(func)) {
+            result.append(" (already visited)\n");
+            return;
+        }
+        
+        result.append("\n");
+        
+        // Mark as visited
+        visited.add(func);
+        
+        // Stop if we've reached the maximum depth
+        if (currentDepth >= maxDepth) {
+            return;
+        }
+        
+        // Get all functions that call this function
+        Set<Function> callers = new HashSet<>();
+        ReferenceManager refMgr = func.getProgram().getReferenceManager();
+        
+        for (Reference ref : refMgr.getReferencesTo(func.getEntryPoint())) {
+            if (ref.getReferenceType().isCall()) {
+                Address fromAddr = ref.getFromAddress();
+                Function callerFunc = func.getProgram().getFunctionManager().getFunctionContaining(fromAddr);
+                if (callerFunc != null && !callerFunc.equals(func)) {
+                    callers.add(callerFunc);
+                }
+            }
+        }
+        
+        // Sort callers by name for consistent output
+        List<Function> sortedCallers = new ArrayList<>(callers);
+        sortedCallers.sort(Comparator.comparing(Function::getName));
+        
+        // Recursively process callers
+        for (Function caller : sortedCallers) {
+            buildCallerHierarchy(caller, result, visited, currentDepth + 1, maxDepth);
         }
     }
 }

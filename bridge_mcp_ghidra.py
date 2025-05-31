@@ -24,7 +24,7 @@ def safe_get(endpoint: str, params: dict | None = None) -> list:
     url = f"{ghidra_server_url}/{endpoint}"
 
     try:
-        response = requests.get(url, params=params, timeout=5)
+        response = requests.get(url, params=params, timeout=30)
         response.encoding = 'utf-8'
         if response.ok:
             return response.text.splitlines()
@@ -834,6 +834,235 @@ def set_memory_data_type(address: str, data_type: str, clear_existing: bool = Tr
         "data_type": data_type,
         "clear_existing": "true" if clear_existing else "false"
     })
+
+# Phase 1 Improvements - Memory Inspection
+
+@mcp.tool()
+def read_memory(address: str, size: int = 16, format: str = "hex") -> str:
+    """
+    Read raw memory contents at a specific address.
+    
+    Reads bytes from memory and formats them for analysis.
+    
+    Parameters:
+        address: Memory address to read from (e.g., "00401000")
+        size: Number of bytes to read (1-1024, default: 16)
+        format: Output format - "hex", "decimal", "binary", or "ascii" (default: "hex")
+    
+    Returns: Formatted memory contents with context
+    
+    Note: Shows memory in rows with address, hex bytes, and ASCII representation.
+    
+    Example: read_memory("00401000", 32, "hex") -> Memory dump with hex values
+    """
+    return "\n".join(safe_get("read_memory", {"address": address, "size": size, "format": format}))
+
+@mcp.tool()
+def get_memory_permissions(address: str) -> str:
+    """
+    Get memory permissions and block information at an address.
+    
+    Shows memory block properties including read/write/execute permissions.
+    
+    Parameters:
+        address: Memory address to check (e.g., "00401000")
+    
+    Returns: Memory block info with permissions and properties
+    
+    Note: Helps identify code vs data regions and memory protection.
+    
+    Example: get_memory_permissions("00401000") -> "Block: .text, Permissions: R-X"
+    """
+    return "\n".join(safe_get("get_memory_permissions", {"address": address}))
+
+@mcp.tool()
+def get_data_type_at(address: str) -> str:
+    """
+    Get the data type currently defined at an address.
+    
+    Shows whether address contains instruction, defined data, or is undefined.
+    
+    Parameters:
+        address: Memory address to check (e.g., "00401000")
+    
+    Returns: Data type information including type name, size, and value
+    
+    Note: Useful for checking if memory has been analyzed/typed.
+    
+    Example: get_data_type_at("00402000") -> "Type: DWORD, Value: 0x12345678"
+    """
+    return "\n".join(safe_get("get_data_type_at", {"address": address}))
+
+# Phase 1 Improvements - Cross-Reference Navigation
+
+@mcp.tool()
+def list_references_from(address: str, offset: int = 0, limit: int = 100) -> str:
+    """
+    List all references FROM a specific address.
+    
+    Shows what addresses/symbols this address references (calls, jumps, data access).
+    
+    Parameters:
+        address: Source address or symbol name (e.g., "00401000" or "main")
+        offset: Starting index for pagination (default: 0)
+        limit: Maximum number of references to return (default: 100)
+    
+    Returns: List of references with destination addresses and types
+    
+    Note: Complements list_references which shows references TO an address.
+    
+    Example: list_references_from("main") -> "00401000 -> 00401234 (strlen) [CALL]"
+    """
+    return "\n".join(safe_get("list_references_from", {"address": address, "offset": offset, "limit": limit}))
+
+@mcp.tool()
+def get_function_callers(function_name: str) -> str:
+    """
+    Get all functions that call a specific function.
+    
+    Finds all callers of the specified function by name.
+    
+    Parameters:
+        function_name: Name of the function to find callers for
+    
+    Returns: List of calling functions with their addresses
+    
+    Note: Helps understand function usage and dependencies.
+    
+    Example: get_function_callers("process_data") -> "Called by: main at 00401000"
+    """
+    return "\n".join(safe_get("get_function_callers", {"function_name": function_name}))
+
+@mcp.tool()
+def get_call_hierarchy(function_name: str, depth: int = 2) -> str:
+    """
+    Get complete call hierarchy for a function (callers and callees).
+    
+    Shows both functions that call this function and functions it calls.
+    
+    Parameters:
+        function_name: Name of the function to analyze
+        depth: Maximum depth to traverse (1-5, default: 2)
+    
+    Returns: Hierarchical view of function relationships
+    
+    Note: Provides complete context of function's role in program.
+    
+    Example: get_call_hierarchy("main", 3) -> Full call tree
+    """
+    return "\n".join(safe_get("get_call_hierarchy", {"function_name": function_name, "depth": depth}))
+
+# Phase 1 Improvements - Structure/Enum Browsing
+
+@mcp.tool()
+def get_structure_details(structure_name: str) -> str:
+    """
+    Get detailed information about a structure including all fields.
+    
+    Shows complete structure layout with offsets, types, and comments.
+    
+    Parameters:
+        structure_name: Name of the structure to examine
+    
+    Returns: Structure details with all fields, sizes, and offsets
+    
+    Note: Includes information about packing, alignment, and undefined regions.
+    
+    Example: get_structure_details("POINT") -> "Size: 8 bytes, Fields: x at 0x00, y at 0x04"
+    """
+    return "\n".join(safe_get("get_structure_details", {"structure_name": structure_name}))
+
+@mcp.tool()
+def get_enum_details(enum_name: str) -> str:
+    """
+    Get detailed information about an enum including all values.
+    
+    Shows all enum constants with their numeric values.
+    
+    Parameters:
+        enum_name: Name of the enum to examine
+    
+    Returns: Enum details with all values sorted numerically
+    
+    Note: Values shown in both hex and decimal format.
+    
+    Example: get_enum_details("FILE_FLAGS") -> "FLAG_READ = 0x1, FLAG_WRITE = 0x2"
+    """
+    return "\n".join(safe_get("get_enum_details", {"enum_name": enum_name}))
+
+@mcp.tool()
+def list_structure_fields(structure_name: str) -> str:
+    """
+    List all fields of a structure with basic information.
+    
+    Simplified view of structure fields for quick reference.
+    
+    Parameters:
+        structure_name: Name of the structure
+    
+    Returns: List of fields with offset, name, type, and size
+    
+    Note: More concise than get_structure_details.
+    
+    Example: list_structure_fields("RECT") -> "0x00: left (int), 0x04: top (int)..."
+    """
+    return "\n".join(safe_get("list_structure_fields", {"structure_name": structure_name}))
+
+# Phase 1 Improvements - Comment Retrieval
+
+@mcp.tool()
+def get_comments(address: str) -> str:
+    """
+    Get all comments at a specific address.
+    
+    Retrieves all comment types (pre, post, EOL, plate, repeatable).
+    
+    Parameters:
+        address: Address to get comments from (e.g., "00401000")
+    
+    Returns: All comments found at the address by type
+    
+    Note: Shows which comment types are present and their content.
+    
+    Example: get_comments("00401000") -> "Pre Comment: Initialize system..."
+    """
+    return "\n".join(safe_get("get_comments", {"address": address}))
+
+@mcp.tool()
+def get_decompiler_comment(address: str) -> str:
+    """
+    Get the decompiler comment at a specific address.
+    
+    Retrieves the pre-comment shown in decompiled view.
+    
+    Parameters:
+        address: Address to get comment from (e.g., "00401000")
+    
+    Returns: Decompiler comment or message if none found
+    
+    Note: These comments appear above lines in decompiled code.
+    
+    Example: get_decompiler_comment("00401000") -> "Initialize hardware registers"
+    """
+    return "\n".join(safe_get("get_decompiler_comment", {"address": address}))
+
+@mcp.tool()
+def get_disassembly_comment(address: str) -> str:
+    """
+    Get the disassembly comment at a specific address.
+    
+    Retrieves the end-of-line comment shown in disassembly view.
+    
+    Parameters:
+        address: Address to get comment from (e.g., "00401000")
+    
+    Returns: Disassembly comment or message if none found
+    
+    Note: These comments appear at the end of assembly lines.
+    
+    Example: get_disassembly_comment("00401000") -> "Save return address"
+    """
+    return "\n".join(safe_get("get_disassembly_comment", {"address": address}))
 
 if __name__ == "__main__":
     mcp.run()

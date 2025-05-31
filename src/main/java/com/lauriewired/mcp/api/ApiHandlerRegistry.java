@@ -3,6 +3,7 @@ package com.lauriewired.mcp.api;
 import java.io.IOException;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.BiFunction;
 
 import com.lauriewired.mcp.McpServerManager;
 import com.lauriewired.mcp.model.PrototypeResult;
@@ -18,6 +19,7 @@ import com.lauriewired.mcp.services.VariableService;
 import com.lauriewired.mcp.telemetry.TelemetryInterceptor;
 import com.lauriewired.mcp.telemetry.TelemetryLogger;
 import com.lauriewired.mcp.utils.HttpUtils;
+import com.lauriewired.mcp.utils.TimeoutHandler;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 
@@ -28,10 +30,6 @@ import ghidra.util.Msg;
  */
 interface PaginatedHandler {
     String execute(int offset, int limit);
-}
-
-interface CommentHandler {
-    boolean execute(String address, String comment);
 }
 
 /**
@@ -49,6 +47,7 @@ public class ApiHandlerRegistry {
     private final SearchService searchService;
     private final VariableService variableService;
     private final TelemetryLogger telemetryLogger;
+    private final TimeoutHandler timeoutHandler;
     
     /**
      * Creates a new ApiHandlerRegistry
@@ -86,6 +85,11 @@ public class ApiHandlerRegistry {
         this.searchService = searchService;
         this.variableService = variableService;
         this.telemetryLogger = new TelemetryLogger();
+        
+        // Create a single timeout handler instance for all endpoints
+        int timeoutSeconds = serverManager.getRequestTimeoutSeconds();
+        this.timeoutHandler = new TimeoutHandler(timeoutSeconds);
+        this.timeoutHandler.start(); // Start the monitor thread after construction
     }
     
     /**
@@ -120,22 +124,32 @@ public class ApiHandlerRegistry {
             telemetryLogger.shutdown();
             Msg.info(this, "Telemetry logger shut down successfully");
         }
+        
+        // Shutdown the timeout handler
+        if (timeoutHandler != null) {
+            timeoutHandler.shutdown();
+            Msg.info(this, "Timeout handler shut down successfully");
+        }
     }
     
     /**
-     * Wrap a handler with telemetry logging
+     * Wrap a handler with telemetry logging and timeout
      */
-    private HttpHandler wrapWithTelemetry(HttpHandler handler, String toolName, String endpoint) {
-        return new TelemetryInterceptor(handler, telemetryLogger, toolName, endpoint);
+    private HttpHandler wrapWithTelemetryAndTimeout(HttpHandler handler, String toolName, String endpoint) {
+        // First wrap with telemetry (reusing the same logger instance)
+        HttpHandler telemetryHandler = new TelemetryInterceptor(handler, telemetryLogger, toolName, endpoint);
+        
+        // Then wrap with timeout (using the singleton instance)
+        return timeoutHandler.wrap(telemetryHandler);
     }
     
     /**
-     * Register an endpoint with automatic telemetry wrapping using standardized naming
+     * Register an endpoint with automatic telemetry and timeout wrapping using standardized naming
      * This method uses the tool name as the endpoint path (with leading slash)
      */
     private void registerEndpoint(HttpServer server, String toolName, HttpHandler handler) {
         String endpoint = "/" + toolName;
-        server.createContext(endpoint, wrapWithTelemetry(handler, toolName, endpoint));
+        server.createContext(endpoint, wrapWithTelemetryAndTimeout(handler, toolName, endpoint));
     }
     
     /**
@@ -379,6 +393,27 @@ public class ApiHandlerRegistry {
             int limit = HttpUtils.parseIntOrDefault(qparams.get("limit"), 100);
             HttpUtils.sendResponse(exchange, dataTypeService.listEnums(offset, limit));
         });
+        
+        // Get structure details
+        registerEndpoint(server, "get_structure_details", exchange -> {
+            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
+            String structureName = qparams.get("structure_name");
+            HttpUtils.sendResponse(exchange, dataTypeService.getStructureDetails(structureName));
+        });
+        
+        // Get enum details
+        registerEndpoint(server, "get_enum_details", exchange -> {
+            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
+            String enumName = qparams.get("enum_name");
+            HttpUtils.sendResponse(exchange, dataTypeService.getEnumDetails(enumName));
+        });
+        
+        // List structure fields
+        registerEndpoint(server, "list_structure_fields", exchange -> {
+            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
+            String structureName = qparams.get("structure_name");
+            HttpUtils.sendResponse(exchange, dataTypeService.listStructureFields(structureName));
+        });
     }
     
     /**
@@ -415,6 +450,30 @@ public class ApiHandlerRegistry {
             String address = qparams.get("address");
             int depth = HttpUtils.parseIntOrDefault(qparams.get("depth"), 2);
             HttpUtils.sendResponse(exchange, analysisService.analyzeCallGraph(address, depth));
+        });
+        
+        // List references from
+        registerEndpoint(server, "list_references_from", exchange -> {
+            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
+            String address = qparams.get("address");
+            int offset = HttpUtils.parseIntOrDefault(qparams.get("offset"), 0);
+            int limit = HttpUtils.parseIntOrDefault(qparams.get("limit"), 100);
+            HttpUtils.sendResponse(exchange, analysisService.listReferencesFrom(address, offset, limit));
+        });
+        
+        // Get function callers
+        registerEndpoint(server, "get_function_callers", exchange -> {
+            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
+            String functionName = qparams.get("function_name");
+            HttpUtils.sendResponse(exchange, analysisService.getFunctionCallers(functionName));
+        });
+        
+        // Get call hierarchy
+        registerEndpoint(server, "get_call_hierarchy", exchange -> {
+            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
+            String functionName = qparams.get("function_name");
+            int depth = HttpUtils.parseIntOrDefault(qparams.get("depth"), 2);
+            HttpUtils.sendResponse(exchange, analysisService.getCallHierarchy(functionName, depth));
         });
     }
     
@@ -466,19 +525,74 @@ public class ApiHandlerRegistry {
                 HttpUtils.sendResponse(exchange, "Error parsing parameters: " + e.getMessage());
             }
         });
+        
+        // Read memory
+        registerEndpoint(server, "read_memory", exchange -> {
+            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
+            String address = qparams.get("address");
+            int size = HttpUtils.parseIntOrDefault(qparams.get("size"), 16);
+            String format = qparams.getOrDefault("format", "hex");
+            HttpUtils.sendResponse(exchange, memoryService.readMemory(address, size, format));
+        });
+        
+        // Get memory permissions
+        registerEndpoint(server, "get_memory_permissions", exchange -> {
+            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
+            String address = qparams.get("address");
+            HttpUtils.sendResponse(exchange, memoryService.getMemoryPermissions(address));
+        });
+        
+        // Get data type at address
+        registerEndpoint(server, "get_data_type_at", exchange -> {
+            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
+            String address = qparams.get("address");
+            HttpUtils.sendResponse(exchange, memoryService.getDataTypeAt(address));
+        });
     }
-    
+
+    private static HttpHandler createCommentHandler(BiFunction<String, String, Boolean> setter) {
+        return exchange -> {
+            try {
+                Map<String, String> params = HttpUtils.parsePostParams(exchange);
+                String address = params.get("address");
+                String comment = params.get("comment");
+                boolean success = setter.apply(address, comment);
+                
+                HttpUtils.sendResponse(exchange,
+                        success ? "Comment set successfully" : "Failed to set comment");
+            } catch (IOException e) {
+                HttpUtils.sendResponse(exchange, "Error parsing parameters: " + e.getMessage());
+            }
+        };
+    } 
     /**
      * Register comments endpoints
      */
     private void registerCommentEndpoints(HttpServer server) {
-        // Set decompiler comment
-        registerEndpoint(server, "set_decompiler_comment",
-            createCommentHandler(commentService::setDecompilerComment));
+
+        registerEndpoint(server, "set_decompiler_comment", createCommentHandler(commentService::setDecompilerComment));
+        registerEndpoint(server, "set_disassembly_comment", createCommentHandler(commentService::setDisassemblyComment));
         
-        // Set disassembly comment
-        registerEndpoint(server, "set_disassembly_comment",
-            createCommentHandler(commentService::setDisassemblyComment));
+        // Get comments
+        registerEndpoint(server, "get_comments", exchange -> {
+            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
+            String address = qparams.get("address");
+            HttpUtils.sendResponse(exchange, commentService.getComments(address));
+        });
+        
+        // Get decompiler comment
+        registerEndpoint(server, "get_decompiler_comment", exchange -> {
+            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
+            String address = qparams.get("address");
+            HttpUtils.sendResponse(exchange, commentService.getDecompilerComment(address));
+        });
+        
+        // Get disassembly comment
+        registerEndpoint(server, "get_disassembly_comment", exchange -> {
+            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
+            String address = qparams.get("address");
+            HttpUtils.sendResponse(exchange, commentService.getDisassemblyComment(address));
+        });
     }
     
     /**
@@ -641,22 +755,4 @@ public class ApiHandlerRegistry {
         };
     }
     
-    /**
-     * Helper method to create a comment handler
-     */
-    private HttpHandler createCommentHandler(final CommentHandler handler) {
-        return exchange -> {
-            try {
-                Map<String, String> params = HttpUtils.parsePostParams(exchange);
-                String address = params.get("address");
-                String comment = params.get("comment");
-                boolean success = handler.execute(address, comment);
-                
-                HttpUtils.sendResponse(exchange,
-                        success ? "Comment set successfully" : "Failed to set comment");
-            } catch (IOException e) {
-                HttpUtils.sendResponse(exchange, "Error parsing parameters: " + e.getMessage());
-            }
-        };
-    }
 }
