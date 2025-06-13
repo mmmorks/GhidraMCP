@@ -1,19 +1,20 @@
 package com.lauriewired.mcp.services;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
+import com.lauriewired.mcp.model.PaginationResult;
 import com.lauriewired.mcp.utils.HttpUtils;
+
 import ghidra.program.model.address.GlobalNamespace;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.symbol.Namespace;
 import ghidra.program.model.symbol.Symbol;
 import ghidra.program.model.symbol.SymbolIterator;
 import ghidra.program.model.symbol.SymbolTable;
-import ghidra.util.Msg;
-
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
 
 /**
  * Service for operations related to namespaces, classes, and symbols
@@ -31,11 +32,11 @@ public class NamespaceService {
     }
 
     /**
-     * List all namespace/class names in the program with pagination
+     * List all namespace/class names in the program with pagination and LLM-friendly hints
      *
      * @param offset starting index
      * @param limit maximum number of names to return
-     * @return list of class names
+     * @return paginated list of class names with pagination metadata
      */
     public String getAllClassNames(int offset, int limit) {
         Program program = programService.getCurrentProgram();
@@ -51,7 +52,9 @@ public class NamespaceService {
         // Convert set to list for pagination
         List<String> sorted = new ArrayList<>(classNames);
         Collections.sort(sorted);
-        return HttpUtils.paginateList(sorted, offset, limit);
+        
+        PaginationResult result = HttpUtils.paginateListWithHints(sorted, offset, limit);
+        return result.getFormattedResult();
     }
 
     /**

@@ -82,7 +82,7 @@ public class FunctionServiceTest {
         when(mockProgramManager.getCurrentProgram()).thenReturn(null);
         
         String result = functionService.getAllFunctionNames(0, 10);
-        assertEquals("", result);
+        assertEquals("No program loaded", result);
     }
 
     @Test
@@ -187,7 +187,7 @@ public class FunctionServiceTest {
         
         String result = functionService.getAllFunctionNames(0, 10);
         
-        assertEquals("", result);
+        assertEquals("No results found.", result);
         verify(mockFunctionManager).getFunctions(true);
     }
     
@@ -403,6 +403,6 @@ public class FunctionServiceTest {
     void testGetAllFunctionNames_NullTool() {
         TestFunctionService serviceWithNullTool = new TestFunctionService((MockablePluginTool) null, new TestProgramService((MockablePluginTool) null));
         String result = serviceWithNullTool.getAllFunctionNames(0, 10);
-        assertEquals("", result);
+        assertEquals("No program loaded", result);
     }
 }

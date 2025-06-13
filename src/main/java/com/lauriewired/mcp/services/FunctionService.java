@@ -8,8 +8,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.swing.SwingUtilities;
 
+import com.lauriewired.mcp.model.PaginationResult;
 import com.lauriewired.mcp.model.PrototypeResult;
 import com.lauriewired.mcp.utils.GhidraUtils;
+import com.lauriewired.mcp.utils.HttpUtils;
 
 import ghidra.app.decompiler.DecompInterface;
 import ghidra.app.decompiler.DecompileResults;
@@ -47,27 +49,23 @@ public class FunctionService {
     }
 
     /**
-     * List all function names with pagination
+     * List all function names with pagination and LLM-friendly hints
      *
      * @param offset starting index
      * @param limit maximum number of items to return
-     * @return list of function names
+     * @return paginated list of function names with pagination metadata
      */
     public String getAllFunctionNames(int offset, int limit) {
         Program program = programService.getCurrentProgram();
-        if (program == null) return "";
+        if (program == null) return "No program loaded";
 
         List<String> names = new ArrayList<>();
         for (Function f : program.getFunctionManager().getFunctions(true)) {
             names.add(f.getName());
         }
         
-        if (names.isEmpty()) return "";
-        
-        return String.join("\n", names.subList(
-                Math.min(offset, names.size()),
-                Math.min(offset + limit, names.size())
-        ));
+        PaginationResult result = HttpUtils.paginateListWithHints(names, offset, limit);
+        return result.getFormattedResult();
     }
 
     /**
@@ -335,12 +333,12 @@ public class FunctionService {
     }
 
     /**
-     * Search for functions by name
-     * 
+     * Search for functions by name with pagination and LLM-friendly hints
+     *
      * @param searchTerm search term
      * @param offset starting index
      * @param limit maximum number of results
-     * @return list of matching functions
+     * @return paginated list of matching functions with pagination metadata
      */
     public String searchFunctionsByName(String searchTerm, int offset, int limit) {
         Program program = programService.getCurrentProgram();
@@ -357,17 +355,9 @@ public class FunctionService {
         }
     
         Collections.sort(matches);
-    
-        if (matches.isEmpty()) {
-            return "No functions matching '" + searchTerm + "'";
-        }
         
-        List<String> subList = matches.subList(
-            Math.min(offset, matches.size()),
-            Math.min(offset + limit, matches.size())
-        );
-        
-        return String.join("\n", subList);
+        PaginationResult result = HttpUtils.paginateListWithHints(matches, offset, limit);
+        return result.getFormattedResult();
     }
 
     /**
@@ -407,9 +397,6 @@ public class FunctionService {
                     
                     Msg.info(this, "Setting prototype for function " + func.getName() + ": " + prototype);
                     
-                    // Store original prototype as a comment for reference
-                    addPrototypeComment(program, func, prototype);
-                    
                     // Apply the type change
                     parseFunctionSignatureAndApply(program, addr, prototype, success, errorMessage);
                     
@@ -426,22 +413,6 @@ public class FunctionService {
         }
         
         return new PrototypeResult(success.get(), errorMessage.toString());
-    }
-
-    /**
-     * Add a comment showing the prototype being set
-     */
-    private void addPrototypeComment(Program program, Function func, String prototype) {
-        int txComment = program.startTransaction("Add prototype comment");
-        try {
-            program.getListing().setComment(
-                func.getEntryPoint(), 
-                ghidra.program.model.listing.CodeUnit.PLATE_COMMENT, 
-                "Setting prototype: " + prototype
-            );
-        } finally {
-            program.endTransaction(txComment, true);
-        }
     }
     
     /**

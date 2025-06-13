@@ -58,9 +58,10 @@ def list_methods(offset: int = 0, limit: int = 100) -> list:
         offset: Starting index for pagination (0-based)
         limit: Maximum function names to return
     
-    Returns: List of function names or error message if no program loaded
+    Returns: List of function names with pagination info. If more results are available,
+             the response includes clear indicators and instructions for fetching additional pages.
     
-    Example: list_methods(0, 10) -> ['main', 'printf', 'malloc', ...]
+    Example: list_methods(0, 10) -> ['main', 'printf', 'malloc', ..., '--- PAGINATION INFO ---', ...]
     """
     return safe_get("list_methods", {"offset": offset, "limit": limit})
 
@@ -75,9 +76,10 @@ def list_classes(offset: int = 0, limit: int = 100) -> list:
         offset: Starting index for pagination (0-based)
         limit: Maximum namespace/class names to return
     
-    Returns: List of namespace/class names or error message if no program loaded
+    Returns: List of namespace/class names with pagination info. If more results are available,
+             the response includes clear indicators and instructions for fetching additional pages.
     
-    Example: list_classes(0, 10) -> ['String', 'ArrayList', 'HashMap', ...]
+    Example: list_classes(0, 10) -> ['String', 'ArrayList', 'HashMap', ..., '--- PAGINATION INFO ---', ...]
     """
     return safe_get("list_classes", {"offset": offset, "limit": limit})
 

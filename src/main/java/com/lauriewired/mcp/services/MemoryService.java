@@ -8,6 +8,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import javax.swing.SwingUtilities;
 
+import com.lauriewired.mcp.model.PaginationResult;
 import com.lauriewired.mcp.utils.HttpUtils;
 
 import ghidra.program.model.address.Address;
@@ -80,11 +81,11 @@ public class MemoryService {
     }
 
     /**
-     * List defined data items in the program with pagination
+     * List defined data items in the program with pagination and LLM-friendly hints
      *
      * @param offset starting index
      * @param limit maximum number of data items to return
-     * @return list of data items with their addresses, labels, and values
+     * @return paginated list of data items with pagination metadata
      */
     public String listDefinedData(int offset, int limit) {
         Program program = programService.getCurrentProgram();
@@ -106,7 +107,9 @@ public class MemoryService {
                 }
             }
         }
-        return HttpUtils.paginateList(lines, offset, limit);
+        
+        PaginationResult result = HttpUtils.paginateListWithHints(lines, offset, limit);
+        return result.getFormattedResult();
     }
 
     /**
@@ -194,7 +197,14 @@ public class MemoryService {
                     DataType dataType = dataTypeService.resolveDataType(dtm, dataTypeName);
                     
                     if (dataType == null) {
-                        resultMessage.set("Data type not found: " + dataTypeName);
+                        // Provide more specific error message for array types
+                        if (dataTypeName.matches(".*\\[\\d+\\]$")) {
+                            resultMessage.set("Failed to create array data type '" + dataTypeName +
+                                            "': base type could not be resolved. Check that the base type exists.");
+                        } else {
+                            resultMessage.set("Data type '" + dataTypeName + "' not found. " +
+                                            "Available types include: int, char, short, long, byte, etc.");
+                        }
                         return;
                     }
                     

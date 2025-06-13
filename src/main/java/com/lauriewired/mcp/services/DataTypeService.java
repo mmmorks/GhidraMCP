@@ -9,11 +9,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import javax.swing.SwingUtilities;
 
+import com.lauriewired.mcp.model.PaginationResult;
 import com.lauriewired.mcp.utils.HttpUtils;
 
+import ghidra.program.model.data.ArrayDataType;
 import ghidra.program.model.data.CategoryPath;
 import ghidra.program.model.data.DataType;
 import ghidra.program.model.data.DataTypeComponent;
@@ -31,6 +35,9 @@ import ghidra.util.Msg;
  */
 public class DataTypeService {
     private final ProgramService programService;
+    
+    // Pattern to match array syntax like "type[size]"
+    private static final Pattern ARRAY_PATTERN = Pattern.compile("^(.+?)\\[([0-9]+)\\]$");
 
     /**
      * Creates a new DataTypeService
@@ -42,11 +49,11 @@ public class DataTypeService {
     }
 
     /**
-     * List all structure/type definitions in the program with pagination
+     * List all structure/type definitions in the program with pagination and LLM-friendly hints
      *
      * @param offset starting index
      * @param limit maximum number of structures to return
-     * @return list of structures
+     * @return paginated list of structures with pagination metadata
      */
     public String listStructures(int offset, int limit) {
         Program program = programService.getCurrentProgram();
@@ -58,7 +65,7 @@ public class DataTypeService {
         dtm.getAllStructures().forEachRemaining((struct) -> {
             structs.add(struct);
         });
-        Collections.sort(structs, Comparator.comparing(Structure::getName));  
+        Collections.sort(structs, Comparator.comparing(Structure::getName));
         List<String> lines = new ArrayList<>();
         for (Structure struct : structs) {
             StringBuilder sb = new StringBuilder();
@@ -73,7 +80,9 @@ public class DataTypeService {
             sb.append("}");
             lines.add(sb.toString());
         }
-        return HttpUtils.paginateList(lines, offset, limit);
+        
+        PaginationResult result = HttpUtils.paginateListWithHints(lines, offset, limit);
+        return result.getFormattedResult();
     }
 
     /**
@@ -199,8 +208,28 @@ public class DataTypeService {
         // First try to find exact match in all categories
         DataType dataType = findDataTypeByNameInAllCategories(dtm, typeName);
         if (dataType != null) {
-            Msg.info(this, "Found exact data type match: " + dataType.getPathName());
             return dataType;
+        }
+        
+        // Check for array syntax like "type[size]"
+        Matcher arrayMatcher = ARRAY_PATTERN.matcher(typeName);
+        if (arrayMatcher.matches()) {
+            String baseTypeName = arrayMatcher.group(1);
+            String sizeStr = arrayMatcher.group(2);
+            
+            try {
+                int arraySize = Integer.parseInt(sizeStr);
+                if (arraySize > 0 && arraySize <= 1000000) { // Reasonable size limits
+                    // Recursively resolve the base type
+                    DataType baseType = resolveDataType(dtm, baseTypeName);
+                    if (baseType != null) {
+                        ArrayDataType arrayType = new ArrayDataType(baseType, arraySize, baseType.getLength(), dtm);
+                        return arrayType;
+                    }
+                }
+            } catch (NumberFormatException e) {
+                // Invalid array size format, will fall through to other type resolution
+            }
         }
         
         // Check for Windows-style pointer types (PXXX)
@@ -218,7 +247,7 @@ public class DataTypeService {
                 return new ghidra.program.model.data.PointerDataType(baseType);
             }
             
-            Msg.warn(this, "Base type not found for " + typeName + ", defaulting to void*");
+            // Base type not found, fall back to void*
             return new ghidra.program.model.data.PointerDataType(dtm.getDataType("/void"));
         }
         
@@ -261,9 +290,8 @@ public class DataTypeService {
                     return directType;
                 }
                 
-                // Fallback to int if we couldn't find it
-                Msg.warn(this, "Unknown type: " + typeName + ", defaulting to int");
-                return dtm.getDataType("/int");
+                // Could not resolve type
+                return null;
             }
         }
     }
@@ -519,11 +547,11 @@ public class DataTypeService {
     }
 
     /**
-     * List all enums in the program with pagination
+     * List all enums in the program with pagination and LLM-friendly hints
      *
      * @param offset starting index
      * @param limit maximum number of enums to return
-     * @return list of enums
+     * @return paginated list of enums with pagination metadata
      */
     public String listEnums(int offset, int limit) {
         Program program = programService.getCurrentProgram();
@@ -557,7 +585,8 @@ public class DataTypeService {
             lines.add(sb.toString());
         }
         
-        return HttpUtils.paginateList(lines, offset, limit);
+        PaginationResult result = HttpUtils.paginateListWithHints(lines, offset, limit);
+        return result.getFormattedResult();
     }
     
     /**
