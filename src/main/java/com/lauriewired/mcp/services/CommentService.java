@@ -5,6 +5,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.swing.SwingUtilities;
 
+import com.lauriewired.mcp.utils.ProgramTransaction;
+
 import ghidra.program.model.address.Address;
 import ghidra.program.model.listing.CodeUnit;
 import ghidra.program.model.listing.Program;
@@ -65,15 +67,13 @@ public class CommentService {
         
         try {
             SwingUtilities.invokeAndWait(() -> {
-                int tx = program.startTransaction(transactionName);
-                try {
+                try (var tx = ProgramTransaction.start(program, transactionName)) {
                     Address addr = program.getAddressFactory().getAddress(addressStr);
                     program.getListing().setComment(addr, commentType, comment);
                     success.set(true);
+                    tx.commit();
                 } catch (Exception e) {
                     Msg.error(this, "Error setting " + transactionName.toLowerCase(), e);
-                } finally {
-                    program.endTransaction(tx, success.get());
                 }
             });
         } catch (InterruptedException | InvocationTargetException e) {

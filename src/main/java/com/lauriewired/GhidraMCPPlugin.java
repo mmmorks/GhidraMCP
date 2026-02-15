@@ -128,12 +128,21 @@ public class GhidraMCPPlugin extends Plugin {
         if (apiHandlerRegistry != null) {
             apiHandlerRegistry.shutdown();
         }
-        
+
         // Then stop the server
         if (serverManager != null) {
             serverManager.stopServer();
         }
-        
+
+        // Flush any residual domain object events so Ghidra doesn't report
+        // open transactions on exit
+        if (programService != null) {
+            ghidra.program.model.listing.Program program = programService.getCurrentProgram();
+            if (program != null) {
+                program.flushEvents();
+            }
+        }
+
         super.dispose();
     }
 }

@@ -16,6 +16,7 @@ import javax.swing.SwingUtilities;
 
 import com.lauriewired.mcp.model.PaginationResult;
 import com.lauriewired.mcp.utils.HttpUtils;
+import com.lauriewired.mcp.utils.ProgramTransaction;
 
 import ghidra.program.model.data.Array;
 import ghidra.program.model.data.ArrayDataType;
@@ -115,8 +116,7 @@ public class DataTypeService {
         AtomicBoolean successFlag = new AtomicBoolean(false);
         try {
             SwingUtilities.invokeAndWait(() -> {
-                int tx = program.startTransaction("Rename struct field");
-                try {
+                try (var tx = ProgramTransaction.start(program, "Rename struct field")) {
                     ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
                     DataType dt = findDataTypeByNameInAllCategories(dtm, structName);
                     Structure struct = (dt instanceof Structure) ? (Structure) dt : null;
@@ -127,7 +127,7 @@ public class DataTypeService {
                             int index = Integer.parseInt(oldFieldName.substring(5, oldFieldName.indexOf('_')));
                             if (index >= 0 && index < struct.getNumComponents()) {
                                 DataTypeComponent component = struct.getComponent(index);
-                                struct.replace(index, component.getDataType(), component.getLength(), 
+                                struct.replace(index, component.getDataType(), component.getLength(),
                                             newFieldName, component.getComment());
                                 successFlag.set(true);
                             }
@@ -135,7 +135,7 @@ public class DataTypeService {
                             // Original logic for named fields
                             for (int i = 0; i < struct.getNumComponents(); i++) {
                                 DataTypeComponent component = struct.getComponent(i);
-                                if ((component.getFieldName() != null) && 
+                                if ((component.getFieldName() != null) &&
                                     component.getFieldName().equals(oldFieldName)) {
                                     struct.replace(i, component.getDataType(), component.getLength(),
                                                 newFieldName, component.getComment());
@@ -145,12 +145,12 @@ public class DataTypeService {
                             }
                         }
                     }
+                    if (successFlag.get()) {
+                        tx.commit();
+                    }
                 }
                 catch (RuntimeException e) {
                     Msg.error(this, "Error renaming struct field", e);
-                }
-                finally {
-                    program.endTransaction(tx, successFlag.get());
                 }
             });
         } catch (InterruptedException | InvocationTargetException e) {
@@ -190,8 +190,7 @@ public class DataTypeService {
         AtomicReference<String> resultMessage = new AtomicReference<>();
         try {
             SwingUtilities.invokeAndWait(() -> {
-                int tx = program.startTransaction("Rename structure");
-                try {
+                try (var tx = ProgramTransaction.start(program, "Rename structure")) {
                     ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
                     DataType dt = findDataTypeByNameInAllCategories(dtm, oldName);
                     if (dt == null) {
@@ -212,6 +211,7 @@ public class DataTypeService {
 
                     dt.setName(newName);
                     resultMessage.set("Structure renamed from '" + oldName + "' to '" + newName + "'");
+                    tx.commit();
                 }
                 catch (InvalidNameException e) {
                     Msg.error(this, "Invalid data type name", e);
@@ -224,10 +224,6 @@ public class DataTypeService {
                 catch (RuntimeException e) {
                     Msg.error(this, "Error renaming structure", e);
                     resultMessage.set("Failed to rename structure: " + e.getMessage());
-                }
-                finally {
-                    program.endTransaction(tx, resultMessage.get() != null &&
-                                         resultMessage.get().contains("renamed from"));
                 }
             });
         } catch (InterruptedException | InvocationTargetException e) {
@@ -411,39 +407,35 @@ public class DataTypeService {
         AtomicReference<String> resultMessage = new AtomicReference<>();
         try {
             SwingUtilities.invokeAndWait(() -> {
-                int tx = program.startTransaction("Create structure");
-                try {
+                try (var tx = ProgramTransaction.start(program, "Create structure")) {
                     ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
-                    
+
                     // Check if structure already exists
                     DataType existing = findDataTypeByNameInAllCategories(dtm, structName);
                     if (existing != null && existing instanceof Structure) {
                         resultMessage.set("Structure '" + structName + "' already exists");
                         return;
                     }
-                    
+
                     // Create category path if specified
                     CategoryPath catPath = CategoryPath.ROOT;
                     if (categoryPath != null && !categoryPath.isEmpty()) {
                         catPath = new CategoryPath(categoryPath);
                     }
-                    
+
                     // Create the structure
                     StructureDataType struct = new StructureDataType(catPath, structName, size, dtm);
-                    
+
                     // Add the structure to the data type manager
                     DataType addedType = dtm.addDataType(struct, null);
-                    
+
                     resultMessage.set("Structure '" + structName + "' created successfully at " +
                                     addedType.getCategoryPath().getPath());
+                    tx.commit();
                 }
                 catch (Exception e) {
                     Msg.error(this, "Error creating structure", e);
                     resultMessage.set("Failed to create structure: " + e.getMessage());
-                }
-                finally {
-                    program.endTransaction(tx, resultMessage.get() != null &&
-                                         resultMessage.get().contains("successfully"));
                 }
             });
         } catch (InterruptedException | InvocationTargetException e) {
@@ -484,26 +476,25 @@ public class DataTypeService {
         AtomicReference<String> resultMessage = new AtomicReference<>();
         try {
             SwingUtilities.invokeAndWait(() -> {
-                int tx = program.startTransaction("Add structure field");
-                try {
+                try (var tx = ProgramTransaction.start(program, "Add structure field")) {
                     ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
-                    
+
                     // Find the structure
                     DataType dt = findDataTypeByNameInAllCategories(dtm, structName);
                     if (!(dt instanceof Structure)) {
                         resultMessage.set("Structure '" + structName + "' not found");
                         return;
                     }
-                    
+
                     Structure struct = (Structure) dt;
-                    
+
                     // Resolve the field data type
                     DataType fieldDataType = resolveDataType(dtm, fieldType);
                     if (fieldDataType == null) {
                         resultMessage.set("Failed to resolve data type: " + fieldType);
                         return;
                     }
-                    
+
                     // Add the field
                     if (offset >= 0) {
                         // Insert at specific offset
@@ -512,17 +503,14 @@ public class DataTypeService {
                         // Append to end
                         struct.add(fieldDataType, fieldSize, fieldName, comment);
                     }
-                    
+
                     resultMessage.set("Field '" + (fieldName != null ? fieldName : "unnamed") +
                                     "' added to structure '" + structName + "'");
+                    tx.commit();
                 }
                 catch (RuntimeException e) {
                     Msg.error(this, "Error adding structure field", e);
                     resultMessage.set("Failed to add field: " + e.getMessage());
-                }
-                finally {
-                    program.endTransaction(tx, resultMessage.get() != null &&
-                                         resultMessage.get().contains("added"));
                 }
             });
         } catch (InterruptedException | InvocationTargetException e) {
@@ -563,39 +551,35 @@ public class DataTypeService {
         AtomicReference<String> resultMessage = new AtomicReference<>();
         try {
             SwingUtilities.invokeAndWait(() -> {
-                int tx = program.startTransaction("Create enum");
-                try {
+                try (var tx = ProgramTransaction.start(program, "Create enum")) {
                     ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
-                    
+
                     // Check if enum already exists
                     DataType existing = findDataTypeByNameInAllCategories(dtm, enumName);
                     if (existing != null && existing instanceof Enum) {
                         resultMessage.set("Enum '" + enumName + "' already exists");
                         return;
                     }
-                    
+
                     // Create category path if specified
                     CategoryPath catPath = CategoryPath.ROOT;
                     if (categoryPath != null && !categoryPath.isEmpty()) {
                         catPath = new CategoryPath(categoryPath);
                     }
-                    
+
                     // Create the enum
                     EnumDataType enumType = new EnumDataType(catPath, enumName, size, dtm);
-                    
+
                     // Add the enum to the data type manager
                     DataType addedType = dtm.addDataType(enumType, null);
-                    
+
                     resultMessage.set("Enum '" + enumName + "' created successfully at " +
                                     addedType.getCategoryPath().getPath());
+                    tx.commit();
                 }
                 catch (Exception e) {
                     Msg.error(this, "Error creating enum", e);
                     resultMessage.set("Failed to create enum: " + e.getMessage());
-                }
-                finally {
-                    program.endTransaction(tx, resultMessage.get() != null &&
-                                         resultMessage.get().contains("successfully"));
                 }
             });
         } catch (InterruptedException | InvocationTargetException e) {
@@ -632,16 +616,16 @@ public class DataTypeService {
         AtomicReference<String> resultMessage = new AtomicReference<>();
         try {
             SwingUtilities.invokeAndWait(() -> {
-                int tx = program.startTransaction("Add enum value");
-                try {
+                try (var tx = ProgramTransaction.start(program, "Add enum value")) {
                     ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
-                    
+
                     // Find the enum
                     DataType dt = findDataTypeByNameInAllCategories(dtm, enumName);
                     if (dt instanceof Enum enumType) {
                         enumType.add(valueName, value);
                         resultMessage.set("Value '" + valueName + "' (" + value +
                                     ") added to enum '" + enumName + "'");
+                        tx.commit();
                     } else {
                         resultMessage.set("Enum '" + enumName + "' not found");
                     }
@@ -649,10 +633,6 @@ public class DataTypeService {
                 catch (Exception e) {
                     Msg.error(this, "Error adding enum value", e);
                     resultMessage.set("Failed to add enum value: " + e.getMessage());
-                }
-                finally {
-                    program.endTransaction(tx, resultMessage.get() != null &&
-                                         resultMessage.get().contains("added"));
                 }
             });
         } catch (InterruptedException | InvocationTargetException e) {

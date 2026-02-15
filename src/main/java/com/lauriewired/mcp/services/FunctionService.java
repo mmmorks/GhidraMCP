@@ -12,6 +12,7 @@ import com.lauriewired.mcp.model.PaginationResult;
 import com.lauriewired.mcp.model.PrototypeResult;
 import com.lauriewired.mcp.utils.GhidraUtils;
 import com.lauriewired.mcp.utils.HttpUtils;
+import com.lauriewired.mcp.utils.ProgramTransaction;
 
 import ghidra.app.decompiler.DecompInterface;
 import ghidra.app.decompiler.DecompileResults;
@@ -108,19 +109,17 @@ public class FunctionService {
         AtomicBoolean successFlag = new AtomicBoolean(false);
         try {
             SwingUtilities.invokeAndWait(() -> {
-                int tx = program.startTransaction("Rename function via HTTP");
-                try {
+                try (var tx = ProgramTransaction.start(program, "Rename function via HTTP")) {
                     for (Function func : program.getFunctionManager().getFunctions(true)) {
                         if (func.getName().equals(oldName)) {
                             func.setName(newName, SourceType.USER_DEFINED);
                             successFlag.set(true);
+                            tx.commit();
                             break;
                         }
                     }
                 } catch (InvalidInputException | DuplicateNameException | RuntimeException e) {
                     Msg.error(this, "Error renaming function", e);
-                } finally {
-                    program.endTransaction(tx, successFlag.get());
                 }
             });
         } catch (InterruptedException | InvocationTargetException e) {
@@ -310,22 +309,20 @@ public class FunctionService {
         
         try {
             SwingUtilities.invokeAndWait(() -> {
-                int tx = program.startTransaction("Rename function by address");
-                try {
+                try (var tx = ProgramTransaction.start(program, "Rename function by address")) {
                     Address addr = program.getAddressFactory().getAddress(functionAddrStr);
                     Function func = GhidraUtils.getFunctionForAddress(program, addr);
-                    
+
                     if (func == null) {
                         Msg.error(this, "Could not find function at address: " + functionAddrStr);
                         return;
                     }
-                    
+
                     func.setName(newName, SourceType.USER_DEFINED);
                     success.set(true);
+                    tx.commit();
                 } catch (InvalidInputException | DuplicateNameException | RuntimeException e) {
                     Msg.error(this, "Error renaming function by address", e);
-                } finally {
-                    program.endTransaction(tx, success.get());
                 }
             });
         } catch (InterruptedException | InvocationTargetException e) {
@@ -434,39 +431,39 @@ public class FunctionService {
     private void parseFunctionSignatureAndApply(Program program, Address addr, String prototype,
                                               AtomicBoolean success, StringBuilder errorMessage) {
         // Use ApplyFunctionSignatureCmd to parse and apply the signature
-        int txProto = program.startTransaction("Set function prototype");
-        try {
+        try (var tx = ProgramTransaction.start(program, "Set function prototype")) {
             // Get data type manager
             ghidra.program.model.data.DataTypeManager dtm = program.getDataTypeManager();
-            
+
             // Get data type manager service
-            ghidra.app.services.DataTypeManagerService dtms = 
+            ghidra.app.services.DataTypeManagerService dtms =
                 tool.getService(ghidra.app.services.DataTypeManagerService.class);
-            
+
             // Create function signature parser
-            ghidra.app.util.parser.FunctionSignatureParser parser = 
+            ghidra.app.util.parser.FunctionSignatureParser parser =
                 new ghidra.app.util.parser.FunctionSignatureParser(dtm, dtms);
-            
+
             // Parse the prototype into a function signature
             ghidra.program.model.data.FunctionDefinitionDataType sig = parser.parse(null, prototype);
-            
+
             if (sig == null) {
                 String msg = "Failed to parse function prototype";
                 errorMessage.append(msg);
                 Msg.error(this, msg);
                 return;
             }
-            
+
             // Create and apply the command
-            ghidra.app.cmd.function.ApplyFunctionSignatureCmd cmd = 
+            ghidra.app.cmd.function.ApplyFunctionSignatureCmd cmd =
                 new ghidra.app.cmd.function.ApplyFunctionSignatureCmd(
                     addr, sig, SourceType.USER_DEFINED);
-            
+
             // Apply the command to the program
             boolean cmdResult = cmd.applyTo(program, new ConsoleTaskMonitor());
-            
+
             if (cmdResult) {
                 success.set(true);
+                tx.commit();
                 Msg.info(this, "Successfully applied function signature");
             } else {
                 String msg = "Command failed: " + cmd.getStatusMsg();
@@ -477,8 +474,6 @@ public class FunctionService {
             String msg = "Error applying function signature: " + e.getMessage();
             errorMessage.append(msg);
             Msg.error(this, msg, e);
-        } finally {
-            program.endTransaction(txProto, success.get());
         }
     }
 }

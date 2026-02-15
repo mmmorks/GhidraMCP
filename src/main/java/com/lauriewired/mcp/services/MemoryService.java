@@ -10,6 +10,7 @@ import javax.swing.SwingUtilities;
 
 import com.lauriewired.mcp.model.PaginationResult;
 import com.lauriewired.mcp.utils.HttpUtils;
+import com.lauriewired.mcp.utils.ProgramTransaction;
 
 import ghidra.program.model.address.Address;
 import ghidra.program.model.data.DataType;
@@ -126,19 +127,18 @@ public class MemoryService {
         AtomicBoolean successFlag = new AtomicBoolean(false);
         try {
             SwingUtilities.invokeAndWait(() -> {
-                int tx = program.startTransaction("Rename data");
-                try {
+                try (var tx = ProgramTransaction.start(program, "Rename data")) {
                     Address addr = program.getAddressFactory().getAddress(addressStr);
                     if (addr == null) {
                         Msg.error(this, "Invalid address: " + addressStr);
                         return;
                     }
-                    
+
                     // Check if data exists at this address
                     if (program.getListing().getDefinedDataAt(addr) != null) {
                         SymbolTable symTable = program.getSymbolTable();
                         Symbol symbol = symTable.getPrimarySymbol(addr);
-                        
+
                         if (symbol != null) {
                             symbol.setName(newName, SourceType.USER_DEFINED);
                             successFlag.set(true);
@@ -153,12 +153,12 @@ public class MemoryService {
                     } else {
                         Msg.error(this, "No defined data at address: " + addressStr);
                     }
+                    if (successFlag.get()) {
+                        tx.commit();
+                    }
                 }
                 catch (DuplicateNameException | InvalidInputException e) {
                     Msg.error(this, "Rename data error", e);
-                }
-                finally {
-                    program.endTransaction(tx, successFlag.get());
                 }
             });
         }
@@ -187,18 +187,17 @@ public class MemoryService {
         AtomicReference<String> resultMessage = new AtomicReference<>();
         try {
             SwingUtilities.invokeAndWait(() -> {
-                int tx = program.startTransaction("Set memory data type");
-                try {
+                try (var tx = ProgramTransaction.start(program, "Set memory data type")) {
                     Address addr = program.getAddressFactory().getAddress(addressStr);
                     if (addr == null) {
                         resultMessage.set("Invalid address: " + addressStr);
                         return;
                     }
-                    
+
                     // Get the data type manager and resolve the type
                     DataTypeManager dtm = program.getDataTypeManager();
                     DataType dataType = dataTypeService.resolveDataType(dtm, dataTypeName);
-                    
+
                     if (dataType == null) {
                         // Provide more specific error message for array types
                         if (dataTypeName.matches(".*\\[\\d+\\]$")) {
@@ -210,9 +209,9 @@ public class MemoryService {
                         }
                         return;
                     }
-                    
+
                     Listing listing = program.getListing();
-                    
+
                     // Clear existing data if requested
                     if (clearExisting) {
                         // Calculate the size needed for the new data type
@@ -221,12 +220,12 @@ public class MemoryService {
                             // For dynamic types, try to get a reasonable default
                             sizeNeeded = 1;
                         }
-                        
+
                         // Clear any existing code units (data or instructions) in the range
                         Address endAddr = addr.add(sizeNeeded - 1);
                         listing.clearCodeUnits(addr, endAddr, false);
                     }
-                    
+
                     // Create the data at the address
                     try {
                         Data newData = listing.createData(addr, dataType);
@@ -234,6 +233,7 @@ public class MemoryService {
                             dataType.getName(),
                             newData.getLength(),
                             addr.toString()));
+                        tx.commit();
                     } catch (CodeUnitInsertionException e) {
                         // Try to provide more specific error information
                         String errorMsg = e.getMessage();
@@ -263,10 +263,6 @@ public class MemoryService {
                 catch (RuntimeException e) {
                     Msg.error(this, "Error setting memory data type", e);
                     resultMessage.set("Failed to set memory data type: " + e.getMessage());
-                }
-                finally {
-                    program.endTransaction(tx, resultMessage.get() != null &&
-                                          resultMessage.get().contains("set at address"));
                 }
             });
         }

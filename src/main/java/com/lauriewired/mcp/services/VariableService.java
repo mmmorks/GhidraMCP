@@ -2,6 +2,7 @@ package com.lauriewired.mcp.services;
 
 import com.lauriewired.mcp.utils.GhidraUtils;
 import com.lauriewired.mcp.utils.HttpUtils;
+import com.lauriewired.mcp.utils.ProgramTransaction;
 import ghidra.app.decompiler.DecompInterface;
 import ghidra.app.decompiler.DecompileResults;
 import ghidra.program.model.address.Address;
@@ -187,22 +188,21 @@ public class VariableService {
     
         try {
             SwingUtilities.invokeAndWait(() -> {
-                int tx = program.startTransaction("Rename variable");
-                try {
+                try (var tx = ProgramTransaction.start(program, "Rename variable")) {
                     if (commitRequired) {
                         HighFunctionDBUtil.commitParamsToDatabase(highFunction, false,
                             ReturnCommitOption.NO_COMMIT, finalFunction.getSignatureSource());
                     }
-    
+
                     // Use the specific Varnode if provided, otherwise use the representative
                     var newHighVariable = highFunction.splitOutMergeGroup(highVariable, finalVarnode);
                     var finalHighSymbol = newHighVariable.getSymbol();
-    
+
                     var dataType = finalHighSymbol.getDataType();
                     if (Undefined.isUndefined(dataType)) {
                         dataType = AbstractIntegerDataType.getUnsignedDataType(dataType.getLength(), program.getDataTypeManager());
                     }
-    
+
                     HighFunctionDBUtil.updateDBVariable(
                         finalHighSymbol,
                         newVarName,
@@ -210,12 +210,10 @@ public class VariableService {
                         SourceType.USER_DEFINED
                     );
                     successFlag.set(true);
+                    tx.commit();
                 }
                 catch (Exception e) {
                     Msg.error(this, "Failed to rename variable", e);
-                }
-                finally {
-                    program.endTransaction(tx, true);
                 }
             });
         } catch (InterruptedException | InvocationTargetException e) {
@@ -404,8 +402,7 @@ public class VariableService {
      * Apply the type update in a transaction
      */
     private void updateVariableType(Program program, HighSymbol symbol, DataType dataType, AtomicBoolean success) {
-        int tx = program.startTransaction("Set variable type");
-        try {
+        try (var tx = ProgramTransaction.start(program, "Set variable type")) {
             // Use HighFunctionDBUtil to update the variable with the new type
             HighFunctionDBUtil.updateDBVariable(
                 symbol,                // The high symbol to modify
@@ -413,13 +410,12 @@ public class VariableService {
                 dataType,              // The new data type
                 SourceType.USER_DEFINED // Mark as user-defined
             );
-            
+
             success.set(true);
+            tx.commit();
             Msg.info(this, "Successfully set variable type using HighFunctionDBUtil");
         } catch (Exception e) {
             Msg.error(this, "Error setting variable type: " + e.getMessage());
-        } finally {
-            program.endTransaction(tx, success.get());
         }
     }
     
