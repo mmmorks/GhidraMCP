@@ -23,18 +23,12 @@ import ghidra.program.model.symbol.SourceType;
 import ghidra.util.Msg;
 import ghidra.util.task.ConsoleTaskMonitor;
 
-import javax.swing.SwingUtilities;
-import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
 import java.util.Spliterators;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
@@ -179,57 +173,34 @@ public class VariableService {
         }
     
         boolean commitRequired = GhidraUtils.checkFullCommit(highSymbol, highFunction);
-    
-        var finalFunction = func;
+
         var highVariable = highSymbol.getHighVariable();
         var finalVarnode = specificVarnode != null ? specificVarnode : highVariable.getRepresentative();
-    
-        var successFlag = new AtomicBoolean(false);
-    
-        try {
-            SwingUtilities.invokeAndWait(() -> {
-                try (var tx = ProgramTransaction.start(program, "Rename variable")) {
-                    if (commitRequired) {
-                        HighFunctionDBUtil.commitParamsToDatabase(highFunction, false,
-                            ReturnCommitOption.NO_COMMIT, finalFunction.getSignatureSource());
-                    }
 
-                    // Use the specific Varnode if provided, otherwise use the representative
-                    var newHighVariable = highFunction.splitOutMergeGroup(highVariable, finalVarnode);
-                    var finalHighSymbol = newHighVariable.getSymbol();
-
-                    var dataType = finalHighSymbol.getDataType();
-                    if (Undefined.isUndefined(dataType)) {
-                        dataType = AbstractIntegerDataType.getUnsignedDataType(dataType.getLength(), program.getDataTypeManager());
-                    }
-
-                    HighFunctionDBUtil.updateDBVariable(
-                        finalHighSymbol,
-                        newVarName,
-                        dataType,
-                        SourceType.USER_DEFINED
-                    );
-                    successFlag.set(true);
-                    tx.commit();
-                }
-                catch (Exception e) {
-                    Msg.error(this, "Failed to rename variable", e);
-                }
-            });
-        } catch (InterruptedException | InvocationTargetException e) {
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
+        try (var tx = ProgramTransaction.start(program, "Rename variable")) {
+            if (commitRequired) {
+                HighFunctionDBUtil.commitParamsToDatabase(highFunction, false,
+                    ReturnCommitOption.NO_COMMIT, func.getSignatureSource());
             }
-            if (!successFlag.get()) {
-                Throwable cause = e.getCause() != null ? e.getCause() : e;
-                var errorMsg = "Failed to execute rename on Swing thread: " + cause.getMessage();
-                Msg.error(this, errorMsg, e);
-                return errorMsg;
-            }
-        }
 
-        if (!successFlag.get()) {
-            return "Failed to rename variable";
+            var newHighVariable = highFunction.splitOutMergeGroup(highVariable, finalVarnode);
+            var finalHighSymbol = newHighVariable.getSymbol();
+
+            var dataType = finalHighSymbol.getDataType();
+            if (Undefined.isUndefined(dataType)) {
+                dataType = AbstractIntegerDataType.getUnsignedDataType(dataType.getLength(), program.getDataTypeManager());
+            }
+
+            HighFunctionDBUtil.updateDBVariable(
+                finalHighSymbol,
+                newVarName,
+                dataType,
+                SourceType.USER_DEFINED
+            );
+            tx.commit();
+        } catch (Exception e) {
+            Msg.error(this, "Failed to rename variable", e);
+            return "Failed to rename variable: " + e.getMessage();
         }
         
         // Get updated variable list after renaming
@@ -322,100 +293,71 @@ public class VariableService {
     public boolean setLocalVariableType(String functionAddrStr, String variableName, String newType) {
         Program program = programService.getCurrentProgram();
         if (program == null) return false;
-        if (functionAddrStr == null || functionAddrStr.isEmpty() || 
+        if (functionAddrStr == null || functionAddrStr.isEmpty() ||
             variableName == null || variableName.isEmpty() ||
             newType == null || newType.isEmpty()) {
             return false;
         }
-        
-        AtomicBoolean success = new AtomicBoolean(false);
-        
+
         try {
-            SwingUtilities.invokeAndWait(() -> {
-                try {
-                    // Find the function
-                    var addr = program.getAddressFactory().getAddress(functionAddrStr);
-                    var func = GhidraUtils.getFunctionForAddress(program, addr);
-                    
-                    if (func == null) {
-                        Msg.error(this, "Could not find function at address: " + functionAddrStr);
-                        return;
-                    }
-                    
-                    var results = GhidraUtils.decompileFunction(func, program);
-                    if (results == null || !results.decompileCompleted()) {
-                        return;
-                    }
-                    
-                    var highFunction = results.getHighFunction();
-                    if (highFunction == null) {
-                        Msg.error(this, "No high function available");
-                        return;
-                    }
-                    
-                    // Find the symbol by name
-                    var symbol = GhidraUtils.findVariableByName(highFunction, variableName);
-                    if (symbol == null) {
-                        Msg.error(this, "Could not find variable '" + variableName + "' in decompiled function");
-                        return;
-                    }
-                    
-                    // Get high variable
-                    var highVar = symbol.getHighVariable();
-                    if (highVar == null) {
-                        Msg.error(this, "No HighVariable found for symbol: " + variableName);
-                        return;
-                    }
-                    
-                    Msg.info(this, "Found high variable for: " + variableName + 
-                             " with current type " + highVar.getDataType().getName());
-                    
-                    // Find the data type
-                    var dataTypeService = new DataTypeService(programService);
-                    var dataType = dataTypeService.resolveDataType(program.getDataTypeManager(), newType);
-                    
-                    if (dataType == null) {
-                        Msg.error(this, "Could not resolve data type: " + newType);
-                        return;
-                    }
-                    
-                    Msg.info(this, "Using data type: " + dataType.getName() + " for variable " + variableName);
-                    
-                    // Apply the type change in a transaction
-                    updateVariableType(program, symbol, dataType, success);
-                    
-                } catch (Exception e) {
-                    Msg.error(this, "Error setting variable type: " + e.getMessage());
-                }
-            });
-        } catch (InterruptedException | InvocationTargetException e) {
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
+            var addr = program.getAddressFactory().getAddress(functionAddrStr);
+            var func = GhidraUtils.getFunctionForAddress(program, addr);
+
+            if (func == null) {
+                Msg.error(this, "Could not find function at address: " + functionAddrStr);
+                return false;
             }
-            Msg.error(this, "Failed to execute set variable type on Swing thread", e);
-        }
 
-        return success.get();
-    }
-    
-    /**
-     * Apply the type update in a transaction
-     */
-    private void updateVariableType(Program program, HighSymbol symbol, DataType dataType, AtomicBoolean success) {
-        try (var tx = ProgramTransaction.start(program, "Set variable type")) {
-            // Use HighFunctionDBUtil to update the variable with the new type
-            HighFunctionDBUtil.updateDBVariable(
-                symbol,                // The high symbol to modify
-                symbol.getName(),      // Keep original name
-                dataType,              // The new data type
-                SourceType.USER_DEFINED // Mark as user-defined
-            );
+            var results = GhidraUtils.decompileFunction(func, program);
+            if (results == null || !results.decompileCompleted()) {
+                return false;
+            }
 
-            success.set(true);
-            tx.commit();
-            Msg.info(this, "Successfully set variable type using HighFunctionDBUtil");
+            var highFunction = results.getHighFunction();
+            if (highFunction == null) {
+                Msg.error(this, "No high function available");
+                return false;
+            }
+
+            var symbol = GhidraUtils.findVariableByName(highFunction, variableName);
+            if (symbol == null) {
+                Msg.error(this, "Could not find variable '" + variableName + "' in decompiled function");
+                return false;
+            }
+
+            var highVar = symbol.getHighVariable();
+            if (highVar == null) {
+                Msg.error(this, "No HighVariable found for symbol: " + variableName);
+                return false;
+            }
+
+            Msg.info(this, "Found high variable for: " + variableName +
+                     " with current type " + highVar.getDataType().getName());
+
+            var dataTypeService = new DataTypeService(programService);
+            var dataType = dataTypeService.resolveDataType(program.getDataTypeManager(), newType);
+
+            if (dataType == null) {
+                Msg.error(this, "Could not resolve data type: " + newType);
+                return false;
+            }
+
+            Msg.info(this, "Using data type: " + dataType.getName() + " for variable " + variableName);
+
+            try (var tx = ProgramTransaction.start(program, "Set variable type")) {
+                HighFunctionDBUtil.updateDBVariable(
+                    symbol,
+                    symbol.getName(),
+                    dataType,
+                    SourceType.USER_DEFINED
+                );
+                tx.commit();
+                Msg.info(this, "Successfully set variable type using HighFunctionDBUtil");
+                return true;
+            }
         } catch (Exception e) {
             Msg.error(this, "Error setting variable type: " + e.getMessage());
+            return false;
         }
     }
     

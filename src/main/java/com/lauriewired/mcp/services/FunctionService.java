@@ -1,12 +1,8 @@
 package com.lauriewired.mcp.services;
 
-import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicBoolean;
-
-import javax.swing.SwingUtilities;
 
 import com.lauriewired.mcp.model.PaginationResult;
 import com.lauriewired.mcp.model.PrototypeResult;
@@ -106,29 +102,18 @@ public class FunctionService {
         Program program = programService.getCurrentProgram();
         if (program == null) return false;
 
-        AtomicBoolean successFlag = new AtomicBoolean(false);
-        try {
-            SwingUtilities.invokeAndWait(() -> {
-                try (var tx = ProgramTransaction.start(program, "Rename function via HTTP")) {
-                    for (Function func : program.getFunctionManager().getFunctions(true)) {
-                        if (func.getName().equals(oldName)) {
-                            func.setName(newName, SourceType.USER_DEFINED);
-                            successFlag.set(true);
-                            tx.commit();
-                            break;
-                        }
-                    }
-                } catch (InvalidInputException | DuplicateNameException | RuntimeException e) {
-                    Msg.error(this, "Error renaming function", e);
+        try (var tx = ProgramTransaction.start(program, "Rename function via HTTP")) {
+            for (Function func : program.getFunctionManager().getFunctions(true)) {
+                if (func.getName().equals(oldName)) {
+                    func.setName(newName, SourceType.USER_DEFINED);
+                    tx.commit();
+                    return true;
                 }
-            });
-        } catch (InterruptedException | InvocationTargetException e) {
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
             }
-            Msg.error(this, "Failed to execute rename on Swing thread", e);
+        } catch (InvalidInputException | DuplicateNameException | RuntimeException e) {
+            Msg.error(this, "Error renaming function", e);
         }
-        return successFlag.get();
+        return false;
     }
 
     /**
@@ -300,39 +285,27 @@ public class FunctionService {
     public boolean renameFunctionByAddress(String functionAddrStr, String newName) {
         Program program = programService.getCurrentProgram();
         if (program == null) return false;
-        if (functionAddrStr == null || functionAddrStr.isEmpty() || 
+        if (functionAddrStr == null || functionAddrStr.isEmpty() ||
             newName == null || newName.isEmpty()) {
             return false;
         }
-        
-        AtomicBoolean success = new AtomicBoolean(false);
-        
-        try {
-            SwingUtilities.invokeAndWait(() -> {
-                try (var tx = ProgramTransaction.start(program, "Rename function by address")) {
-                    Address addr = program.getAddressFactory().getAddress(functionAddrStr);
-                    Function func = GhidraUtils.getFunctionForAddress(program, addr);
 
-                    if (func == null) {
-                        Msg.error(this, "Could not find function at address: " + functionAddrStr);
-                        return;
-                    }
+        try (var tx = ProgramTransaction.start(program, "Rename function by address")) {
+            Address addr = program.getAddressFactory().getAddress(functionAddrStr);
+            Function func = GhidraUtils.getFunctionForAddress(program, addr);
 
-                    func.setName(newName, SourceType.USER_DEFINED);
-                    success.set(true);
-                    tx.commit();
-                } catch (InvalidInputException | DuplicateNameException | RuntimeException e) {
-                    Msg.error(this, "Error renaming function by address", e);
-                }
-            });
-        } catch (InterruptedException | InvocationTargetException e) {
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
+            if (func == null) {
+                Msg.error(this, "Could not find function at address: " + functionAddrStr);
+                return false;
             }
-            Msg.error(this, "Failed to execute rename function on Swing thread", e);
-        }
 
-        return success.get();
+            func.setName(newName, SourceType.USER_DEFINED);
+            tx.commit();
+            return true;
+        } catch (InvalidInputException | DuplicateNameException | RuntimeException e) {
+            Msg.error(this, "Error renaming function by address", e);
+        }
+        return false;
     }
 
     /**
@@ -380,100 +353,68 @@ public class FunctionService {
         if (prototype == null || prototype.isEmpty()) {
             return new PrototypeResult(false, "Function prototype is required");
         }
-        
-        final StringBuilder errorMessage = new StringBuilder();
-        final AtomicBoolean success = new AtomicBoolean(false);
-        
-        try {
-            SwingUtilities.invokeAndWait(() -> {
-                try {
-                    // Get the address and function
-                    Address addr = program.getAddressFactory().getAddress(functionAddrStr);
-                    Function func = GhidraUtils.getFunctionForAddress(program, addr);
-                    
-                    if (func == null) {
-                        String msg = "Could not find function at address: " + functionAddrStr;
-                        errorMessage.append(msg);
-                        Msg.error(this, msg);
-                        return;
-                    }
-                    
-                    Msg.info(this, "Setting prototype for function " + func.getName() + ": " + prototype);
-                    
-                    // Apply the type change
-                    parseFunctionSignatureAndApply(program, addr, prototype, success, errorMessage);
-                    
-                } catch (Exception e) {
-                    String msg = "Error setting function prototype: " + e.getMessage();
-                    errorMessage.append(msg);
-                    Msg.error(this, msg, e);
-                }
-            });
-        } catch (InterruptedException | InvocationTargetException e) {
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
-            if (!success.get()) {
-                Throwable cause = e.getCause() != null ? e.getCause() : e;
-                String msg = "Failed to set function prototype on Swing thread: " + cause.getMessage();
-                errorMessage.append(msg);
-                Msg.error(this, msg, e);
-            }
-        }
 
-        return new PrototypeResult(success.get(), errorMessage.toString());
+        try {
+            Address addr = program.getAddressFactory().getAddress(functionAddrStr);
+            Function func = GhidraUtils.getFunctionForAddress(program, addr);
+
+            if (func == null) {
+                String msg = "Could not find function at address: " + functionAddrStr;
+                Msg.error(this, msg);
+                return new PrototypeResult(false, msg);
+            }
+
+            Msg.info(this, "Setting prototype for function " + func.getName() + ": " + prototype);
+            return parseFunctionSignatureAndApply(program, addr, prototype);
+
+        } catch (Exception e) {
+            String msg = "Error setting function prototype: " + e.getMessage();
+            Msg.error(this, msg, e);
+            return new PrototypeResult(false, msg);
+        }
     }
-    
+
     /**
      * Parse and apply the function signature with error handling
      */
     @SuppressWarnings("UseSpecificCatch")
-    private void parseFunctionSignatureAndApply(Program program, Address addr, String prototype,
-                                              AtomicBoolean success, StringBuilder errorMessage) {
-        // Use ApplyFunctionSignatureCmd to parse and apply the signature
+    private PrototypeResult parseFunctionSignatureAndApply(Program program, Address addr, String prototype) {
         try (var tx = ProgramTransaction.start(program, "Set function prototype")) {
-            // Get data type manager
             ghidra.program.model.data.DataTypeManager dtm = program.getDataTypeManager();
 
-            // Get data type manager service
             ghidra.app.services.DataTypeManagerService dtms =
                 tool.getService(ghidra.app.services.DataTypeManagerService.class);
 
-            // Create function signature parser
             ghidra.app.util.parser.FunctionSignatureParser parser =
                 new ghidra.app.util.parser.FunctionSignatureParser(dtm, dtms);
 
-            // Parse the prototype into a function signature
             ghidra.program.model.data.FunctionDefinitionDataType sig = parser.parse(null, prototype);
 
             if (sig == null) {
                 String msg = "Failed to parse function prototype";
-                errorMessage.append(msg);
                 Msg.error(this, msg);
-                return;
+                return new PrototypeResult(false, msg);
             }
 
-            // Create and apply the command
             ghidra.app.cmd.function.ApplyFunctionSignatureCmd cmd =
                 new ghidra.app.cmd.function.ApplyFunctionSignatureCmd(
                     addr, sig, SourceType.USER_DEFINED);
 
-            // Apply the command to the program
             boolean cmdResult = cmd.applyTo(program, new ConsoleTaskMonitor());
 
             if (cmdResult) {
-                success.set(true);
                 tx.commit();
                 Msg.info(this, "Successfully applied function signature");
+                return new PrototypeResult(true, "");
             } else {
                 String msg = "Command failed: " + cmd.getStatusMsg();
-                errorMessage.append(msg);
                 Msg.error(this, msg);
+                return new PrototypeResult(false, msg);
             }
         } catch (Exception e) {
             String msg = "Error applying function signature: " + e.getMessage();
-            errorMessage.append(msg);
             Msg.error(this, msg, e);
+            return new PrototypeResult(false, msg);
         }
     }
 }

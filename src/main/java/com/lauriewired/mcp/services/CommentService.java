@@ -1,10 +1,5 @@
 package com.lauriewired.mcp.services;
 
-import java.lang.reflect.InvocationTargetException;
-import java.util.concurrent.atomic.AtomicBoolean;
-
-import javax.swing.SwingUtilities;
-
 import com.lauriewired.mcp.utils.ProgramTransaction;
 
 import ghidra.program.model.address.Address;
@@ -62,28 +57,16 @@ public class CommentService {
         Program program = programService.getCurrentProgram();
         if (program == null) return false;
         if (addressStr == null || addressStr.isEmpty() || comment == null) return false;
-        
-        AtomicBoolean success = new AtomicBoolean(false);
-        
-        try {
-            SwingUtilities.invokeAndWait(() -> {
-                try (var tx = ProgramTransaction.start(program, transactionName)) {
-                    Address addr = program.getAddressFactory().getAddress(addressStr);
-                    program.getListing().setComment(addr, commentType, comment);
-                    success.set(true);
-                    tx.commit();
-                } catch (Exception e) {
-                    Msg.error(this, "Error setting " + transactionName.toLowerCase(), e);
-                }
-            });
-        } catch (InterruptedException | InvocationTargetException e) {
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
-            Msg.error(this, "Failed to execute " + transactionName.toLowerCase() + " on Swing thread", e);
-        }
 
-        return success.get();
+        try (var tx = ProgramTransaction.start(program, transactionName)) {
+            Address addr = program.getAddressFactory().getAddress(addressStr);
+            program.getListing().setComment(addr, commentType, comment);
+            tx.commit();
+            return true;
+        } catch (Exception e) {
+            Msg.error(this, "Error setting " + transactionName.toLowerCase(), e);
+            return false;
+        }
     }
     
     /**

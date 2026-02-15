@@ -1,12 +1,7 @@
 package com.lauriewired.mcp.services;
 
-import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
-
-import javax.swing.SwingUtilities;
 
 import com.lauriewired.mcp.model.PaginationResult;
 import com.lauriewired.mcp.utils.HttpUtils;
@@ -124,51 +119,32 @@ public class MemoryService {
         Program program = programService.getCurrentProgram();
         if (program == null) return false;
 
-        AtomicBoolean successFlag = new AtomicBoolean(false);
-        try {
-            SwingUtilities.invokeAndWait(() -> {
-                try (var tx = ProgramTransaction.start(program, "Rename data")) {
-                    Address addr = program.getAddressFactory().getAddress(addressStr);
-                    if (addr == null) {
-                        Msg.error(this, "Invalid address: " + addressStr);
-                        return;
-                    }
-
-                    // Check if data exists at this address
-                    if (program.getListing().getDefinedDataAt(addr) != null) {
-                        SymbolTable symTable = program.getSymbolTable();
-                        Symbol symbol = symTable.getPrimarySymbol(addr);
-
-                        if (symbol != null) {
-                            symbol.setName(newName, SourceType.USER_DEFINED);
-                            successFlag.set(true);
-                        } else {
-                            try {
-                                symTable.createLabel(addr, newName, SourceType.USER_DEFINED);
-                                successFlag.set(true);
-                            } catch (InvalidInputException e) {
-                                Msg.error(this, "Failed to create label: " + e.getMessage());
-                            }
-                        }
-                    } else {
-                        Msg.error(this, "No defined data at address: " + addressStr);
-                    }
-                    if (successFlag.get()) {
-                        tx.commit();
-                    }
-                }
-                catch (DuplicateNameException | InvalidInputException e) {
-                    Msg.error(this, "Rename data error", e);
-                }
-            });
-        }
-        catch (InterruptedException | InvocationTargetException e) {
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
+        try (var tx = ProgramTransaction.start(program, "Rename data")) {
+            Address addr = program.getAddressFactory().getAddress(addressStr);
+            if (addr == null) {
+                Msg.error(this, "Invalid address: " + addressStr);
+                return false;
             }
-            Msg.error(this, "Failed to execute rename data on Swing thread", e);
+
+            if (program.getListing().getDefinedDataAt(addr) == null) {
+                Msg.error(this, "No defined data at address: " + addressStr);
+                return false;
+            }
+
+            SymbolTable symTable = program.getSymbolTable();
+            Symbol symbol = symTable.getPrimarySymbol(addr);
+
+            if (symbol != null) {
+                symbol.setName(newName, SourceType.USER_DEFINED);
+            } else {
+                symTable.createLabel(addr, newName, SourceType.USER_DEFINED);
+            }
+            tx.commit();
+            return true;
+        } catch (DuplicateNameException | InvalidInputException e) {
+            Msg.error(this, "Rename data error", e);
+            return false;
         }
-        return successFlag.get();
     }
     
     /**
@@ -183,104 +159,71 @@ public class MemoryService {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
         if (dataTypeService == null) return "DataTypeService not available";
-        
-        AtomicReference<String> resultMessage = new AtomicReference<>();
-        try {
-            SwingUtilities.invokeAndWait(() -> {
-                try (var tx = ProgramTransaction.start(program, "Set memory data type")) {
-                    Address addr = program.getAddressFactory().getAddress(addressStr);
-                    if (addr == null) {
-                        resultMessage.set("Invalid address: " + addressStr);
-                        return;
-                    }
 
-                    // Get the data type manager and resolve the type
-                    DataTypeManager dtm = program.getDataTypeManager();
-                    DataType dataType = dataTypeService.resolveDataType(dtm, dataTypeName);
-
-                    if (dataType == null) {
-                        // Provide more specific error message for array types
-                        if (dataTypeName.matches(".*\\[\\d+\\]$")) {
-                            resultMessage.set("Failed to create array data type '" + dataTypeName +
-                                            "': base type could not be resolved. Check that the base type exists.");
-                        } else {
-                            resultMessage.set("Data type '" + dataTypeName + "' not found. " +
-                                            "Available types include: int, char, short, long, byte, etc.");
-                        }
-                        return;
-                    }
-
-                    Listing listing = program.getListing();
-
-                    // Clear existing data if requested
-                    if (clearExisting) {
-                        // Calculate the size needed for the new data type
-                        int sizeNeeded = dataType.getLength();
-                        if (sizeNeeded <= 0) {
-                            // For dynamic types, try to get a reasonable default
-                            sizeNeeded = 1;
-                        }
-
-                        // Clear any existing code units (data or instructions) in the range
-                        Address endAddr = addr.add(sizeNeeded - 1);
-                        listing.clearCodeUnits(addr, endAddr, false);
-                    }
-
-                    // Create the data at the address
-                    try {
-                        Data newData = listing.createData(addr, dataType);
-                        resultMessage.set(String.format("Data type '%s' (%d bytes) set at address %s",
-                            dataType.getName(),
-                            newData.getLength(),
-                            addr.toString()));
-                        tx.commit();
-                    } catch (CodeUnitInsertionException e) {
-                        // Try to provide more specific error information
-                        String errorMsg = e.getMessage();
-                        if (errorMsg.contains("Conflicting")) {
-                            // Check what's actually at the address
-                            CodeUnit cu = listing.getCodeUnitAt(addr);
-                            if (cu instanceof Instruction) {
-                                resultMessage.set("Failed to set data type: Instructions exist at address. " +
-                                               "Use clear_existing=true to overwrite instructions.");
-                            } else if (cu instanceof Data existingData) {
-                                resultMessage.set(String.format("Failed to set data type: Existing data '%s' at address. " +
-                                               "Use clear_existing=true to overwrite.",
-                                               existingData.getDataType().getName()));
-                            } else {
-                                resultMessage.set("Failed to set data type: Conflicting code units exist at address. " +
-                                               "Try setting clear_existing=true to overwrite.");
-                            }
-                        } else if (errorMsg.contains("Insufficient")) {
-                            resultMessage.set(String.format("Failed to set data type: Insufficient space. " +
-                                           "The data type '%s' requires %d bytes but there's not enough space available.",
-                                           dataType.getName(), dataType.getLength()));
-                        } else {
-                            resultMessage.set("Failed to set data type: " + errorMsg);
-                        }
-                    }
-                }
-                catch (RuntimeException e) {
-                    Msg.error(this, "Error setting memory data type", e);
-                    resultMessage.set("Failed to set memory data type: " + e.getMessage());
-                }
-            });
-        }
-        catch (InterruptedException | InvocationTargetException e) {
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
+        try (var tx = ProgramTransaction.start(program, "Set memory data type")) {
+            Address addr = program.getAddressFactory().getAddress(addressStr);
+            if (addr == null) {
+                return "Invalid address: " + addressStr;
             }
-            // If the operation already succeeded inside the lambda, return that result
-            if (resultMessage.get() != null) {
-                return resultMessage.get();
-            }
-            Throwable cause = e.getCause() != null ? e.getCause() : e;
-            String errorMsg = "Failed to execute set memory data type on Swing thread: " + cause.getMessage();
-            Msg.error(this, errorMsg, e);
-            return errorMsg;
-        }
 
-        return resultMessage.get();
+            DataTypeManager dtm = program.getDataTypeManager();
+            DataType dataType = dataTypeService.resolveDataType(dtm, dataTypeName);
+
+            if (dataType == null) {
+                if (dataTypeName.matches(".*\\[\\d+\\]$")) {
+                    return "Failed to create array data type '" + dataTypeName +
+                            "': base type could not be resolved. Check that the base type exists.";
+                } else {
+                    return "Data type '" + dataTypeName + "' not found. " +
+                            "Available types include: int, char, short, long, byte, etc.";
+                }
+            }
+
+            Listing listing = program.getListing();
+
+            if (clearExisting) {
+                int sizeNeeded = dataType.getLength();
+                if (sizeNeeded <= 0) {
+                    sizeNeeded = 1;
+                }
+                Address endAddr = addr.add(sizeNeeded - 1);
+                listing.clearCodeUnits(addr, endAddr, false);
+            }
+
+            try {
+                Data newData = listing.createData(addr, dataType);
+                tx.commit();
+                return String.format("Data type '%s' (%d bytes) set at address %s",
+                    dataType.getName(),
+                    newData.getLength(),
+                    addr.toString());
+            } catch (CodeUnitInsertionException e) {
+                String errorMsg = e.getMessage();
+                if (errorMsg.contains("Conflicting")) {
+                    CodeUnit cu = listing.getCodeUnitAt(addr);
+                    if (cu instanceof Instruction) {
+                        return "Failed to set data type: Instructions exist at address. " +
+                               "Use clear_existing=true to overwrite instructions.";
+                    } else if (cu instanceof Data existingData) {
+                        return String.format("Failed to set data type: Existing data '%s' at address. " +
+                               "Use clear_existing=true to overwrite.",
+                               existingData.getDataType().getName());
+                    } else {
+                        return "Failed to set data type: Conflicting code units exist at address. " +
+                               "Try setting clear_existing=true to overwrite.";
+                    }
+                } else if (errorMsg.contains("Insufficient")) {
+                    return String.format("Failed to set data type: Insufficient space. " +
+                           "The data type '%s' requires %d bytes but there's not enough space available.",
+                           dataType.getName(), dataType.getLength());
+                } else {
+                    return "Failed to set data type: " + errorMsg;
+                }
+            }
+        } catch (RuntimeException e) {
+            Msg.error(this, "Error setting memory data type", e);
+            return "Failed to set memory data type: " + e.getMessage();
+        }
     }
     
     /**
