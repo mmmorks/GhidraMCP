@@ -219,11 +219,17 @@ public class VariableService {
                 }
             });
         } catch (InterruptedException | InvocationTargetException e) {
-            var errorMsg = "Failed to execute rename on Swing thread: " + e.getMessage();
-            Msg.error(this, errorMsg, e);
-            return errorMsg;
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            if (!successFlag.get()) {
+                Throwable cause = e.getCause() != null ? e.getCause() : e;
+                var errorMsg = "Failed to execute rename on Swing thread: " + cause.getMessage();
+                Msg.error(this, errorMsg, e);
+                return errorMsg;
+            }
         }
-        
+
         if (!successFlag.get()) {
             return "Failed to rename variable";
         }
@@ -385,9 +391,12 @@ public class VariableService {
                 }
             });
         } catch (InterruptedException | InvocationTargetException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
             Msg.error(this, "Failed to execute set variable type on Swing thread", e);
         }
-        
+
         return success.get();
     }
     

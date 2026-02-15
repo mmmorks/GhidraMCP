@@ -163,6 +163,9 @@ public class MemoryService {
             });
         }
         catch (InterruptedException | InvocationTargetException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
             Msg.error(this, "Failed to execute rename data on Swing thread", e);
         }
         return successFlag.get();
@@ -268,11 +271,19 @@ public class MemoryService {
             });
         }
         catch (InterruptedException | InvocationTargetException e) {
-            String errorMsg = "Failed to execute set memory data type on Swing thread: " + e.getMessage();
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            // If the operation already succeeded inside the lambda, return that result
+            if (resultMessage.get() != null) {
+                return resultMessage.get();
+            }
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            String errorMsg = "Failed to execute set memory data type on Swing thread: " + cause.getMessage();
             Msg.error(this, errorMsg, e);
             return errorMsg;
         }
-        
+
         return resultMessage.get();
     }
     

@@ -124,6 +124,9 @@ public class FunctionService {
                 }
             });
         } catch (InterruptedException | InvocationTargetException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
             Msg.error(this, "Failed to execute rename on Swing thread", e);
         }
         return successFlag.get();
@@ -326,9 +329,12 @@ public class FunctionService {
                 }
             });
         } catch (InterruptedException | InvocationTargetException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
             Msg.error(this, "Failed to execute rename function on Swing thread", e);
         }
-        
+
         return success.get();
     }
 
@@ -407,11 +413,17 @@ public class FunctionService {
                 }
             });
         } catch (InterruptedException | InvocationTargetException e) {
-            String msg = "Failed to set function prototype on Swing thread: " + e.getMessage();
-            errorMessage.append(msg);
-            Msg.error(this, msg, e);
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            if (!success.get()) {
+                Throwable cause = e.getCause() != null ? e.getCause() : e;
+                String msg = "Failed to set function prototype on Swing thread: " + cause.getMessage();
+                errorMessage.append(msg);
+                Msg.error(this, msg, e);
+            }
         }
-        
+
         return new PrototypeResult(success.get(), errorMessage.toString());
     }
     

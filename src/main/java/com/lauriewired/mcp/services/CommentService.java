@@ -77,9 +77,12 @@ public class CommentService {
                 }
             });
         } catch (InterruptedException | InvocationTargetException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
             Msg.error(this, "Failed to execute " + transactionName.toLowerCase() + " on Swing thread", e);
         }
-        
+
         return success.get();
     }
     
