@@ -38,6 +38,7 @@ import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Parameter;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.listing.Variable;
+import ghidra.util.InvalidNameException;
 import ghidra.util.Msg;
 import ghidra.util.UniversalID;
 
@@ -167,6 +168,82 @@ public class DataTypeService {
         }
 
         return successFlag.get() ? "Field renamed successfully" : "Failed to rename field";
+    }
+
+    /**
+     * Rename a structure data type
+     *
+     * @param oldName current structure name
+     * @param newName new structure name
+     * @return status message
+     */
+    public String renameStructure(String oldName, String newName) {
+        if (oldName == null || oldName.isEmpty()) {
+            return "Current structure name is required";
+        }
+        if (newName == null || newName.isEmpty()) {
+            return "New structure name is required";
+        }
+        Program program = programService.getCurrentProgram();
+        if (program == null) return "No program loaded";
+
+        AtomicReference<String> resultMessage = new AtomicReference<>();
+        try {
+            SwingUtilities.invokeAndWait(() -> {
+                int tx = program.startTransaction("Rename structure");
+                try {
+                    ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
+                    DataType dt = findDataTypeByNameInAllCategories(dtm, oldName);
+                    if (dt == null) {
+                        resultMessage.set("Structure '" + oldName + "' not found");
+                        return;
+                    }
+                    if (!(dt instanceof Structure)) {
+                        resultMessage.set("'" + oldName + "' is not a structure");
+                        return;
+                    }
+
+                    // Check if a data type with the new name already exists
+                    DataType existing = findDataTypeByNameInAllCategories(dtm, newName);
+                    if (existing != null) {
+                        resultMessage.set("A data type named '" + newName + "' already exists");
+                        return;
+                    }
+
+                    dt.setName(newName);
+                    resultMessage.set("Structure renamed from '" + oldName + "' to '" + newName + "'");
+                }
+                catch (InvalidNameException e) {
+                    Msg.error(this, "Invalid data type name", e);
+                    resultMessage.set("Invalid name '" + newName + "': " + e.getMessage());
+                }
+                catch (ghidra.util.exception.DuplicateNameException e) {
+                    Msg.error(this, "Duplicate data type name", e);
+                    resultMessage.set("A data type named '" + newName + "' already exists");
+                }
+                catch (RuntimeException e) {
+                    Msg.error(this, "Error renaming structure", e);
+                    resultMessage.set("Failed to rename structure: " + e.getMessage());
+                }
+                finally {
+                    program.endTransaction(tx, resultMessage.get() != null &&
+                                         resultMessage.get().contains("renamed from"));
+                }
+            });
+        } catch (InterruptedException | InvocationTargetException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            if (resultMessage.get() != null) {
+                return resultMessage.get();
+            }
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            String errorMsg = "Failed to execute rename on Swing thread: " + cause.getMessage();
+            Msg.error(this, errorMsg, e);
+            return errorMsg;
+        }
+
+        return resultMessage.get();
     }
 
     /**

@@ -144,6 +144,7 @@ class ApiHandlerRegistryTest {
 
         // DataType endpoints
         verify(mockHttpServer).createContext(eq("/list_structures"), any(HttpHandler.class));
+        verify(mockHttpServer).createContext(eq("/rename_structure"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/rename_struct_field"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/create_structure"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/add_structure_field"), any(HttpHandler.class));
@@ -202,7 +203,7 @@ class ApiHandlerRegistryTest {
         registry.registerAllEndpoints();
 
         // Verify the expected number of endpoints were registered
-        // Updated to 54 after adding find_data_type_usage endpoint
-        verify(mockHttpServer, times(54)).createContext(anyString(), any(HttpHandler.class));
+        // Updated to 55 after adding rename_structure endpoint
+        verify(mockHttpServer, times(55)).createContext(anyString(), any(HttpHandler.class));
     }
 }

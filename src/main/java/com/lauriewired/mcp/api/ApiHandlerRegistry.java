@@ -305,6 +305,20 @@ public class ApiHandlerRegistry {
             HttpUtils.sendResponse(exchange, dataTypeService.listStructures(offset, limit));
         });
         
+        // Rename structure
+        registerEndpoint(server, "rename_structure", exchange -> {
+            try {
+                Map<String, String> params = HttpUtils.parsePostParams(exchange);
+                String result = dataTypeService.renameStructure(
+                        params.get("old_name"),
+                        params.get("new_name")
+                );
+                HttpUtils.sendResponse(exchange, result);
+            } catch (IOException e) {
+                HttpUtils.sendResponse(exchange, "Error parsing parameters: " + e.getMessage());
+            }
+        });
+
         // Rename struct field
         registerEndpoint(server, "rename_struct_field", exchange -> {
             try {

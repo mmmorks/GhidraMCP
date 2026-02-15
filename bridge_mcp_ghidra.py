@@ -108,6 +108,28 @@ def rename_struct_field(struct_name: str, old_field_name: str, new_field_name: s
     })
 
 @mcp.tool()
+def rename_structure(old_name: str, new_name: str) -> str:
+    """
+    Rename a structure data type.
+
+    Changes the name of an existing structure in the data type manager.
+
+    Parameters:
+        old_name: Current structure name
+        new_name: New structure name to assign
+
+    Returns: Success or failure message
+
+    Note: Structure names must be unique. The structure must exist in the data type manager.
+
+    Example: rename_structure("struct_00401000", "NetworkPacket")
+    """
+    return safe_post("rename_structure", {
+        "old_name": old_name,
+        "new_name": new_name
+    })
+
+@mcp.tool()
 def decompile_function(name: str) -> str:
     """
     Decompile a function by name to C-like pseudocode.

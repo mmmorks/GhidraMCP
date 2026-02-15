@@ -106,6 +106,43 @@ public class DataTypeServiceTest {
         assertEquals("No program loaded", result);
     }
 
+    // Tests for structure renaming
+
+    @Test
+    @DisplayName("renameStructure returns error when no program is loaded")
+    void testRenameStructure_NoProgram() {
+        String result = dataTypeService.renameStructure("OldStruct", "NewStruct");
+        assertEquals("No program loaded", result);
+    }
+
+    @Test
+    @DisplayName("renameStructure returns error for null old name")
+    void testRenameStructure_NullOldName() {
+        String result = dataTypeService.renameStructure(null, "NewStruct");
+        assertEquals("Current structure name is required", result);
+    }
+
+    @Test
+    @DisplayName("renameStructure returns error for empty old name")
+    void testRenameStructure_EmptyOldName() {
+        String result = dataTypeService.renameStructure("", "NewStruct");
+        assertEquals("Current structure name is required", result);
+    }
+
+    @Test
+    @DisplayName("renameStructure returns error for null new name")
+    void testRenameStructure_NullNewName() {
+        String result = dataTypeService.renameStructure("OldStruct", null);
+        assertEquals("New structure name is required", result);
+    }
+
+    @Test
+    @DisplayName("renameStructure returns error for empty new name")
+    void testRenameStructure_EmptyNewName() {
+        String result = dataTypeService.renameStructure("OldStruct", "");
+        assertEquals("New structure name is required", result);
+    }
+
     @Test
     @DisplayName("findDataTypeByNameInAllCategories returns null for null data type manager")
     void testFindDataTypeByNameInAllCategories_NullDTM() {
