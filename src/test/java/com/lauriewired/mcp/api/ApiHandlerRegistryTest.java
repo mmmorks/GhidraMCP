@@ -202,7 +202,7 @@ class ApiHandlerRegistryTest {
         registry.registerAllEndpoints();
 
         // Verify the expected number of endpoints were registered
-        // Updated to 53 after adding Phase 1 improvements (12 new endpoints)
-        verify(mockHttpServer, times(53)).createContext(anyString(), any(HttpHandler.class));
+        // Updated to 54 after adding find_data_type_usage endpoint
+        verify(mockHttpServer, times(54)).createContext(anyString(), any(HttpHandler.class));
     }
 }
