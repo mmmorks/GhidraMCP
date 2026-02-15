@@ -17,18 +17,29 @@ import javax.swing.SwingUtilities;
 import com.lauriewired.mcp.model.PaginationResult;
 import com.lauriewired.mcp.utils.HttpUtils;
 
+import ghidra.program.model.data.Array;
 import ghidra.program.model.data.ArrayDataType;
 import ghidra.program.model.data.CategoryPath;
+import ghidra.program.model.data.Composite;
 import ghidra.program.model.data.DataType;
 import ghidra.program.model.data.DataTypeComponent;
 import ghidra.program.model.data.DataTypeManager;
 import ghidra.program.model.data.Enum;
 import ghidra.program.model.data.EnumDataType;
+import ghidra.program.model.data.Pointer;
 import ghidra.program.model.data.ProgramBasedDataTypeManager;
 import ghidra.program.model.data.Structure;
 import ghidra.program.model.data.StructureDataType;
+import ghidra.program.model.data.TypeDef;
+import ghidra.program.model.listing.Data;
+import ghidra.program.model.listing.Function;
+import ghidra.program.model.listing.FunctionIterator;
+import ghidra.program.model.listing.Listing;
+import ghidra.program.model.listing.Parameter;
 import ghidra.program.model.listing.Program;
+import ghidra.program.model.listing.Variable;
 import ghidra.util.Msg;
+import ghidra.util.UniversalID;
 
 /**
  * Service for data type and structure-related operations
@@ -106,7 +117,8 @@ public class DataTypeService {
                 int tx = program.startTransaction("Rename struct field");
                 try {
                     ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
-                    Structure struct = (Structure) dtm.getDataType("/" + structName);
+                    DataType dt = findDataTypeByNameInAllCategories(dtm, structName);
+                    Structure struct = (dt instanceof Structure) ? (Structure) dt : null;
                     if (struct != null) {
                         // Check if oldFieldName matches pattern "field<N>_0x<offset>"
                         if (oldFieldName.matches("field\\d+_0x[0-9a-fA-F]+")) {
@@ -141,7 +153,15 @@ public class DataTypeService {
                 }
             });
         } catch (InterruptedException | InvocationTargetException e) {
-            String errorMsg = "Failed to execute rename on Swing thread: " + e.getMessage();
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            // If the operation already succeeded inside the lambda, don't report an error
+            if (successFlag.get()) {
+                return "Field renamed successfully";
+            }
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            String errorMsg = "Failed to execute rename on Swing thread: " + cause.getMessage();
             Msg.error(this, errorMsg, e);
             return errorMsg;
         }
@@ -350,7 +370,14 @@ public class DataTypeService {
                 }
             });
         } catch (InterruptedException | InvocationTargetException e) {
-            String errorMsg = "Failed to execute create structure on Swing thread: " + e.getMessage();
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            if (resultMessage.get() != null) {
+                return resultMessage.get();
+            }
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            String errorMsg = "Failed to execute create structure on Swing thread: " + cause.getMessage();
             Msg.error(this, errorMsg, e);
             return errorMsg;
         }
@@ -422,7 +449,14 @@ public class DataTypeService {
                 }
             });
         } catch (InterruptedException | InvocationTargetException e) {
-            String errorMsg = "Failed to execute add field on Swing thread: " + e.getMessage();
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            if (resultMessage.get() != null) {
+                return resultMessage.get();
+            }
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            String errorMsg = "Failed to execute add field on Swing thread: " + cause.getMessage();
             Msg.error(this, errorMsg, e);
             return errorMsg;
         }
@@ -488,7 +522,14 @@ public class DataTypeService {
                 }
             });
         } catch (InterruptedException | InvocationTargetException e) {
-            String errorMsg = "Failed to execute create enum on Swing thread: " + e.getMessage();
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            if (resultMessage.get() != null) {
+                return resultMessage.get();
+            }
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            String errorMsg = "Failed to execute create enum on Swing thread: " + cause.getMessage();
             Msg.error(this, errorMsg, e);
             return errorMsg;
         }
@@ -538,7 +579,14 @@ public class DataTypeService {
                 }
             });
         } catch (InterruptedException | InvocationTargetException e) {
-            String errorMsg = "Failed to execute add enum value on Swing thread: " + e.getMessage();
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            if (resultMessage.get() != null) {
+                return resultMessage.get();
+            }
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            String errorMsg = "Failed to execute add enum value on Swing thread: " + cause.getMessage();
             Msg.error(this, errorMsg, e);
             return errorMsg;
         }
@@ -789,5 +837,230 @@ public class DataTypeService {
         }
         
         return String.join("\n", fields);
+    }
+
+    /**
+     * Unwrap Array, Pointer, and TypeDef wrappers to get the underlying base data type.
+     *
+     * @param dt the data type to unwrap
+     * @return the base data type after removing all wrappers
+     */
+    private DataType getBaseDataType(DataType dt) {
+        while (dt != null) {
+            if (dt instanceof TypeDef) {
+                dt = ((TypeDef) dt).getBaseDataType();
+            } else if (dt instanceof Pointer) {
+                dt = ((Pointer) dt).getDataType();
+            } else if (dt instanceof Array) {
+                dt = ((Array) dt).getDataType();
+            } else {
+                break;
+            }
+        }
+        return dt;
+    }
+
+    /**
+     * Compare two data types for equality using the same logic as Ghidra's
+     * ReferenceUtils.dataTypesMatch(): compare by UniversalID for user-defined types,
+     * and by class identity for built-in types.
+     *
+     * @param a first data type
+     * @param b second data type
+     * @return true if the types match
+     */
+    private boolean dataTypesMatch(DataType a, DataType b) {
+        if (a == null || b == null) return false;
+        if (a == b) return true;
+
+        UniversalID idA = a.getUniversalID();
+        UniversalID idB = b.getUniversalID();
+
+        // User-defined types have non-null UIDs — compare by UID
+        if (idA != null && idB != null) {
+            return idA.equals(idB);
+        }
+
+        // Built-in types (no UID) — compare by exact class + name
+        return a.getClass().equals(b.getClass()) && a.getName().equals(b.getName());
+    }
+
+    /**
+     * Find all locations where a data type is used in the program.
+     * Mirrors Ghidra's ReferenceUtils.doFindDataTypeReferences() algorithm:
+     *   1. Search defined data items (including sub-components)
+     *   2. Search function signatures (return types, parameters, locals)
+     *
+     * Optionally filters to a specific field name within a composite type,
+     * mirroring Ghidra's FieldMatcher / findDataTypeFieldReferences().
+     *
+     * @param typeName  name of the data type to find usages of
+     * @param fieldName optional field name to restrict search to (null for all uses)
+     * @param offset    pagination offset
+     * @param limit     pagination limit
+     * @return paginated list of usage locations
+     */
+    public String findDataTypeUsage(String typeName, String fieldName, int offset, int limit) {
+        Program program = programService.getCurrentProgram();
+        if (program == null) return "No program loaded";
+        if (typeName == null || typeName.isEmpty()) return "Type name is required";
+
+        ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
+        DataType targetType = findDataTypeByNameInAllCategories(dtm, typeName);
+        if (targetType == null) {
+            return "Data type not found: " + typeName;
+        }
+
+        // Unwrap the target so we compare base-to-base
+        DataType targetBase = getBaseDataType(targetType);
+
+        // If a field name is given, validate it exists in the composite type
+        int fieldOffset = -1;
+        if (fieldName != null && !fieldName.isEmpty()) {
+            if (!(targetBase instanceof Composite)) {
+                return "Field search requires a composite (struct/union) type, but " +
+                        typeName + " is " + targetBase.getClass().getSimpleName();
+            }
+            Composite composite = (Composite) targetBase;
+            DataTypeComponent fieldComp = findFieldByName(composite, fieldName);
+            if (fieldComp == null) {
+                return "Field '" + fieldName + "' not found in " + typeName;
+            }
+            fieldOffset = fieldComp.getOffset();
+        }
+
+        List<String> results = new ArrayList<>();
+        Listing listing = program.getListing();
+
+        // --- 1. Search defined data ---
+        Iterator<Data> dataIter = listing.getDefinedData(true);
+        while (dataIter.hasNext()) {
+            Data data = dataIter.next();
+            collectDataTypeMatches(results, data, targetBase, fieldName, fieldOffset);
+        }
+
+        // --- 2. Search function signatures ---
+        // When searching for a specific field, function return types and variable
+        // types still matter (the whole composite is used), but we skip them to
+        // match Ghidra's FieldMatcher behaviour which only reports field-level hits.
+        if (fieldName == null || fieldName.isEmpty()) {
+            FunctionIterator funcIter = listing.getFunctions(true);
+            while (funcIter.hasNext()) {
+                Function func = funcIter.next();
+                String funcDesc = func.getName() + " @ " + func.getEntryPoint();
+
+                // Check return type
+                DataType retBase = getBaseDataType(func.getReturnType());
+                if (dataTypesMatch(retBase, targetBase)) {
+                    results.add("Return type: " + funcDesc +
+                            " (returns " + func.getReturnType().getName() + ")");
+                }
+
+                // Check all variables (parameters + locals)
+                for (Variable var : func.getAllVariables()) {
+                    DataType varBase = getBaseDataType(var.getDataType());
+                    if (dataTypesMatch(varBase, targetBase)) {
+                        String kind = (var instanceof Parameter) ? "Param" : "Local";
+                        results.add(kind + " variable: " + var.getName() +
+                                " in " + funcDesc +
+                                " (type: " + var.getDataType().getName() + ")");
+                    }
+                }
+            }
+        }
+
+        if (results.isEmpty()) {
+            String target = fieldName != null && !fieldName.isEmpty()
+                    ? typeName + "." + fieldName
+                    : typeName;
+            return "No usages found for data type: " + target;
+        }
+
+        PaginationResult paginationResult = HttpUtils.paginateListWithHints(results, offset, limit);
+        return paginationResult.getFormattedResult();
+    }
+
+
+    /**
+     * Find a named field within a Composite (struct/union) data type.
+     *
+     * @param composite the composite type to search
+     * @param name      the field name to find
+     * @return the matching component, or null if not found
+     */
+    private DataTypeComponent findFieldByName(Composite composite, String name) {
+        for (DataTypeComponent comp : composite.getComponents()) {
+            String compName = comp.getFieldName();
+            if (compName != null && compName.equals(name)) {
+                return comp;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Collect matches from a Data item and its sub-components into the results list.
+     * Reports the specific sub-component address when a match is found inside a composite,
+     * mirroring Ghidra's native behaviour of reporting field-level addresses.
+     * Skips individual array elements for performance (same optimisation Ghidra uses).
+     *
+     * @param results     accumulator for result strings
+     * @param data        the data item to inspect
+     * @param targetBase  the unwrapped target type to match against
+     * @param fieldName   optional field name filter (null to match any)
+     * @param fieldOffset byte offset of the field within the composite (-1 if no filter)
+     */
+    private void collectDataTypeMatches(List<String> results, Data data,
+            DataType targetBase, String fieldName, int fieldOffset) {
+        DataType base = getBaseDataType(data.getDataType());
+
+        // Direct match at top level (only when not filtering by field)
+        if (fieldOffset < 0 && dataTypesMatch(base, targetBase)) {
+            String label = data.getLabel();
+            String addr = data.getMinAddress().toString();
+            String dtName = data.getDataType().getName();
+            results.add("Data: " + (label != null ? label : "(unnamed)") +
+                    " @ " + addr + " (type: " + dtName + ")");
+            return;
+        }
+
+        // Recurse into sub-components (struct fields, etc.)
+        int numComponents = data.getNumComponents();
+        for (int i = 0; i < numComponents; i++) {
+            Data child = data.getComponent(i);
+            if (child == null) continue;
+
+            // Skip array sub-elements for performance — only check the first element
+            if (data.getDataType() instanceof Array) {
+                collectDataTypeMatches(results, child, targetBase, fieldName, fieldOffset);
+                return;
+            }
+
+            // Field-specific filtering: only report components at the matching offset/name
+            if (fieldOffset >= 0) {
+                String childFieldName = child.getFieldName();
+                boolean nameMatch = childFieldName != null && childFieldName.equals(fieldName);
+                boolean offsetMatch = child.getParentOffset() == fieldOffset;
+                if (!(nameMatch || offsetMatch)) {
+                    continue;
+                }
+            }
+
+            DataType childBase = getBaseDataType(child.getDataType());
+            if (dataTypesMatch(childBase, targetBase) || fieldOffset >= 0) {
+                // Report the specific sub-component address
+                String label = data.getLabel();
+                String parentName = label != null ? label : "(unnamed)";
+                String addr = child.getMinAddress().toString();
+                String childField = child.getFieldName();
+                String fieldDesc = childField != null ? childField : ("offset_0x" +
+                        Integer.toHexString(child.getParentOffset()));
+                results.add("Data: " + parentName + "." + fieldDesc +
+                        " @ " + addr + " (type: " + child.getDataType().getName() + ")");
+            } else {
+                // Recurse deeper for nested composites
+                collectDataTypeMatches(results, child, targetBase, fieldName, fieldOffset);
+            }
+        }
     }
 }

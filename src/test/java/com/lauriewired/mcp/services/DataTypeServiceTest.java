@@ -434,4 +434,41 @@ public class DataTypeServiceTest {
         // This test just documents the expected behavior
         // Real testing would require mocking Ghidra's DataTypeManager
     }
+
+    // Tests for findDataTypeUsage - null/error cases
+
+    @Test
+    @DisplayName("findDataTypeUsage returns error when no program is loaded")
+    void testFindDataTypeUsage_NoProgram() {
+        String result = dataTypeService.findDataTypeUsage("MyStruct", null, 0, 100);
+        assertEquals("No program loaded", result);
+    }
+
+    @Test
+    @DisplayName("findDataTypeUsage returns error for null type name")
+    void testFindDataTypeUsage_NullTypeName() {
+        String result = dataTypeService.findDataTypeUsage(null, null, 0, 100);
+        assertEquals("No program loaded", result);
+    }
+
+    @Test
+    @DisplayName("findDataTypeUsage returns error for empty type name")
+    void testFindDataTypeUsage_EmptyTypeName() {
+        String result = dataTypeService.findDataTypeUsage("", null, 0, 100);
+        assertEquals("No program loaded", result);
+    }
+
+    @Test
+    @DisplayName("findDataTypeUsage handles negative offset")
+    void testFindDataTypeUsage_NegativeOffset() {
+        String result = dataTypeService.findDataTypeUsage("MyStruct", null, -1, 100);
+        assertEquals("No program loaded", result);
+    }
+
+    @Test
+    @DisplayName("findDataTypeUsage handles zero limit")
+    void testFindDataTypeUsage_ZeroLimit() {
+        String result = dataTypeService.findDataTypeUsage("MyStruct", null, 0, 0);
+        assertEquals("No program loaded", result);
+    }
 }

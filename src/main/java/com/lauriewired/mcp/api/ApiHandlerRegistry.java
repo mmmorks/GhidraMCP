@@ -414,6 +414,16 @@ public class ApiHandlerRegistry {
             String structureName = qparams.get("structure_name");
             HttpUtils.sendResponse(exchange, dataTypeService.listStructureFields(structureName));
         });
+
+        // Find data type usage
+        registerEndpoint(server, "find_data_type_usage", exchange -> {
+            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
+            String typeName = qparams.get("type_name");
+            String fieldName = qparams.get("field_name");
+            int offset = HttpUtils.parseIntOrDefault(qparams.get("offset"), 0);
+            int limit = HttpUtils.parseIntOrDefault(qparams.get("limit"), 100);
+            HttpUtils.sendResponse(exchange, dataTypeService.findDataTypeUsage(typeName, fieldName, offset, limit));
+        });
     }
     
     /**

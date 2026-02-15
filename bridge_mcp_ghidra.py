@@ -11,7 +11,7 @@ import requests
 
 from mcp.server.fastmcp import FastMCP
 
-DEFAULT_GHIDRA_SERVER = "http://127.0.0.1:8080/"
+DEFAULT_GHIDRA_SERVER = "http://127.0.0.1:8987"
 ghidra_server_url = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_GHIDRA_SERVER
 
 mcp = FastMCP("ghidra-mcp")
@@ -671,6 +671,33 @@ def rename_variable(function_name: str, old_name: str, new_name: str) -> str:
     })
 
 @mcp.tool()
+def split_variable(function_name: str, variable_name: str, usage_address: str, new_name: str = "") -> str:
+    """
+    Split or rename a variable at a specific usage address within a function.
+
+    Useful when the decompiler reuses a single variable name across unrelated usages.
+    Splitting assigns a distinct name at one usage site without affecting others.
+
+    Parameters:
+        function_name: Name of function containing the variable
+        variable_name: Current variable name to split
+        usage_address: Address where this specific usage occurs (bare hex, no 0x prefix)
+        new_name: New name for the variable at this usage (optional; Ghidra auto-generates if empty)
+
+    Returns: Status of the split operation
+
+    Example: split_variable("main", "local_10", "00401050", "loop_counter")
+    """
+    data = {
+        "function_name": function_name,
+        "variable_name": variable_name,
+        "usage_address": usage_address,
+    }
+    if new_name:
+        data["new_name"] = new_name
+    return safe_post("split_variable", data)
+
+@mcp.tool()
 def analyze_control_flow(address: str) -> str:
     """
     Analyze the control flow of a function at the given address.
@@ -1009,6 +1036,35 @@ def list_structure_fields(structure_name: str) -> str:
     Example: list_structure_fields("RECT") -> "0x00: left (int), 0x04: top (int)..."
     """
     return "\n".join(safe_get("list_structure_fields", {"structure_name": structure_name}))
+
+@mcp.tool()
+def find_data_type_usage(type_name: str, field_name: str = None, offset: int = 0, limit: int = 100) -> list:
+    """
+    Find all locations where a data type is used in the program.
+
+    Searches defined data items and function signatures (return types, parameters,
+    local variables) for usages of the specified type, including through pointers,
+    arrays, and typedefs.
+
+    When field_name is provided and the type is a struct/union, restricts the search
+    to locations where that specific field is referenced (similar to Ghidra's
+    "Find References to Field" feature).
+
+    Parameters:
+        type_name: Name of the data type to search for (e.g., "POINT", "MyStruct")
+        field_name: Optional field name to restrict search to (e.g., "x" to find only uses of MyStruct.x)
+        offset: Starting index for pagination (0-based)
+        limit: Maximum results to return
+
+    Returns: List of usage locations with context (data labels, function signatures)
+
+    Example: find_data_type_usage("POINT") -> ['Data: origin @ 00402000 (type: POINT)', 'Param variable: p1 in draw_line @ 00401000 (type: POINT *)']
+    Example: find_data_type_usage("POINT", field_name="x") -> ['Data: origin.x @ 00402000 (type: int)']
+    """
+    params = {"type_name": type_name, "offset": offset, "limit": limit}
+    if field_name is not None:
+        params["field_name"] = field_name
+    return safe_get("find_data_type_usage", params)
 
 # Phase 1 Improvements - Comment Retrieval
 
