@@ -51,27 +51,25 @@ public enum ParamType {
     }
 
     /**
-     * Generate a JSON Schema fragment for this parameter type.
+     * Build a JSON Schema Map for this parameter type (used by Jackson serialization in ToolDef).
      */
-    public String toJsonSchemaFragment(String name, String description, boolean required, String defaultValue) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("\"").append(name).append("\": {");
-        sb.append("\"type\": \"").append(jsonSchemaType).append("\"");
+    public java.util.Map<String, Object> toJsonSchemaMap(String description, boolean required, String defaultValue) {
+        java.util.Map<String, Object> schema = new java.util.LinkedHashMap<>();
+        schema.put("type", jsonSchemaType);
 
         if (description != null && !description.isEmpty()) {
-            sb.append(", \"description\": \"").append(escapeJson(description)).append("\"");
+            schema.put("description", description);
         }
 
-        // Add nested type info for maps and arrays
         switch (this) {
             case STRING_MAP:
-                sb.append(", \"additionalProperties\": {\"type\": \"string\"}");
+                schema.put("additionalProperties", java.util.Map.of("type", "string"));
                 break;
             case LONG_MAP:
-                sb.append(", \"additionalProperties\": {\"type\": \"integer\"}");
+                schema.put("additionalProperties", java.util.Map.of("type", "integer"));
                 break;
             case STRING_PAIR_LIST:
-                sb.append(", \"items\": {\"type\": \"array\", \"items\": {\"type\": \"string\"}}");
+                schema.put("items", java.util.Map.of("type", "array", "items", java.util.Map.of("type", "string")));
                 break;
             default:
                 break;
@@ -79,21 +77,16 @@ public enum ParamType {
 
         if (defaultValue != null && !defaultValue.equals(Param.REQUIRED)) {
             switch (this) {
-                case INTEGER:
-                case LONG:
-                    sb.append(", \"default\": ").append(defaultValue);
-                    break;
-                case BOOLEAN:
-                    sb.append(", \"default\": ").append(defaultValue);
-                    break;
-                default:
-                    sb.append(", \"default\": \"").append(escapeJson(defaultValue)).append("\"");
-                    break;
+                case INTEGER, LONG -> {
+                    try { schema.put("default", Long.parseLong(defaultValue)); }
+                    catch (NumberFormatException e) { schema.put("default", defaultValue); }
+                }
+                case BOOLEAN -> schema.put("default", Boolean.parseBoolean(defaultValue));
+                default -> schema.put("default", defaultValue);
             }
         }
 
-        sb.append("}");
-        return sb.toString();
+        return schema;
     }
 
     /**
@@ -126,12 +119,4 @@ public enum ParamType {
         };
     }
 
-    private static String escapeJson(String s) {
-        if (s == null) return "";
-        return s.replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t");
-    }
 }

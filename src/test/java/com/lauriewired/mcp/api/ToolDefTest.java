@@ -245,7 +245,7 @@ class ToolDefTest {
         ToolDef def = ToolDef.fromMethod(method, ann);
 
         String schema = def.toInputSchemaJson();
-        assertEquals("{\"type\": \"object\"}", schema);
+        assertEquals("{\"type\":\"object\"}", schema);
     }
 
     @Test
@@ -260,7 +260,7 @@ class ToolDefTest {
         assertTrue(schema.contains("\"required\""));
         assertTrue(schema.contains("\"function_identifier\""));
         // mode should not be in required since it has a default
-        assertTrue(schema.contains("\"default\": \"C\""));
+        assertTrue(schema.contains("\"default\":\"C\""));
     }
 
     @Test
@@ -270,9 +270,9 @@ class ToolDefTest {
         ToolDef def = ToolDef.fromMethod(method, ann);
 
         String json = def.toToolJson();
-        assertTrue(json.contains("\"name\": \"get_program_info\""));
+        assertTrue(json.contains("\"name\":\"get_program_info\""));
         assertTrue(json.contains("\"description\":"));
-        assertTrue(json.contains("\"method\": \"GET\""));
+        assertTrue(json.contains("\"method\":\"GET\""));
         assertTrue(json.contains("\"inputSchema\":"));
     }
 
@@ -458,7 +458,7 @@ class ToolDefTest {
         McpTool ann = method.getAnnotation(McpTool.class);
         ToolDef def = ToolDef.fromMethod(method, ann);
 
-        String jsonBody = "{\"function_identifier\": \"main\", \"renames\": {\"local_10\": \"buffer\", \"local_14\": \"size\"}}";
+        String jsonBody = "{\"function_identifier\":\"main\", \"renames\":{\"local_10\":\"buffer\", \"local_14\":\"size\"}}";
         HttpExchange exchange = mock(HttpExchange.class);
         when(exchange.getRequestBody()).thenReturn(new ByteArrayInputStream(jsonBody.getBytes()));
 

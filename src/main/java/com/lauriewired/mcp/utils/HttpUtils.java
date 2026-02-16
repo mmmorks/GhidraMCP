@@ -293,8 +293,11 @@ public class HttpUtils {
         if (output instanceof StatusOutput status && !status.success()) {
             sendJsonErrorResponse(exchange, 400, status.message());
         } else {
-            String jsonBody = "{\"status\":\"success\",\"data\":" + output.toStructuredJson() + "}";
-            sendRawJson(exchange, 200, jsonBody);
+            Map<String, Object> envelope = new java.util.LinkedHashMap<>();
+            envelope.put("status", "success");
+            // Parse the structured JSON back to an object so it's embedded inline
+            envelope.put("data", Json.mapper().readValue(output.toStructuredJson(), Object.class));
+            sendRawJson(exchange, 200, Json.serialize(envelope));
         }
     }
 
@@ -315,26 +318,29 @@ public class HttpUtils {
      * If data looks like JSON (starts with { or [), embeds it raw; otherwise quotes as string.
      */
     public static void sendJsonResponse(HttpExchange exchange, String data) throws IOException {
-        String jsonBody;
+        Map<String, Object> envelope = new java.util.LinkedHashMap<>();
+        envelope.put("status", "success");
         if (data != null && !data.isEmpty()) {
             String trimmed = data.trim();
             if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
-                jsonBody = "{\"status\":\"success\",\"data\":" + trimmed + "}";
+                envelope.put("data", Json.mapper().readValue(trimmed, Object.class));
             } else {
-                jsonBody = "{\"status\":\"success\",\"data\":\"" + escapeJson(data) + "\"}";
+                envelope.put("data", data);
             }
         } else {
-            jsonBody = "{\"status\":\"success\",\"data\":\"\"}";
+            envelope.put("data", "");
         }
-        sendRawJson(exchange, 200, jsonBody);
+        sendRawJson(exchange, 200, Json.serialize(envelope));
     }
 
     /**
      * Send a JSON error response: {"status":"error","error":"..."}
      */
     public static void sendJsonErrorResponse(HttpExchange exchange, int statusCode, String errorMessage) throws IOException {
-        String jsonBody = "{\"status\":\"error\",\"error\":\"" + escapeJson(errorMessage) + "\"}";
-        sendRawJson(exchange, statusCode, jsonBody);
+        Map<String, Object> envelope = new java.util.LinkedHashMap<>();
+        envelope.put("status", "error");
+        envelope.put("error", errorMessage);
+        sendRawJson(exchange, statusCode, Json.serialize(envelope));
     }
 
     /**

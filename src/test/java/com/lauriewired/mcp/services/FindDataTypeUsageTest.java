@@ -154,7 +154,7 @@ public class FindDataTypeUsageTest {
     void testNullTypeName_WithProgram() {
         setupProgramMocks();
         String result = dataTypeService.findDataTypeUsage(null, null, 0, 100).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"Type name is required\""));
+        assertTrue(result.contains("\"message\":\"Type name is required\""));
     }
 
     @Test
@@ -162,7 +162,7 @@ public class FindDataTypeUsageTest {
     void testEmptyTypeName_WithProgram() {
         setupProgramMocks();
         String result = dataTypeService.findDataTypeUsage("", null, 0, 100).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"Type name is required\""));
+        assertTrue(result.contains("\"message\":\"Type name is required\""));
     }
 
     @Test
@@ -171,7 +171,7 @@ public class FindDataTypeUsageTest {
         setupProgramMocks();
         setupDtmTypes();
         String result = dataTypeService.findDataTypeUsage("NonExistentType", null, 0, 100).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"Data type not found: NonExistentType\""));
+        assertTrue(result.contains("\"message\":\"Data type not found: NonExistentType\""));
     }
 
     // ===== No usages found =====
@@ -187,7 +187,7 @@ public class FindDataTypeUsageTest {
         setupEmptyListing();
 
         String result = dataTypeService.findDataTypeUsage("MyStruct", null, 0, 100).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No usages found for data type: MyStruct\""));
+        assertTrue(result.contains("\"message\":\"No usages found for data type: MyStruct\""));
     }
 
     // ===== Defined data matches =====
@@ -213,7 +213,7 @@ public class FindDataTypeUsageTest {
         setupEmptyFuncIterator();
 
         String result = dataTypeService.findDataTypeUsage("MyStruct", null, 0, 100).toStructuredJson();
-        assertTrue(result.contains("\"name\": \"globalVar\"") && result.contains("\"address\": \"00402000\""));
+        assertTrue(result.contains("\"name\":\"globalVar\"") && result.contains("\"address\":\"00402000\""));
     }
 
     @Test
@@ -237,7 +237,7 @@ public class FindDataTypeUsageTest {
         setupEmptyFuncIterator();
 
         String result = dataTypeService.findDataTypeUsage("MyStruct", null, 0, 100).toStructuredJson();
-        assertTrue(result.contains("\"name\": \"(unnamed)\"") && result.contains("\"address\": \"00403000\""));
+        assertTrue(result.contains("\"name\":\"(unnamed)\"") && result.contains("\"address\":\"00403000\""));
     }
 
     // ===== Function return type matches =====
@@ -266,7 +266,7 @@ public class FindDataTypeUsageTest {
         when(mockListing.getFunctions(true)).thenReturn(mockFuncIterator);
 
         String result = dataTypeService.findDataTypeUsage("MyStruct", null, 0, 100).toStructuredJson();
-        assertTrue(result.contains("\"category\": \"Return type\"") && result.contains("\"function\": \"create_struct\""));
+        assertTrue(result.contains("\"category\":\"Return type\"") && result.contains("\"function\":\"create_struct\""));
     }
 
     // ===== Function variable matches =====
@@ -301,7 +301,7 @@ public class FindDataTypeUsageTest {
         when(mockListing.getFunctions(true)).thenReturn(mockFuncIterator);
 
         String result = dataTypeService.findDataTypeUsage("MyStruct", null, 0, 100).toStructuredJson();
-        assertTrue(result.contains("\"category\": \"Local variable\"") && result.contains("\"name\": \"local_struct\""));
+        assertTrue(result.contains("\"category\":\"Local variable\"") && result.contains("\"name\":\"local_struct\""));
     }
 
     @Test
@@ -333,7 +333,7 @@ public class FindDataTypeUsageTest {
         when(mockListing.getFunctions(true)).thenReturn(mockFuncIterator);
 
         String result = dataTypeService.findDataTypeUsage("MyStruct", null, 0, 100).toStructuredJson();
-        assertTrue(result.contains("\"category\": \"Param variable\"") && result.contains("\"name\": \"p1\""));
+        assertTrue(result.contains("\"category\":\"Param variable\"") && result.contains("\"name\":\"p1\""));
     }
 
     // ===== Pointer/TypeDef unwrapping =====
@@ -373,7 +373,7 @@ public class FindDataTypeUsageTest {
         when(mockListing.getFunctions(true)).thenReturn(mockFuncIterator);
 
         String result = dataTypeService.findDataTypeUsage("MyStruct", null, 0, 100).toStructuredJson();
-        assertTrue(result.contains("\"name\": \"ptr_param\"") && result.contains("\"type\": \"MyStruct *\""));
+        assertTrue(result.contains("\"name\":\"ptr_param\"") && result.contains("\"type\":\"MyStruct *\""));
     }
 
     @Test
@@ -406,7 +406,7 @@ public class FindDataTypeUsageTest {
         when(mockListing.getFunctions(true)).thenReturn(mockFuncIterator);
 
         String result = dataTypeService.findDataTypeUsage("MyStruct", null, 0, 100).toStructuredJson();
-        assertTrue(result.contains("\"function\": \"use_typedef\"") && result.contains("\"type\": \"MY_STRUCT_T\""));
+        assertTrue(result.contains("\"function\":\"use_typedef\"") && result.contains("\"type\":\"MY_STRUCT_T\""));
     }
 
     // ===== Data sub-component matching =====
@@ -448,7 +448,7 @@ public class FindDataTypeUsageTest {
         setupEmptyFuncIterator();
 
         String result = dataTypeService.findDataTypeUsage("InnerStruct", null, 0, 100).toStructuredJson();
-        assertTrue(result.contains("\"name\": \"outer_var.inner\"") && result.contains("\"address\": \"00404008\""));
+        assertTrue(result.contains("\"name\":\"outer_var.inner\"") && result.contains("\"address\":\"00404008\""));
     }
 
     // ===== Array element optimization =====
@@ -479,7 +479,7 @@ public class FindDataTypeUsageTest {
         setupEmptyFuncIterator();
 
         String result = dataTypeService.findDataTypeUsage("MyStruct", null, 0, 100).toStructuredJson();
-        assertTrue(result.contains("\"name\": \"struct_array\"") && result.contains("\"address\": \"00405000\""));
+        assertTrue(result.contains("\"name\":\"struct_array\"") && result.contains("\"address\":\"00405000\""));
     }
 
     // ===== Multiple results combined =====
@@ -521,9 +521,9 @@ public class FindDataTypeUsageTest {
         when(mockListing.getFunctions(true)).thenReturn(mockFuncIterator);
 
         String result = dataTypeService.findDataTypeUsage("MyStruct", null, 0, 100).toStructuredJson();
-        assertTrue(result.contains("\"name\": \"g_struct\"") && result.contains("\"address\": \"00402000\""));
-        assertTrue(result.contains("\"category\": \"Return type\"") && result.contains("\"function\": \"get_struct\""));
-        assertTrue(result.contains("\"category\": \"Local variable\"") && result.contains("\"name\": \"temp\""));
+        assertTrue(result.contains("\"name\":\"g_struct\"") && result.contains("\"address\":\"00402000\""));
+        assertTrue(result.contains("\"category\":\"Return type\"") && result.contains("\"function\":\"get_struct\""));
+        assertTrue(result.contains("\"category\":\"Local variable\"") && result.contains("\"name\":\"temp\""));
     }
 
     // ===== Pagination =====
@@ -594,7 +594,7 @@ public class FindDataTypeUsageTest {
         when(mockListing.getFunctions(true)).thenReturn(mockFuncIterator);
 
         String result = dataTypeService.findDataTypeUsage("int", null, 0, 100).toStructuredJson();
-        assertTrue(result.contains("\"category\": \"Return type\"") && result.contains("\"function\": \"get_count\""));
+        assertTrue(result.contains("\"category\":\"Return type\"") && result.contains("\"function\":\"get_count\""));
     }
 
     // ===== Non-matching data is excluded =====
@@ -617,7 +617,7 @@ public class FindDataTypeUsageTest {
         setupEmptyFuncIterator();
 
         String result = dataTypeService.findDataTypeUsage("MyStruct", null, 0, 100).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No usages found for data type: MyStruct\""));
+        assertTrue(result.contains("\"message\":\"No usages found for data type: MyStruct\""));
     }
 
     // ===== Field-specific search tests =====
@@ -647,7 +647,7 @@ public class FindDataTypeUsageTest {
         setupDtmTypes(structType);
 
         String result = dataTypeService.findDataTypeUsage("MyStruct", "nonexistent", 0, 100).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"Field 'nonexistent' not found in MyStruct\""));
+        assertTrue(result.contains("\"message\":\"Field 'nonexistent' not found in MyStruct\""));
     }
 
     @Test
@@ -706,7 +706,7 @@ public class FindDataTypeUsageTest {
         setupDataIterator(mockData);
 
         String result = dataTypeService.findDataTypeUsage("POINT", "x", 0, 100).toStructuredJson();
-        assertTrue(result.contains("\"name\": \"origin.x\"") && result.contains("\"address\": \"00402000\""));
+        assertTrue(result.contains("\"name\":\"origin.x\"") && result.contains("\"address\":\"00402000\""));
         assertFalse(result.contains("origin.y"));
     }
 
@@ -742,7 +742,7 @@ public class FindDataTypeUsageTest {
         when(mockListing.getFunctions(true)).thenReturn(mockFuncIterator);
 
         String result = dataTypeService.findDataTypeUsage("POINT", "x", 0, 100).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No usages found for data type: POINT.x\""));
+        assertTrue(result.contains("\"message\":\"No usages found for data type: POINT.x\""));
     }
 
     @Test
@@ -764,6 +764,6 @@ public class FindDataTypeUsageTest {
         setupDataIterator(); // empty
 
         String result = dataTypeService.findDataTypeUsage("RECT", "top", 0, 100).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No usages found for data type: RECT.top\""));
+        assertTrue(result.contains("\"message\":\"No usages found for data type: RECT.top\""));
     }
 }

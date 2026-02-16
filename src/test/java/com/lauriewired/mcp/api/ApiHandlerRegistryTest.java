@@ -427,7 +427,7 @@ class ApiHandlerRegistryTest {
         for (ToolDef def : registry.getToolDefs()) {
             String schema = def.toInputSchemaJson();
             assertNotNull(schema, "Tool should have input schema: " + def.getName());
-            assert schema.contains("\"type\": \"object\"") :
+            assert schema.contains("\"type\":\"object\"") :
                 "Input schema should be an object type: " + def.getName();
         }
     }
@@ -472,10 +472,10 @@ class ApiHandlerRegistryTest {
         for (ToolDef def : registry.getToolDefs()) {
             String json = def.toToolJson();
             if (postTools.contains(def.getName())) {
-                assert json.contains("\"method\": \"POST\"") :
+                assert json.contains("\"method\":\"POST\"") :
                     def.getName() + " should be POST";
             } else {
-                assert json.contains("\"method\": \"GET\"") :
+                assert json.contains("\"method\":\"GET\"") :
                     def.getName() + " should be GET";
             }
         }
@@ -517,7 +517,7 @@ class ApiHandlerRegistryTest {
 
         // Verify all 40 tools are present by checking for each tool name
         for (ToolDef def : registry.getToolDefs()) {
-            assertTrue(jsonOutput.contains("\"name\": \"" + def.getName() + "\""),
+            assertTrue(jsonOutput.contains("\"name\":\"" + def.getName() + "\""),
                 "JSON should contain tool: " + def.getName());
         }
 

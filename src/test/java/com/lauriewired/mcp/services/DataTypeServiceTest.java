@@ -57,28 +57,28 @@ public class DataTypeServiceTest {
     @DisplayName("updateStructure returns error when no program is loaded")
     void testUpdateStructure_NoProgram() {
         String result = dataTypeService.updateStructure("TestStruct", null, null, null, null).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
     @DisplayName("updateStructure returns error for null name")
     void testUpdateStructure_NullName() {
         String result = dataTypeService.updateStructure(null, null, null, null, null).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"Structure name is required\""));
+        assertTrue(result.contains("\"message\":\"Structure name is required\""));
     }
 
     @Test
     @DisplayName("updateStructure returns error for empty name")
     void testUpdateStructure_EmptyName() {
         String result = dataTypeService.updateStructure("", null, null, null, null).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"Structure name is required\""));
+        assertTrue(result.contains("\"message\":\"Structure name is required\""));
     }
 
     @Test
     @DisplayName("updateStructure with all optional params null returns no program loaded")
     void testUpdateStructure_AllOptionalNull() {
         String result = dataTypeService.updateStructure("MyStruct", "NewName", 64, null, null).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
@@ -86,7 +86,7 @@ public class DataTypeServiceTest {
     void testUpdateStructure_WithFieldRenames() {
         java.util.Map<String, String> renames = java.util.Map.of("old_field", "new_field");
         String result = dataTypeService.updateStructure("MyStruct", null, null, renames, null).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
@@ -94,7 +94,7 @@ public class DataTypeServiceTest {
     void testUpdateStructure_WithTypeChanges() {
         java.util.Map<String, String> types = java.util.Map.of("field1", "int");
         String result = dataTypeService.updateStructure("MyStruct", null, null, null, types).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     // Tests for updateEnum
@@ -103,28 +103,28 @@ public class DataTypeServiceTest {
     @DisplayName("updateEnum returns error when no program is loaded")
     void testUpdateEnum_NoProgram() {
         String result = dataTypeService.updateEnum("TestEnum", null, null, null, null).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
     @DisplayName("updateEnum returns error for null name")
     void testUpdateEnum_NullName() {
         String result = dataTypeService.updateEnum(null, null, null, null, null).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"Enum name is required\""));
+        assertTrue(result.contains("\"message\":\"Enum name is required\""));
     }
 
     @Test
     @DisplayName("updateEnum returns error for empty name")
     void testUpdateEnum_EmptyName() {
         String result = dataTypeService.updateEnum("", null, null, null, null).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"Enum name is required\""));
+        assertTrue(result.contains("\"message\":\"Enum name is required\""));
     }
 
     @Test
     @DisplayName("updateEnum with all optional params returns no program loaded")
     void testUpdateEnum_AllOptional() {
         String result = dataTypeService.updateEnum("MyEnum", "NewName", 2, null, null).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
@@ -132,7 +132,7 @@ public class DataTypeServiceTest {
     void testUpdateEnum_WithValueRenames() {
         java.util.Map<String, String> renames = java.util.Map.of("OLD", "NEW");
         String result = dataTypeService.updateEnum("MyEnum", null, null, renames, null).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
@@ -140,7 +140,7 @@ public class DataTypeServiceTest {
     void testUpdateEnum_WithValueChanges() {
         java.util.Map<String, Long> changes = java.util.Map.of("VAL", 42L);
         String result = dataTypeService.updateEnum("MyEnum", null, null, null, changes).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     // Tests for resolveFieldKey
@@ -273,35 +273,35 @@ public class DataTypeServiceTest {
     @DisplayName("addStructureField returns error when no program is loaded")
     void testAddStructureField_NoProgram() {
         String result = dataTypeService.addStructureField("TestStruct", "field", "int", -1, -1, null).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
     @DisplayName("addStructureField returns error for null structure name")
     void testAddStructureField_NullStructName() {
         String result = dataTypeService.addStructureField(null, "field", "int", -1, -1, null).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
     @DisplayName("addStructureField returns error for null field type")
     void testAddStructureField_NullFieldType() {
         String result = dataTypeService.addStructureField("TestStruct", "field", null, -1, -1, null).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
     @DisplayName("addStructureField handles null field name")
     void testAddStructureField_NullFieldName() {
         String result = dataTypeService.addStructureField("TestStruct", null, "int", -1, -1, null).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
     @DisplayName("addStructureField handles specific offset")
     void testAddStructureField_WithOffset() {
         String result = dataTypeService.addStructureField("TestStruct", "field", "int", 4, 8, "comment").toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
     
     // Tests for enum creation
@@ -357,35 +357,35 @@ public class DataTypeServiceTest {
     @DisplayName("addEnumValue returns error when no program is loaded")
     void testAddEnumValue_NoProgram() {
         String result = dataTypeService.addEnumValue("TestEnum", "VALUE", 1).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
     @DisplayName("addEnumValue returns error for null enum name")
     void testAddEnumValue_NullEnumName() {
         String result = dataTypeService.addEnumValue(null, "VALUE", 1).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
     @DisplayName("addEnumValue returns error for null value name")
     void testAddEnumValue_NullValueName() {
         String result = dataTypeService.addEnumValue("TestEnum", null, 1).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
     @DisplayName("addEnumValue handles negative values")
     void testAddEnumValue_NegativeValue() {
         String result = dataTypeService.addEnumValue("TestEnum", "NEGATIVE", -1).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
     @DisplayName("addEnumValue handles large values")
     void testAddEnumValue_LargeValue() {
         String result = dataTypeService.addEnumValue("TestEnum", "LARGE", 0x7FFFFFFFL).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
     
     // Tests for enum listing
@@ -518,7 +518,7 @@ public class DataTypeServiceTest {
         java.util.List<String[]> fields = java.util.List.of(
             new String[]{"x", "int"}, new String[]{"y", "int"});
         String result = dataTypeService.createStructure("POINT", 0, null, fields).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
@@ -526,14 +526,14 @@ public class DataTypeServiceTest {
     void testCreateStructureWithFields_EmptyList() {
         String result = dataTypeService.createStructure("TestStruct", 0, null,
             java.util.List.of()).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
     @DisplayName("createStructure with null fields works like no fields")
     void testCreateStructureWithFields_NullFields() {
         String result = dataTypeService.createStructure("TestStruct", 0, null, null).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     // Tests for createEnum with inline values
@@ -543,7 +543,7 @@ public class DataTypeServiceTest {
     void testCreateEnumWithValues_NoProgram() {
         java.util.Map<String, Long> values = java.util.Map.of("READ", 1L, "WRITE", 2L);
         String result = dataTypeService.createEnum("FileFlags", 4, null, values).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
@@ -551,14 +551,14 @@ public class DataTypeServiceTest {
     void testCreateEnumWithValues_EmptyMap() {
         String result = dataTypeService.createEnum("TestEnum", 4, null,
             java.util.Map.of()).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
     @DisplayName("createEnum with null values works like no values")
     void testCreateEnumWithValues_NullValues() {
         String result = dataTypeService.createEnum("TestEnum", 4, null, null).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
@@ -566,7 +566,7 @@ public class DataTypeServiceTest {
     void testCreateEnumWithValues_InvalidSize() {
         java.util.Map<String, Long> values = java.util.Map.of("A", 1L);
         String result = dataTypeService.createEnum("TestEnum", 3, null, values).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"Enum size must be 1, 2, 4, or 8 bytes\""));
+        assertTrue(result.contains("\"message\":\"Enum size must be 1, 2, 4, or 8 bytes\""));
     }
 
     @Test
@@ -574,7 +574,7 @@ public class DataTypeServiceTest {
     void testCreateEnumWithValues_NullName() {
         java.util.Map<String, Long> values = java.util.Map.of("A", 1L);
         String result = dataTypeService.createEnum(null, 4, null, values).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"Enum name is required\""));
+        assertTrue(result.contains("\"message\":\"Enum name is required\""));
     }
 
     // Tests for listDataTypes
@@ -583,28 +583,28 @@ public class DataTypeServiceTest {
     @DisplayName("listDataTypes returns error when no program is loaded")
     void testListDataTypes_NoProgram() {
         String result = dataTypeService.listDataTypes("all", 0, 10).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
     @DisplayName("listDataTypes handles struct filter")
     void testListDataTypes_StructFilter() {
         String result = dataTypeService.listDataTypes("struct", 0, 10).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
     @DisplayName("listDataTypes handles enum filter")
     void testListDataTypes_EnumFilter() {
         String result = dataTypeService.listDataTypes("enum", 0, 10).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
     @DisplayName("listDataTypes handles null kind")
     void testListDataTypes_NullKind() {
         String result = dataTypeService.listDataTypes(null, 0, 10).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     // Tests for getDataType
@@ -613,21 +613,21 @@ public class DataTypeServiceTest {
     @DisplayName("getDataType returns error when no program is loaded")
     void testGetDataType_NoProgram() {
         String result = dataTypeService.getDataType("POINT").toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
     @DisplayName("getDataType returns error for null name")
     void testGetDataType_NullName() {
         String result = dataTypeService.getDataType(null).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
     @DisplayName("getDataType returns error for empty name")
     void testGetDataType_EmptyName() {
         String result = dataTypeService.getDataType("").toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     // Tests for findDataTypeUsage - null/error cases
@@ -636,34 +636,34 @@ public class DataTypeServiceTest {
     @DisplayName("findDataTypeUsage returns error when no program is loaded")
     void testFindDataTypeUsage_NoProgram() {
         String result = dataTypeService.findDataTypeUsage("MyStruct", null, 0, 100).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
     @DisplayName("findDataTypeUsage returns error for null type name")
     void testFindDataTypeUsage_NullTypeName() {
         String result = dataTypeService.findDataTypeUsage(null, null, 0, 100).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
     @DisplayName("findDataTypeUsage returns error for empty type name")
     void testFindDataTypeUsage_EmptyTypeName() {
         String result = dataTypeService.findDataTypeUsage("", null, 0, 100).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
     @DisplayName("findDataTypeUsage handles negative offset")
     void testFindDataTypeUsage_NegativeOffset() {
         String result = dataTypeService.findDataTypeUsage("MyStruct", null, -1, 100).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
     @DisplayName("findDataTypeUsage handles zero limit")
     void testFindDataTypeUsage_ZeroLimit() {
         String result = dataTypeService.findDataTypeUsage("MyStruct", null, 0, 0).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 }

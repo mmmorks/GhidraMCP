@@ -113,77 +113,77 @@ public class MemoryServiceTest {
     @DisplayName("getMemoryLayout returns error when no program is loaded")
     void testListSegments_NoProgram() {
         String result = memoryService.getMemoryLayout(0, 10).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
     @DisplayName("getMemoryLayout handles negative offset")
     void testListSegments_NegativeOffset() {
         String result = memoryService.getMemoryLayout(-1, 10).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
     @DisplayName("getMemoryLayout handles zero limit")
     void testListSegments_ZeroLimit() {
         String result = memoryService.getMemoryLayout(0, 0).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
     @DisplayName("listDataItems returns error when no program is loaded")
     void testListDataItems_NoProgram() {
         String result = memoryService.listDataItems(0, 10).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
     @DisplayName("listDataItems handles negative offset")
     void testListDataItems_NegativeOffset() {
         String result = memoryService.listDataItems(-1, 10).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
     @DisplayName("listDataItems handles zero limit")
     void testListDataItems_ZeroLimit() {
         String result = memoryService.listDataItems(0, 0).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
     @DisplayName("renameData returns 'Rename failed' when no program is loaded")
     void testRenameData_NoProgram() {
         String result = memoryService.renameData("0x1000", "newName").toStructuredJson();
-        assertTrue(result.contains("\"message\": \"Rename failed\""));
+        assertTrue(result.contains("\"message\":\"Rename failed\""));
     }
 
     @Test
     @DisplayName("renameData returns 'Rename failed' for null address")
     void testRenameData_NullAddress() {
         String result = memoryService.renameData(null, "newName").toStructuredJson();
-        assertTrue(result.contains("\"message\": \"Rename failed\""));
+        assertTrue(result.contains("\"message\":\"Rename failed\""));
     }
 
     @Test
     @DisplayName("renameData returns 'Rename failed' for empty address")
     void testRenameData_EmptyAddress() {
         String result = memoryService.renameData("", "newName").toStructuredJson();
-        assertTrue(result.contains("\"message\": \"Rename failed\""));
+        assertTrue(result.contains("\"message\":\"Rename failed\""));
     }
 
     @Test
     @DisplayName("renameData returns 'Rename failed' for null name")
     void testRenameData_NullName() {
         String result = memoryService.renameData("0x1000", null).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"Rename failed\""));
+        assertTrue(result.contains("\"message\":\"Rename failed\""));
     }
 
     @Test
     @DisplayName("renameData returns 'Rename failed' for empty name")
     void testRenameData_EmptyName() {
         String result = memoryService.renameData("0x1000", "").toStructuredJson();
-        assertTrue(result.contains("\"message\": \"Rename failed\""));
+        assertTrue(result.contains("\"message\":\"Rename failed\""));
     }
 
     @Test
@@ -353,7 +353,7 @@ public class MemoryServiceTest {
         String result = testMemoryService.renameData("0x1000", "newName").toStructuredJson();
 
         // Verify
-        assertTrue(result.contains("\"message\": \"Renamed successfully\""));
+        assertTrue(result.contains("\"message\":\"Renamed successfully\""));
         verify(mockSymbol).setName("newName", SourceType.USER_DEFINED);
         verify(mockProgram).endTransaction(1, true);
     }
@@ -384,7 +384,7 @@ public class MemoryServiceTest {
         String result = testMemoryService.renameData("0x2000", "brandNewLabel").toStructuredJson();
 
         // Verify
-        assertTrue(result.contains("\"message\": \"Renamed successfully\""));
+        assertTrue(result.contains("\"message\":\"Renamed successfully\""));
         verify(mockSymbolTable).createLabel(mockDataAddr, "brandNewLabel", SourceType.USER_DEFINED);
         verify(mockProgram).endTransaction(1, true);
     }
@@ -407,7 +407,7 @@ public class MemoryServiceTest {
         String result = testMemoryService.renameData("invalid", "newName").toStructuredJson();
 
         // Verify
-        assertTrue(result.contains("\"message\": \"Rename failed\""));
+        assertTrue(result.contains("\"message\":\"Rename failed\""));
         verify(mockProgram).endTransaction(1, false);
     }
 
@@ -433,7 +433,7 @@ public class MemoryServiceTest {
         String result = testMemoryService.renameData("0x3000", "newName").toStructuredJson();
 
         // Verify
-        assertTrue(result.contains("\"message\": \"Rename failed\""));
+        assertTrue(result.contains("\"message\":\"Rename failed\""));
         verify(mockProgram).endTransaction(1, false);
     }
 
@@ -443,7 +443,7 @@ public class MemoryServiceTest {
     @DisplayName("setAddressDataType returns error when no program is loaded")
     void testSetMemoryDataType_NoProgram() {
         String result = memoryService.setAddressDataType("0x1000", "int", true).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
@@ -456,7 +456,7 @@ public class MemoryServiceTest {
         // Create MemoryService without DataTypeService using TestMemoryService
         TestMemoryService memoryServiceNoDataType = new TestMemoryService(testProgramService);
         String result = memoryServiceNoDataType.setAddressDataType("0x1000", "int", true).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"DataTypeService not available\""));
+        assertTrue(result.contains("\"message\":\"DataTypeService not available\""));
     }
 
 
@@ -478,7 +478,7 @@ public class MemoryServiceTest {
         String result = testMemoryService.setAddressDataType("invalid", "int", true).toStructuredJson();
 
         // Verify
-        assertTrue(result.contains("\"message\": \"Invalid address: invalid\""));
+        assertTrue(result.contains("\"message\":\"Invalid address: invalid\""));
         verify(mockProgram).endTransaction(1, false);
     }
 
@@ -510,7 +510,7 @@ public class MemoryServiceTest {
         String result = testMemoryServiceWithMock.setAddressDataType("0x1000", "unknown_type", true).toStructuredJson();
 
         // Verify
-        assertTrue(result.contains("\"message\": \"Data type"));
+        assertTrue(result.contains("\"message\":\"Data type"));
         assertTrue(result.contains("unknown_type"));
         verify(mockProgram).endTransaction(1, false);
     }

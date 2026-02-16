@@ -8,8 +8,11 @@ import com.lauriewired.mcp.model.ListOutput;
 import com.lauriewired.mcp.model.StatusOutput;
 import com.lauriewired.mcp.model.TextOutput;
 import com.lauriewired.mcp.model.ToolOutput;
+import com.lauriewired.mcp.model.response.AddressDataTypeResult;
+import com.lauriewired.mcp.model.response.DataItem;
+import com.lauriewired.mcp.model.response.MemoryPermissionsResult;
+import com.lauriewired.mcp.model.response.MemorySegmentItem;
 import com.lauriewired.mcp.utils.HttpUtils;
-import com.lauriewired.mcp.utils.JsonBuilder;
 import com.lauriewired.mcp.utils.ProgramTransaction;
 
 import ghidra.program.model.address.Address;
@@ -51,7 +54,7 @@ public class MemoryService {
         this.programService = programService;
         this.dataTypeService = null;
     }
-    
+
     /**
      * Creates a new MemoryService with DataTypeService
      *
@@ -71,20 +74,17 @@ public class MemoryService {
 
         Returns: Memory segments with name and address range
 
-        Example: get_memory_layout() -> ['.text: 00401000 - 00410000', '.data: 00411000 - 00412000', ...] """, outputType = ListOutput.class)
+        Example: get_memory_layout() -> ['.text: 00401000 - 00410000', '.data: 00411000 - 00412000', ...] """,
+        outputType = ListOutput.class, responseType = MemorySegmentItem.class)
     public ToolOutput getMemoryLayout(
             @Param(value = "Starting index for pagination (0-based)", defaultValue = "0") int offset,
             @Param(value = "Maximum segments to return", defaultValue = "100") int limit) {
         Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
 
-        List<String> items = new ArrayList<>();
+        List<MemorySegmentItem> items = new ArrayList<>();
         for (MemoryBlock block : program.getMemory().getBlocks()) {
-            items.add(JsonBuilder.object()
-                    .put("name", block.getName())
-                    .put("start", block.getStart().toString())
-                    .put("end", block.getEnd().toString())
-                    .build());
+            items.add(new MemorySegmentItem(block.getName(), block.getStart().toString(), block.getEnd().toString()));
         }
         return ListOutput.paginate(items, offset, limit);
     }
@@ -98,14 +98,15 @@ public class MemoryService {
 
         Note: Unlabeled items shown as "(unnamed)"
 
-        Example: list_data_items(0, 3) -> ['00410000: hello_msg = "Hello, World!"', ...] """, outputType = ListOutput.class)
+        Example: list_data_items(0, 3) -> ['00410000: hello_msg = "Hello, World!"', ...] """,
+        outputType = ListOutput.class, responseType = DataItem.class)
     public ToolOutput listDataItems(
             @Param(value = "Starting index for pagination (0-based)", defaultValue = "0") int offset,
             @Param(value = "Maximum data items to return", defaultValue = "100") int limit) {
         Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
 
-        List<String> items = new ArrayList<>();
+        List<DataItem> items = new ArrayList<>();
         for (MemoryBlock block : program.getMemory().getBlocks()) {
             DataIterator it = program.getListing().getDefinedData(block.getStart(), true);
             while (it.hasNext()) {
@@ -113,11 +114,10 @@ public class MemoryService {
                 if (block.contains(data.getAddress())) {
                     String label = data.getLabel() != null ? data.getLabel() : "(unnamed)";
                     String valRepr = data.getDefaultValueRepresentation();
-                    items.add(JsonBuilder.object()
-                            .put("address", data.getAddress().toString())
-                            .put("label", HttpUtils.escapeNonAscii(label))
-                            .put("value", HttpUtils.escapeNonAscii(valRepr))
-                            .build());
+                    items.add(new DataItem(
+                            data.getAddress().toString(),
+                            HttpUtils.escapeNonAscii(label),
+                            HttpUtils.escapeNonAscii(valRepr)));
                 }
             }
         }
@@ -134,7 +134,8 @@ public class MemoryService {
 
         Note: Creates a new label if none exists at the address. Address must point to data, not code.
 
-        Example: rename_data("00402000", "config_table") """, outputType = StatusOutput.class)
+        Example: rename_data("00402000", "config_table") """,
+        outputType = StatusOutput.class, responseType = StatusOutput.class)
     public ToolOutput renameData(
             @Param("Data address (e.g., \"00401000\" or \"ram:00401000\")") String address,
             @Param("New name to assign") String newName) {
@@ -168,7 +169,7 @@ public class MemoryService {
             return StatusOutput.error("Rename failed");
         }
     }
-    
+
     @McpTool(post = true, description = """
         Set the data type at a specific memory address.
 
@@ -180,7 +181,8 @@ public class MemoryService {
         Note: The data type can be a built-in type, structure, enum, or array.
         Array syntax: "type[size]" e.g., "char[256]" for a string buffer.
 
-        Example: set_address_data_type("00402000", "POINT") -> "Data type 'POINT' set at address 00402000" """, outputType = StatusOutput.class)
+        Example: set_address_data_type("00402000", "POINT") -> "Data type 'POINT' set at address 00402000" """,
+        outputType = StatusOutput.class, responseType = StatusOutput.class)
     public ToolOutput setAddressDataType(
             @Param("Memory address (e.g., \"00401000\" or \"ram:00401000\")") String address,
             @Param("Data type name (\"int\", \"char[20]\", \"POINT\", etc.)") String dataType,
@@ -254,8 +256,8 @@ public class MemoryService {
             return StatusOutput.error("Failed to set memory data type: " + e.getMessage());
         }
     }
-    
-    @McpTool(description = """
+
+    @McpTool(responseType = TextOutput.class, description = """
         Read raw memory contents at a specific address.
 
         Reads bytes from memory and formats them for analysis.
@@ -309,8 +311,8 @@ public class MemoryService {
             return StatusOutput.error("Error reading memory: " + e.getMessage());
         }
     }
-    
-    @McpTool(outputType = JsonOutput.class, description = """
+
+    @McpTool(outputType = JsonOutput.class, responseType = MemoryPermissionsResult.class, description = """
         Get memory permissions and block information at an address.
 
         Shows memory block properties including read/write/execute permissions.
@@ -334,26 +336,22 @@ public class MemoryService {
             MemoryBlock block = memory.getBlock(addr);
             if (block == null) return StatusOutput.error("No memory block at address: " + address);
 
-            String json = JsonBuilder.object()
-                    .put("block", block.getName())
-                    .put("start", block.getStart().toString())
-                    .put("end", block.getEnd().toString())
-                    .put("size", block.getSize())
-                    .putObject("permissions", JsonBuilder.object()
-                            .put("read", block.isRead())
-                            .put("write", block.isWrite())
-                            .put("execute", block.isExecute()))
-                    .put("initialized", block.isInitialized())
-                    .put("volatile", block.isVolatile())
-                    .put("overlay", block.isOverlay())
-                    .build();
-            return new JsonOutput(json);
+            return new JsonOutput(new MemoryPermissionsResult(
+                    block.getName(),
+                    block.getStart().toString(),
+                    block.getEnd().toString(),
+                    block.getSize(),
+                    new MemoryPermissionsResult.Permissions(
+                            block.isRead(), block.isWrite(), block.isExecute()),
+                    block.isInitialized(),
+                    block.isVolatile(),
+                    block.isOverlay()));
         } catch (Exception e) {
             return StatusOutput.error("Error getting memory permissions: " + e.getMessage());
         }
     }
-    
-    @McpTool(outputType = JsonOutput.class, description = """
+
+    @McpTool(outputType = JsonOutput.class, responseType = AddressDataTypeResult.class, description = """
         Get the data type currently defined at a memory address.
 
         Shows whether address contains instruction, defined data, or is undefined.
@@ -379,30 +377,23 @@ public class MemoryService {
             // Check if there's an instruction at this address
             Instruction instr = listing.getInstructionAt(addr);
             if (instr != null) {
-                String json = JsonBuilder.object()
-                        .put("address", addr.toString())
-                        .put("category", "Instruction")
-                        .put("mnemonic", instr.getMnemonicString())
-                        .put("operands", instr.toString())
-                        .put("length", instr.getLength())
-                        .build();
-                return new JsonOutput(json);
+                return new JsonOutput(new AddressDataTypeResult(
+                        addr.toString(), "Instruction",
+                        instr.getMnemonicString(), instr.toString(),
+                        null, instr.getLength(), null, null));
             }
 
             // Check if there's defined data at this address
             Data data = listing.getDefinedDataAt(addr);
             if (data != null) {
-                DataType dataType = data.getDataType();
+                DataType dt = data.getDataType();
                 Symbol symbol = program.getSymbolTable().getPrimarySymbol(addr);
-                String json = JsonBuilder.object()
-                        .put("address", addr.toString())
-                        .put("category", "Defined Data")
-                        .put("dataType", dataType.getName())
-                        .put("length", data.getLength())
-                        .put("value", data.getDefaultValueRepresentation())
-                        .putIfNotNull("label", symbol != null ? symbol.getName() : null)
-                        .build();
-                return new JsonOutput(json);
+                return new JsonOutput(new AddressDataTypeResult(
+                        addr.toString(), "Defined Data",
+                        null, null,
+                        dt.getName(), data.getLength(),
+                        data.getDefaultValueRepresentation(),
+                        symbol != null ? symbol.getName() : null));
             }
 
             // Check if it's undefined data
@@ -415,42 +406,30 @@ public class MemoryService {
                 } catch (MemoryAccessException e) {
                     value = null;
                 }
-                String json = JsonBuilder.object()
-                        .put("address", addr.toString())
-                        .put("category", "Undefined Data")
-                        .put("length", undefinedData.getLength())
-                        .putIfNotNull("value", value)
-                        .build();
-                return new JsonOutput(json);
+                return new JsonOutput(new AddressDataTypeResult(
+                        addr.toString(), "Undefined Data",
+                        null, null, null, undefinedData.getLength(), value, null));
             }
 
-            return new JsonOutput(JsonBuilder.object()
-                    .put("address", addr.toString())
-                    .put("category", "No data defined")
-                    .build());
+            return new JsonOutput(new AddressDataTypeResult(
+                    addr.toString(), "No data defined",
+                    null, null, null, null, null, null));
         } catch (Exception e) {
             return StatusOutput.error("Error getting data type: " + e.getMessage());
         }
     }
-    
+
     // Helper methods for formatting bytes
     private String formatBytesAsHex(byte[] bytes, Address startAddr) {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < bytes.length; i += 16) {
-            // Address
             sb.append(String.format("%s: ", startAddr.add(i)));
-            
-            // Hex bytes
             for (int j = 0; j < 16 && (i + j) < bytes.length; j++) {
                 sb.append(String.format("%02X ", bytes[i + j] & 0xFF));
             }
-            
-            // Padding if needed
             for (int j = bytes.length - i; j < 16; j++) {
                 sb.append("   ");
             }
-            
-            // ASCII representation
             sb.append(" | ");
             for (int j = 0; j < 16 && (i + j) < bytes.length; j++) {
                 char c = (char)(bytes[i + j] & 0xFF);
@@ -464,7 +443,7 @@ public class MemoryService {
         }
         return sb.toString();
     }
-    
+
     private String formatBytesAsDecimal(byte[] bytes, Address startAddr) {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < bytes.length; i++) {
@@ -477,7 +456,7 @@ public class MemoryService {
         sb.append("\n");
         return sb.toString();
     }
-    
+
     private String formatBytesAsBinary(byte[] bytes, Address startAddr) {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < bytes.length; i++) {
@@ -491,7 +470,7 @@ public class MemoryService {
         sb.append("\n");
         return sb.toString();
     }
-    
+
     private String formatBytesAsAscii(byte[] bytes, Address startAddr) {
         StringBuilder sb = new StringBuilder();
         sb.append(String.format("ASCII at %s:\n", startAddr));

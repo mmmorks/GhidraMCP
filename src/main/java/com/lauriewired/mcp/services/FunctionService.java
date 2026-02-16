@@ -11,8 +11,12 @@ import com.lauriewired.mcp.model.ListOutput;
 import com.lauriewired.mcp.model.StatusOutput;
 import com.lauriewired.mcp.model.TextOutput;
 import com.lauriewired.mcp.model.ToolOutput;
+import com.lauriewired.mcp.model.response.CurrentAddressResult;
+import com.lauriewired.mcp.model.response.CurrentFunctionResult;
+import com.lauriewired.mcp.model.response.FunctionByAddressResult;
+import com.lauriewired.mcp.model.response.FunctionItem;
+import com.lauriewired.mcp.model.response.FunctionSearchItem;
 import com.lauriewired.mcp.utils.GhidraUtils;
-import com.lauriewired.mcp.utils.JsonBuilder;
 import com.lauriewired.mcp.utils.ProgramTransaction;
 
 import ghidra.app.decompiler.ClangLine;
@@ -63,22 +67,22 @@ public class FunctionService {
                  the response includes clear indicators and instructions for fetching additional pages.
 
         Example: list_functions(0, 10) -> ['main', 'printf', 'malloc', ..., '--- PAGINATION INFO ---', ...] """,
-        outputType = ListOutput.class)
+        outputType = ListOutput.class, responseType = FunctionItem.class)
     public ToolOutput listFunctions(
             @Param(value = "Starting index for pagination (0-based)", defaultValue = "0") int offset,
             @Param(value = "Maximum function names to return", defaultValue = "100") int limit) {
         Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
 
-        List<String> items = new ArrayList<>();
+        List<FunctionItem> items = new ArrayList<>();
         for (Function f : program.getFunctionManager().getFunctions(true)) {
-            items.add(JsonBuilder.object().put("name", f.getName()).build());
+            items.add(new FunctionItem(f.getName()));
         }
 
         return ListOutput.paginate(items, offset, limit);
     }
 
-    @McpTool(description = """
+    @McpTool(responseType = TextOutput.class, description = """
         Get a function's code in the specified representation.
 
         Resolves the function by name or address, then returns the requested output.
@@ -210,7 +214,7 @@ public class FunctionService {
             rename_function("FUN_00401000", "initialize_system")
             rename_function("00401000", "initialize_system")
             rename_function("main", "entry_point") """,
-        outputType = StatusOutput.class)
+        outputType = StatusOutput.class, responseType = StatusOutput.class)
     public ToolOutput renameFunction(
             @Param("Current function name or address") String functionIdentifier,
             @Param("New function name to assign") String newName) {
@@ -235,7 +239,7 @@ public class FunctionService {
         }
     }
 
-    @McpTool(outputType = JsonOutput.class, description = """
+    @McpTool(outputType = JsonOutput.class, responseType = FunctionByAddressResult.class, description = """
         Get detailed information about a function at the specified address.
 
         Retrieves name, signature, entry point and body range for the function.
@@ -255,20 +259,18 @@ public class FunctionService {
 
             if (func == null) return StatusOutput.error("No function found at address " + address);
 
-            String json = JsonBuilder.object()
-                    .put("name", func.getName())
-                    .put("signature", func.getSignature().toString())
-                    .put("entryPoint", func.getEntryPoint().toString())
-                    .put("bodyStart", func.getBody().getMinAddress().toString())
-                    .put("bodyEnd", func.getBody().getMaxAddress().toString())
-                    .build();
-            return new JsonOutput(json);
+            return new JsonOutput(new FunctionByAddressResult(
+                    func.getName(),
+                    func.getSignature().toString(),
+                    func.getEntryPoint().toString(),
+                    func.getBody().getMinAddress().toString(),
+                    func.getBody().getMaxAddress().toString()));
         } catch (Exception e) {
             return StatusOutput.error("Error getting function: " + e.getMessage());
         }
     }
 
-    @McpTool(outputType = JsonOutput.class, description = """
+    @McpTool(outputType = JsonOutput.class, responseType = CurrentAddressResult.class, description = """
         Get the address currently selected by the user in the Ghidra GUI.
 
         Retrieves cursor location in Code Browser or Decompiler view.
@@ -286,12 +288,10 @@ public class FunctionService {
 
         ProgramLocation location = service.getCurrentLocation();
         if (location == null) return StatusOutput.error("No current location");
-        return new JsonOutput(JsonBuilder.object()
-                .put("address", location.getAddress().toString())
-                .build());
+        return new JsonOutput(new CurrentAddressResult(location.getAddress().toString()));
     }
 
-    @McpTool(outputType = JsonOutput.class, description = """
+    @McpTool(outputType = JsonOutput.class, responseType = CurrentFunctionResult.class, description = """
         Get information about the function currently selected in the Ghidra GUI.
 
         Returns details about function containing the selected address.
@@ -316,12 +316,10 @@ public class FunctionService {
         Function func = program.getFunctionManager().getFunctionContaining(location.getAddress());
         if (func == null) return StatusOutput.error("No function at current location: " + location.getAddress());
 
-        String json = JsonBuilder.object()
-                .put("name", func.getName())
-                .put("entryPoint", func.getEntryPoint().toString())
-                .put("signature", func.getSignature().toString())
-                .build();
-        return new JsonOutput(json);
+        return new JsonOutput(new CurrentFunctionResult(
+                func.getName(),
+                func.getEntryPoint().toString(),
+                func.getSignature().toString()));
     }
 
 
@@ -367,7 +365,7 @@ public class FunctionService {
         Returns: Matching functions formatted as "function_name @ address"
 
         Example: search_functions_by_name("init") -> ['initialize @ 00401000', ...] """,
-        outputType = ListOutput.class)
+        outputType = ListOutput.class, responseType = FunctionSearchItem.class)
     public ToolOutput searchFunctionsByName(
             @Param("Substring to search for in function names") String query,
             @Param(value = "Starting index for pagination (0-based)", defaultValue = "0") int offset,
@@ -376,19 +374,15 @@ public class FunctionService {
         if (program == null) return StatusOutput.error("No program loaded");
         if (query == null || query.isEmpty()) return StatusOutput.error("Search term is required");
 
-        List<String> matches = new ArrayList<>();
+        List<FunctionSearchItem> matches = new ArrayList<>();
         for (Function func : program.getFunctionManager().getFunctions(true)) {
             String name = func.getName();
-            // simple substring match
             if (name.toLowerCase().contains(query.toLowerCase())) {
-                matches.add(JsonBuilder.object()
-                        .put("name", name)
-                        .put("address", func.getEntryPoint().toString())
-                        .build());
+                matches.add(new FunctionSearchItem(name, func.getEntryPoint().toString()));
             }
         }
 
-        Collections.sort(matches);
+        Collections.sort(matches, (a, b) -> a.name().compareTo(b.name()));
 
         return ListOutput.paginate(matches, offset, limit);
     }
@@ -403,7 +397,7 @@ public class FunctionService {
         Note: Function name in prototype is ignored; only types matter. Parameter names are applied.
 
         Example: set_function_prototype("00401000", "int process_data(char *buffer, size_t length)") """,
-        outputType = StatusOutput.class)
+        outputType = StatusOutput.class, responseType = StatusOutput.class)
     public ToolOutput setFunctionPrototype(
             @Param("Function name (e.g., \"main\") or address (e.g., \"00401000\", \"ram:00401000\")") String functionIdentifier,
             @Param("C-style function signature (e.g., \"int main(int argc, char **argv)\")") String prototype) {

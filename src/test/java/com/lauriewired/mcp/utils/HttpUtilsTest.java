@@ -76,9 +76,9 @@ public class HttpUtilsTest {
     @Test
     @DisplayName("escapeJson handles complex string with multiple special characters")
     void testEscapeJson_Complex() {
-        String input = "{\n\t\"name\": \"John Doe\",\n\t\"path\": \"C:\\\\Users\\\\john\"\n}";
+        String input = "{\n\t\"name\":\"John Doe\",\n\t\"path\":\"C:\\\\Users\\\\john\"\n}";
         String result = HttpUtils.escapeJson(input);
-        String expected = "{\\n\\t\\\"name\\\": \\\"John Doe\\\",\\n\\t\\\"path\\\": \\\"C:\\\\\\\\Users\\\\\\\\john\\\"\\n}";
+        String expected = "{\\n\\t\\\"name\\\":\\\"John Doe\\\",\\n\\t\\\"path\\\":\\\"C:\\\\\\\\Users\\\\\\\\john\\\"\\n}";
         assertEquals(expected, result);
     }
     
@@ -96,7 +96,7 @@ public class HttpUtilsTest {
     @Test
     @DisplayName("parseJsonBody parses simple flat JSON")
     void testParseJsonBody_SimpleFlatJson() {
-        String body = "{\"function_identifier\": \"main\", \"new_name\": \"entry\"}";
+        String body = "{\"function_identifier\":\"main\", \"new_name\":\"entry\"}";
         Map<String, String> result = HttpUtils.parseJsonBody(body);
         assertEquals(2, result.size());
         assertEquals("main", result.get("function_identifier"));
@@ -106,7 +106,7 @@ public class HttpUtilsTest {
     @Test
     @DisplayName("parseJsonBody handles numeric and boolean values")
     void testParseJsonBody_NumericBooleanValues() {
-        String body = "{\"address\": \"0x1000\", \"size\": 42, \"clear_existing\": true}";
+        String body = "{\"address\":\"0x1000\", \"size\":42, \"clear_existing\":true}";
         Map<String, String> result = HttpUtils.parseJsonBody(body);
         assertEquals(3, result.size());
         assertEquals("0x1000", result.get("address"));
@@ -117,7 +117,7 @@ public class HttpUtilsTest {
     @Test
     @DisplayName("parseJsonBody handles escaped quotes in values")
     void testParseJsonBody_EscapedQuotes() {
-        String body = "{\"prototype\": \"int func(char *msg, \\\"hello\\\")\"}";
+        String body = "{\"prototype\":\"int func(char *msg, \\\"hello\\\")\"}";
         Map<String, String> result = HttpUtils.parseJsonBody(body);
         assertEquals("int func(char *msg, \"hello\")", result.get("prototype"));
     }
@@ -133,7 +133,7 @@ public class HttpUtilsTest {
     @Test
     @DisplayName("parseJsonBody skips null values")
     void testParseJsonBody_NullValues() {
-        String body = "{\"name\": \"test\", \"extra\": null}";
+        String body = "{\"name\":\"test\", \"extra\":null}";
         Map<String, String> result = HttpUtils.parseJsonBody(body);
         assertEquals(1, result.size());
         assertEquals("test", result.get("name"));
@@ -143,7 +143,7 @@ public class HttpUtilsTest {
     @Test
     @DisplayName("parseJsonBody skips nested objects and arrays")
     void testParseJsonBody_NestedObjectsSkipped() {
-        String body = "{\"name\": \"main\", \"renames\": {\"a\": \"b\"}, \"tag\": \"v1\"}";
+        String body = "{\"name\":\"main\", \"renames\":{\"a\":\"b\"}, \"tag\":\"v1\"}";
         Map<String, String> result = HttpUtils.parseJsonBody(body);
         assertEquals(2, result.size());
         assertEquals("main", result.get("name"));

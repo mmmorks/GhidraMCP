@@ -103,6 +103,25 @@
       <scope>test</scope>
     </dependency>
     
+    <!-- Jackson for JSON serialization (shaded to avoid Ghidra classpath conflicts) -->
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+      <version>2.18.2</version>
+    </dependency>
+
+    <!-- JSON Schema generation from Java types (shaded alongside Jackson) -->
+    <dependency>
+      <groupId>com.github.victools</groupId>
+      <artifactId>jsonschema-generator</artifactId>
+      <version>4.37.0</version>
+    </dependency>
+    <dependency>
+      <groupId>com.github.victools</groupId>
+      <artifactId>jsonschema-module-jackson</artifactId>
+      <version>4.37.0</version>
+    </dependency>
+
     <!-- Mockito for mocking in tests -->
     <dependency>
       <groupId>org.mockito</groupId>
@@ -151,6 +170,81 @@
         </configuration>
       </plugin>
       
+      <!-- Shade Jackson into the JAR with relocated packages to avoid Ghidra classpath conflicts -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>3.6.0</version>
+        <dependencies>
+          <dependency>
+            <groupId>org.ow2.asm</groupId>
+            <artifactId>asm</artifactId>
+            <version>9.9.1</version>
+          </dependency>
+          <dependency>
+            <groupId>org.ow2.asm</groupId>
+            <artifactId>asm-commons</artifactId>
+            <version>9.9.1</version>
+          </dependency>
+        </dependencies>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals><goal>shade</goal></goals>
+            <configuration>
+              <artifactSet>
+                <includes>
+                  <include>com.fasterxml.jackson.core:*</include>
+                  <include>com.github.victools:*</include>
+                  <include>com.fasterxml:classmate</include>
+                </includes>
+              </artifactSet>
+              <relocations>
+                <relocation>
+                  <pattern>com.fasterxml.jackson</pattern>
+                  <shadedPattern>com.lauriewired.shaded.jackson</shadedPattern>
+                </relocation>
+                <relocation>
+                  <pattern>com.github.victools</pattern>
+                  <shadedPattern>com.lauriewired.shaded.victools</shadedPattern>
+                </relocation>
+                <relocation>
+                  <pattern>com.fasterxml.classmate</pattern>
+                  <shadedPattern>com.lauriewired.shaded.classmate</shadedPattern>
+                </relocation>
+              </relocations>
+              <filters>
+                <filter>
+                  <artifact>com.fasterxml.jackson.core:*</artifact>
+                  <excludes>
+                    <exclude>META-INF/MANIFEST.MF</exclude>
+                    <exclude>META-INF/LICENSE</exclude>
+                    <exclude>META-INF/NOTICE</exclude>
+                    <exclude>module-info.class</exclude>
+                  </excludes>
+                </filter>
+                <filter>
+                  <artifact>com.github.victools:*</artifact>
+                  <excludes>
+                    <exclude>META-INF/MANIFEST.MF</exclude>
+                    <exclude>META-INF/LICENSE</exclude>
+                    <exclude>module-info.class</exclude>
+                  </excludes>
+                </filter>
+                <filter>
+                  <artifact>com.fasterxml:classmate</artifact>
+                  <excludes>
+                    <exclude>META-INF/MANIFEST.MF</exclude>
+                    <exclude>META-INF/LICENSE</exclude>
+                    <exclude>module-info.class</exclude>
+                  </excludes>
+                </filter>
+              </filters>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
       <!-- The Assembly Plugin for creating the Ghidra extension ZIP -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>

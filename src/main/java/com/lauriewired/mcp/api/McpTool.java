@@ -25,6 +25,9 @@ public @interface McpTool {
     /** If true, the endpoint accepts POST; otherwise GET. */
     boolean post() default false;
 
-    /** Output type for this tool — determines outputSchema in /mcp/tools. */
+    /** Output type for this tool — determines fallback outputSchema in /mcp/tools. */
     Class<? extends ToolOutput> outputType() default TextOutput.class;
+
+    /** Response record type — used to derive outputSchema via reflection. Void.class means no typed schema. */
+    Class<?> responseType() default Void.class;
 }

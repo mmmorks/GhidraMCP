@@ -260,26 +260,27 @@ public class TimeoutHandler {
     private void sendTimeoutResponse(HttpExchange exchange) throws IOException {
         String errorMsg = String.format("Request timeout - operation took longer than %.1f seconds",
             timeoutNanos / 1_000_000_000.0);
-        String jsonBody = "{\"status\":\"error\",\"error\":\"" + HttpUtils.escapeJson(errorMsg) + "\"}";
-        byte[] bytes = jsonBody.getBytes(StandardCharsets.UTF_8);
-
-        exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
-        exchange.sendResponseHeaders(408, bytes.length); // 408 Request Timeout
-
-        try (var os = exchange.getResponseBody()) {
-            os.write(bytes);
-        }
+        sendJsonError(exchange, 408, errorMsg);
     }
 
     /**
      * Send an error response to the client as JSON
      */
     private void sendErrorResponse(HttpExchange exchange, String message) throws IOException {
-        String jsonBody = "{\"status\":\"error\",\"error\":\"" + HttpUtils.escapeJson(message) + "\"}";
-        byte[] bytes = jsonBody.getBytes(StandardCharsets.UTF_8);
+        sendJsonError(exchange, 500, message);
+    }
+
+    /**
+     * Send a JSON error envelope with the given status code and message.
+     */
+    private static void sendJsonError(HttpExchange exchange, int statusCode, String message) throws IOException {
+        java.util.Map<String, Object> envelope = new java.util.LinkedHashMap<>();
+        envelope.put("status", "error");
+        envelope.put("error", message);
+        byte[] bytes = Json.serialize(envelope).getBytes(StandardCharsets.UTF_8);
 
         exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
-        exchange.sendResponseHeaders(500, bytes.length); // 500 Internal Server Error
+        exchange.sendResponseHeaders(statusCode, bytes.length);
 
         try (var os = exchange.getResponseBody()) {
             os.write(bytes);

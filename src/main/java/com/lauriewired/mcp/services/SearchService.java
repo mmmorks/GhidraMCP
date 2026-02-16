@@ -33,7 +33,9 @@ import com.lauriewired.mcp.api.Param;
 import com.lauriewired.mcp.model.JsonOutput;
 import com.lauriewired.mcp.model.StatusOutput;
 import com.lauriewired.mcp.model.ToolOutput;
-import com.lauriewired.mcp.utils.JsonBuilder;
+import com.lauriewired.mcp.model.response.SearchDecompiledResult;
+import com.lauriewired.mcp.model.response.SearchDisassemblyResult;
+import com.lauriewired.mcp.model.response.SearchMemoryResult;
 
 /**
  * Service for search-related operations in Ghidra
@@ -50,7 +52,7 @@ public class SearchService {
         this.programService = programService;
     }
 
-    @McpTool(description = """
+    @McpTool(outputType = JsonOutput.class, responseType = SearchMemoryResult.class, description = """
         Search program memory for byte patterns or strings.
 
         Searches initialized memory blocks for specified patterns and shows context around matches.
@@ -67,14 +69,14 @@ public class SearchService {
         if (program == null) return StatusOutput.error("No program loaded");
         if (query == null || query.isEmpty()) return StatusOutput.error("Search query is required");
 
-        List<String> results = new ArrayList<>();
+        List<SearchMemoryResult.MemoryMatch> results = new ArrayList<>();
         Memory memory = program.getMemory();
 
         try {
             // Create a byte matcher based on the input type
             ByteMatcher matcher;
             int patternLength;
-            
+
             if (asString) {
                 final byte[] searchPattern = query.getBytes(StandardCharsets.UTF_8);
                 SearchSettings settings = new SearchSettings()
@@ -83,12 +85,12 @@ public class SearchService {
                     @Override
                     public Iterable<ByteMatcher.ByteMatch> match(ExtendedByteSequence ebs) {
                         List<ByteMatch> matches = new ArrayList<>();
-                        
+
                         // Skip if sequence is shorter than the pattern
                         if (ebs.getLength() < searchPattern.length) {
                             return matches;
                         }
-                        
+
                         // Search for pattern in the sequence
                         for (int i = 0; i <= ebs.getLength() - searchPattern.length; i++) {
                             boolean found = true;
@@ -98,13 +100,13 @@ public class SearchService {
                                     break;
                                 }
                             }
-                            
+
                             if (found) {
                                 final int offset = i;
                                 matches.add(new ByteMatcher.ByteMatch(offset, searchPattern.length));
                             }
                         }
-                        
+
                         return matches;
                     }
 
@@ -124,7 +126,7 @@ public class SearchService {
                 String[] byteStrings = query.split("\\s+");
                 byte[] bytePattern = new byte[byteStrings.length];
                 boolean[] wildcardMask = new boolean[byteStrings.length];
-                
+
                 for (int i = 0; i < byteStrings.length; i++) {
                     if (byteStrings[i].equals("??")) {
                         wildcardMask[i] = true;
@@ -134,7 +136,7 @@ public class SearchService {
                         bytePattern[i] = (byte) Integer.parseInt(byteStrings[i], 16);
                     }
                 }
-                
+
                 // Create a byte matcher for hex pattern
                 final byte[] pattern = bytePattern;
                 final boolean[] mask = wildcardMask;
@@ -144,12 +146,12 @@ public class SearchService {
                     @Override
                     public Iterable<ByteMatcher.ByteMatch> match(ExtendedByteSequence ebs) {
                         List<ByteMatch> matches = new ArrayList<>();
-                        
+
                         // Skip if sequence is shorter than the pattern
                         if (ebs.getLength() < pattern.length) {
                             return matches;
                         }
-                        
+
                         // Search for pattern in the sequence
                         for (int i = 0; i <= ebs.getLength() - pattern.length; i++) {
                             boolean found = true;
@@ -158,19 +160,19 @@ public class SearchService {
                                 if (mask[j]) {
                                     continue;
                                 }
-                                
+
                                 if (ebs.getByte(i + j) != pattern[j]) {
                                     found = false;
                                     break;
                                 }
                             }
-                            
+
                             if (found) {
                                 final int offset = i;
                                 matches.add(new ByteMatcher.ByteMatch(offset, pattern.length));
                             }
                         }
-                        
+
                         return matches;
                     }
 
@@ -186,7 +188,7 @@ public class SearchService {
                 };
                 patternLength = bytePattern.length;
             }
-            
+
             // Define the search area
             AddressSet searchSet = new AddressSet();
             if (blockName != null && !blockName.isEmpty()) {
@@ -203,18 +205,18 @@ public class SearchService {
                     }
                 }
             }
-            
+
             // Create a program byte source for the memory search
             ProgramByteSource byteSource = new ProgramByteSource(program);
-            
+
             // Create a memory searcher with the proper parameters
             MemorySearcher searcher = new MemorySearcher(byteSource, matcher, searchSet, limit);
-            
+
             // Perform the search
             List<Address> matches = new ArrayList<>();
             int count = 0;
             MemoryMatch memMatch;
-            
+
             Address startAddr = searchSet.getMinAddress();
             while ((memMatch = searcher.findNext(startAddr, TaskMonitor.DUMMY)) != null && count < limit) {
                 Address matchAddress = memMatch.getAddress();
@@ -222,12 +224,12 @@ public class SearchService {
                 startAddr = matchAddress.next();
                 count++;
             }
-            
+
             // Format results
             for (Address matchAddr : matches) {
                 results.add(formatMemoryMatch(program, memory, matchAddr, patternLength));
             }
-            
+
         } catch (NumberFormatException e) {
             return StatusOutput.error("Error searching memory: " + e.getMessage());
         }
@@ -236,25 +238,15 @@ public class SearchService {
             return StatusOutput.error("No matches found for query: " + query);
         }
 
-        JsonBuilder.JsonArrayBuilder matchesArray = JsonBuilder.array();
-        for (String r : results) {
-            matchesArray.addRaw(r);
-        }
-
-        String json = JsonBuilder.object()
-                .put("query", query)
-                .put("matchCount", results.size())
-                .putArray("matches", matchesArray)
-                .build();
-        return new JsonOutput(json);
+        return new JsonOutput(new SearchMemoryResult(query, results.size(), results));
     }
 
     /**
-     * Format a memory match as a JSON object string
+     * Format a memory match as a record
      */
-    private String formatMemoryMatch(Program program, Memory memory, Address matchAddr, int matchLength) {
+    private SearchMemoryResult.MemoryMatch formatMemoryMatch(Program program, Memory memory, Address matchAddr, int matchLength) {
         MemoryBlock block = memory.getBlock(matchAddr);
-        String blockName = block != null ? block.getName() : null;
+        String blockNameStr = block != null ? block.getName() : null;
 
         ghidra.program.model.symbol.Symbol sym = program.getSymbolTable().getPrimarySymbol(matchAddr);
         String label = sym != null ? sym.getName() : null;
@@ -282,15 +274,11 @@ public class SearchService {
             }
         }
 
-        JsonBuilder b = JsonBuilder.object()
-                .put("address", matchAddr.toString());
-        if (blockName != null) b.put("block", blockName);
-        if (label != null) b.put("label", label);
-        b.put("context", context.toString());
-        return b.build();
+        return new SearchMemoryResult.MemoryMatch(
+                matchAddr.toString(), blockNameStr, label, context.toString());
     }
 
-    @McpTool(outputType = JsonOutput.class, description = """
+    @McpTool(outputType = JsonOutput.class, responseType = SearchDisassemblyResult.class, description = """
         Search for patterns in disassembled code using regex.
 
         Searches instruction mnemonics, operands, and comments in functions.
@@ -323,7 +311,7 @@ public class SearchService {
             return StatusOutput.error("No executable code blocks found in program");
         }
 
-        JsonBuilder.JsonArrayBuilder matchesArray = JsonBuilder.array();
+        List<SearchDisassemblyResult.DisasmMatch> matches = new ArrayList<>();
         int resultCount = 0;
 
         for (MemoryBlock block : codeBlocks) {
@@ -343,13 +331,13 @@ public class SearchService {
                     Function function = program.getFunctionManager().getFunctionContaining(instr.getAddress());
 
                     // Build context lines
-                    JsonBuilder.JsonArrayBuilder contextArray = JsonBuilder.array();
+                    List<SearchDisassemblyResult.ContextLine> contextLines = new ArrayList<>();
 
                     // Before context
-                    int contextLines = 3;
+                    int contextLineCount = 3;
                     Address contextStart = instr.getAddress();
                     List<Instruction> beforeCtx = new ArrayList<>();
-                    for (int i = 0; i < contextLines; i++) {
+                    for (int i = 0; i < contextLineCount; i++) {
                         contextStart = contextStart.previous();
                         if (contextStart == null) break;
                         Instruction prevInstr = program.getListing().getInstructionAt(contextStart);
@@ -357,40 +345,30 @@ public class SearchService {
                         beforeCtx.add(0, prevInstr);
                     }
                     for (Instruction ctx : beforeCtx) {
-                        contextArray.addRaw(JsonBuilder.object()
-                                .put("address", ctx.getAddress().toString())
-                                .put("text", ctx.toString())
-                                .put("isMatch", false)
-                                .build());
+                        contextLines.add(new SearchDisassemblyResult.ContextLine(
+                                ctx.getAddress().toString(), ctx.toString(), false));
                     }
 
                     // The match itself
-                    contextArray.addRaw(JsonBuilder.object()
-                            .put("address", instr.getAddress().toString())
-                            .put("text", instr.toString())
-                            .put("isMatch", true)
-                            .build());
+                    contextLines.add(new SearchDisassemblyResult.ContextLine(
+                            instr.getAddress().toString(), instr.toString(), true));
 
                     // After context
                     Address afterAddr = instr.getAddress();
-                    for (int i = 0; i < contextLines; i++) {
+                    for (int i = 0; i < contextLineCount; i++) {
                         afterAddr = afterAddr.next();
                         if (afterAddr == null) break;
                         Instruction afterInstr = program.getListing().getInstructionAt(afterAddr);
                         if (afterInstr == null) break;
-                        contextArray.addRaw(JsonBuilder.object()
-                                .put("address", afterInstr.getAddress().toString())
-                                .put("text", afterInstr.toString())
-                                .put("isMatch", false)
-                                .build());
+                        contextLines.add(new SearchDisassemblyResult.ContextLine(
+                                afterInstr.getAddress().toString(), afterInstr.toString(), false));
                     }
 
-                    JsonBuilder matchObj = JsonBuilder.object()
-                            .put("address", instr.getAddress().toString())
-                            .putIfNotNull("function", function != null ? function.getName() : null)
-                            .put("matchedInstruction", instr.toString())
-                            .putArray("context", contextArray);
-                    matchesArray.addRaw(matchObj.build());
+                    matches.add(new SearchDisassemblyResult.DisasmMatch(
+                            instr.getAddress().toString(),
+                            function != null ? function.getName() : null,
+                            instr.toString(),
+                            contextLines));
                     resultCount++;
                 }
             }
@@ -400,15 +378,10 @@ public class SearchService {
             return StatusOutput.error("No matches found for pattern: " + query);
         }
 
-        String json = JsonBuilder.object()
-                .put("query", query)
-                .put("matchCount", resultCount)
-                .putArray("matches", matchesArray)
-                .build();
-        return new JsonOutput(json);
+        return new JsonOutput(new SearchDisassemblyResult(query, resultCount, matches));
     }
 
-    @McpTool(outputType = JsonOutput.class, description = """
+    @McpTool(outputType = JsonOutput.class, responseType = SearchDecompiledResult.class, description = """
         Search for patterns in decompiled C-like code using regex.
 
         Searches variables, expressions, and comments in decompiled functions.
@@ -433,7 +406,7 @@ public class SearchService {
             return StatusOutput.error("Invalid regex pattern: " + e.getMessage());
         }
 
-        JsonBuilder.JsonArrayBuilder matchesArray = JsonBuilder.array();
+        List<SearchDecompiledResult.DecompiledMatch> matches = new ArrayList<>();
         FunctionManager functionManager = program.getFunctionManager();
         DecompInterface decomp = new DecompInterface();
         decomp.openProgram(program);
@@ -457,19 +430,18 @@ public class SearchService {
                 // Find matching lines and build context
                 for (int i = 0; i < lines.length; i++) {
                     if (pattern.matcher(lines[i]).find()) {
-                        JsonBuilder.JsonArrayBuilder contextArray = JsonBuilder.array();
+                        List<String> contextLines = new ArrayList<>();
                         int startCtx = Math.max(0, i - 3);
                         int endCtx = Math.min(lines.length - 1, i + 3);
                         for (int j = startCtx; j <= endCtx; j++) {
-                            contextArray.addString(lines[j]);
+                            contextLines.add(lines[j]);
                         }
 
-                        matchesArray.addRaw(JsonBuilder.object()
-                                .put("function", function.getName())
-                                .put("address", function.getEntryPoint().toString())
-                                .put("matchLine", lines[i].trim())
-                                .putArray("context", contextArray)
-                                .build());
+                        matches.add(new SearchDecompiledResult.DecompiledMatch(
+                                function.getName(),
+                                function.getEntryPoint().toString(),
+                                lines[i].trim(),
+                                contextLines));
                     }
                 }
                 resultCount++;
@@ -484,11 +456,6 @@ public class SearchService {
             return StatusOutput.error("No matches found for pattern: " + query);
         }
 
-        String json = JsonBuilder.object()
-                .put("query", query)
-                .put("matchCount", resultCount)
-                .putArray("matches", matchesArray)
-                .build();
-        return new JsonOutput(json);
+        return new JsonOutput(new SearchDecompiledResult(query, resultCount, matches));
     }
 }

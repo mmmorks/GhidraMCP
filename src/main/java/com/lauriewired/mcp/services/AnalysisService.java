@@ -16,8 +16,12 @@ import com.lauriewired.mcp.model.JsonOutput;
 import com.lauriewired.mcp.model.ListOutput;
 import com.lauriewired.mcp.model.StatusOutput;
 import com.lauriewired.mcp.model.ToolOutput;
+import com.lauriewired.mcp.model.response.CallGraphResult;
+import com.lauriewired.mcp.model.response.ControlFlowResult;
+import com.lauriewired.mcp.model.response.DataFlowResult;
+import com.lauriewired.mcp.model.response.ReferenceFromItem;
+import com.lauriewired.mcp.model.response.ReferenceToItem;
 import com.lauriewired.mcp.utils.GhidraUtils;
-import com.lauriewired.mcp.utils.JsonBuilder;
 
 import ghidra.app.decompiler.DecompileResults;
 import ghidra.program.model.address.Address;
@@ -60,7 +64,7 @@ public class AnalysisService {
         this.functionService = functionService;
     }
 
-    @McpTool(outputType = JsonOutput.class, description = """
+    @McpTool(outputType = JsonOutput.class, responseType = ControlFlowResult.class, description = """
         Analyze the control flow of a function.
 
         Creates a textual control flow graph (CFG) showing how basic blocks connect.
@@ -91,11 +95,11 @@ public class AnalysisService {
             }
             blocks.sort(Comparator.comparing(CodeBlock::getFirstStartAddress));
 
-            JsonBuilder.JsonArrayBuilder blocksArray = JsonBuilder.array();
+            List<ControlFlowResult.Block> blockRecords = new ArrayList<>();
 
             for (CodeBlock block : blocks) {
-                // Build successors array
-                JsonBuilder.JsonArrayBuilder successors = JsonBuilder.array();
+                // Build successors list
+                List<ControlFlowResult.Successor> successors = new ArrayList<>();
                 CodeBlockReferenceIterator destIter = block.getDestinations(new ConsoleTaskMonitor());
                 while (destIter.hasNext()) {
                     CodeBlockReference ref = destIter.next();
@@ -109,46 +113,42 @@ public class AnalysisService {
                     } else if (ref.getFlowType().isTerminal()) {
                         flowType = "Return";
                     }
-                    successors.addRaw(JsonBuilder.object()
-                            .put("type", flowType)
-                            .put("target", ref.getDestinationBlock().getFirstStartAddress().toString())
-                            .build());
+                    successors.add(new ControlFlowResult.Successor(
+                            flowType,
+                            ref.getDestinationBlock().getFirstStartAddress().toString()));
                 }
 
-                // Build instructions array
-                JsonBuilder.JsonArrayBuilder instrArray = JsonBuilder.array();
+                // Build instructions list
+                List<ControlFlowResult.Instruction> instrList = new ArrayList<>();
                 Listing listing = program.getListing();
                 InstructionIterator instructions = listing.getInstructions(block, true);
                 while (instructions.hasNext()) {
                     Instruction instr = instructions.next();
-                    instrArray.addRaw(JsonBuilder.object()
-                            .put("address", instr.getAddress().toString())
-                            .put("text", instr.toString())
-                            .build());
+                    instrList.add(new ControlFlowResult.Instruction(
+                            instr.getAddress().toString(),
+                            instr.toString()));
                 }
 
-                blocksArray.addRaw(JsonBuilder.object()
-                        .put("address", block.getFirstStartAddress().toString())
-                        .putObject("range", JsonBuilder.object()
-                                .put("start", block.getMinAddress().toString())
-                                .put("end", block.getMaxAddress().toString()))
-                        .putArray("successors", successors)
-                        .putArray("instructions", instrArray)
-                        .build());
+                blockRecords.add(new ControlFlowResult.Block(
+                        block.getFirstStartAddress().toString(),
+                        new ControlFlowResult.Range(
+                                block.getMinAddress().toString(),
+                                block.getMaxAddress().toString()),
+                        successors,
+                        instrList));
             }
 
-            String json = JsonBuilder.object()
-                    .put("function", func.getName())
-                    .put("entryPoint", func.getEntryPoint().toString())
-                    .putArray("blocks", blocksArray)
-                    .build();
-            return new JsonOutput(json);
+            ControlFlowResult result = new ControlFlowResult(
+                    func.getName(),
+                    func.getEntryPoint().toString(),
+                    blockRecords);
+            return new JsonOutput(result);
         } catch (Exception e) {
             return StatusOutput.error("Error analyzing control flow: " + e.getMessage());
         }
     }
 
-    @McpTool(outputType = JsonOutput.class, description = """
+    @McpTool(outputType = JsonOutput.class, responseType = DataFlowResult.class, description = """
         Analyze the data flow for a variable in a function.
 
         Tracks where a variable is defined (written) and used (read) throughout execution paths.
@@ -220,35 +220,33 @@ public class AnalysisService {
             sortedAddrs.sort(Comparator.naturalOrder());
 
             Listing listing = program.getListing();
-            JsonBuilder.JsonArrayBuilder refsArray = JsonBuilder.array();
+            List<DataFlowResult.Reference> references = new ArrayList<>();
             for (Address opAddr : sortedAddrs) {
                 Instruction instr = listing.getInstructionAt(opAddr);
                 if (instr != null) {
                     String[] entry = defUseMap.get(opAddr);
-                    refsArray.addRaw(JsonBuilder.object()
-                            .put("address", opAddr.toString())
-                            .put("kind", entry[0])
-                            .put("operation", entry[1])
-                            .put("instruction", instr.toString())
-                            .build());
+                    references.add(new DataFlowResult.Reference(
+                            opAddr.toString(),
+                            entry[0],
+                            entry[1],
+                            instr.toString()));
                 }
             }
 
-            String json = JsonBuilder.object()
-                    .put("function", func.getName())
-                    .putObject("variable", JsonBuilder.object()
-                            .put("name", highVar.getName())
-                            .put("type", highVar.getDataType().getName())
-                            .put("storage", storage.toString()))
-                    .putArray("references", refsArray)
-                    .build();
-            return new JsonOutput(json);
+            DataFlowResult result = new DataFlowResult(
+                    func.getName(),
+                    new DataFlowResult.Variable(
+                            highVar.getName(),
+                            highVar.getDataType().getName(),
+                            storage.toString()),
+                    references);
+            return new JsonOutput(result);
         } catch (Exception e) {
             return StatusOutput.error("Error analyzing data flow: " + e.getMessage());
         }
     }
 
-    @McpTool(outputType = JsonOutput.class, description = """
+    @McpTool(outputType = JsonOutput.class, responseType = CallGraphResult.class, description = """
         Get the call graph for a function.
 
         Shows callers (functions that call this one), callees (functions this one calls), or both.
@@ -275,33 +273,34 @@ public class AnalysisService {
 
         String dir = (direction == null || direction.isEmpty()) ? "both" : direction.toLowerCase();
 
-        JsonBuilder builder = JsonBuilder.object()
-                .put("function", targetFunc.getName())
-                .put("entryPoint", targetFunc.getEntryPoint().toString())
-                .put("depth", depth)
-                .put("direction", dir);
+        List<CallGraphResult.CallGraphNode> callerNodes = null;
+        List<CallGraphResult.CallGraphNode> calleeNodes = null;
 
         if ("callers".equals(dir) || "both".equals(dir)) {
             Set<Function> visited = new HashSet<>();
-            JsonBuilder.JsonArrayBuilder callersArray = JsonBuilder.array();
-            buildCallerHierarchyJson(targetFunc, callersArray, visited, 0, depth);
-            builder.putArray("callers", callersArray);
+            callerNodes = buildCallerHierarchy(targetFunc, visited, 0, depth);
         }
 
         if ("callees".equals(dir) || "both".equals(dir)) {
             Set<Function> visited = new HashSet<>();
-            JsonBuilder.JsonArrayBuilder calleesArray = JsonBuilder.array();
-            buildCallGraphJson(targetFunc, calleesArray, visited, 0, depth);
-            builder.putArray("callees", calleesArray);
+            calleeNodes = buildCalleeHierarchy(targetFunc, visited, 0, depth);
         }
 
-        return new JsonOutput(builder.build());
+        CallGraphResult result = new CallGraphResult(
+                targetFunc.getName(),
+                targetFunc.getEntryPoint().toString(),
+                depth,
+                dir,
+                callerNodes,
+                calleeNodes);
+        return new JsonOutput(result);
     }
 
-    /** Build callees hierarchy into a JsonArrayBuilder. */
-    private void buildCallGraphJson(Function func, JsonBuilder.JsonArrayBuilder array,
+    /** Build callees hierarchy and return as a list of CallGraphNode records. */
+    private List<CallGraphResult.CallGraphNode> buildCalleeHierarchy(Function func,
                                      Set<Function> visited, int currentDepth, int maxDepth) {
-        if (visited.contains(func) || currentDepth >= maxDepth) return;
+        List<CallGraphResult.CallGraphNode> nodes = new ArrayList<>();
+        if (visited.contains(func) || currentDepth >= maxDepth) return nodes;
         visited.add(func);
 
         Set<Function> calledFunctions = new HashSet<>();
@@ -321,20 +320,21 @@ public class AnalysisService {
         sorted.sort(Comparator.comparing(Function::getName));
 
         for (Function calledFunc : sorted) {
-            JsonBuilder.JsonArrayBuilder childCallees = JsonBuilder.array();
-            buildCallGraphJson(calledFunc, childCallees, visited, currentDepth + 1, maxDepth);
-            array.addRaw(JsonBuilder.object()
-                    .put("name", calledFunc.getName())
-                    .put("address", calledFunc.getEntryPoint().toString())
-                    .putArray("callees", childCallees)
-                    .build());
+            List<CallGraphResult.CallGraphNode> childCallees = buildCalleeHierarchy(calledFunc, visited, currentDepth + 1, maxDepth);
+            nodes.add(new CallGraphResult.CallGraphNode(
+                    calledFunc.getName(),
+                    calledFunc.getEntryPoint().toString(),
+                    null,
+                    childCallees));
         }
+        return nodes;
     }
 
-    /** Build callers hierarchy into a JsonArrayBuilder. */
-    private void buildCallerHierarchyJson(Function func, JsonBuilder.JsonArrayBuilder array,
+    /** Build callers hierarchy and return as a list of CallGraphNode records. */
+    private List<CallGraphResult.CallGraphNode> buildCallerHierarchy(Function func,
                                            Set<Function> visited, int currentDepth, int maxDepth) {
-        if (visited.contains(func) || currentDepth >= maxDepth) return;
+        List<CallGraphResult.CallGraphNode> nodes = new ArrayList<>();
+        if (visited.contains(func) || currentDepth >= maxDepth) return nodes;
         visited.add(func);
 
         Set<Function> callers = new HashSet<>();
@@ -350,14 +350,14 @@ public class AnalysisService {
         sorted.sort(Comparator.comparing(Function::getName));
 
         for (Function caller : sorted) {
-            JsonBuilder.JsonArrayBuilder childCallers = JsonBuilder.array();
-            buildCallerHierarchyJson(caller, childCallers, visited, currentDepth + 1, maxDepth);
-            array.addRaw(JsonBuilder.object()
-                    .put("name", caller.getName())
-                    .put("address", caller.getEntryPoint().toString())
-                    .putArray("callers", childCallers)
-                    .build());
+            List<CallGraphResult.CallGraphNode> childCallers = buildCallerHierarchy(caller, visited, currentDepth + 1, maxDepth);
+            nodes.add(new CallGraphResult.CallGraphNode(
+                    caller.getName(),
+                    caller.getEntryPoint().toString(),
+                    childCallers,
+                    null));
         }
+        return nodes;
     }
 
     @McpTool(description = """
@@ -368,7 +368,7 @@ public class AnalysisService {
         Returns: References with source address, type, and containing function
 
         Example: list_references("00401000") -> ['00400f50 -> 00401000 (from CALL in main)', ...] """,
-        outputType = ListOutput.class)
+        outputType = ListOutput.class, responseType = ReferenceToItem.class)
     public ToolOutput listReferences(
             @Param("Target address (e.g., \"00401000\" or \"ram:00401000\")") String address,
             @Param(value = "Starting index for pagination (0-based)", defaultValue = "0") int offset,
@@ -377,7 +377,7 @@ public class AnalysisService {
         if (program == null) return StatusOutput.error("No program loaded");
         if (address == null) return StatusOutput.error("Address or name is required");
 
-        List<String> refs = new ArrayList<>();
+        List<ReferenceToItem> refs = new ArrayList<>();
         try {
             // Try to get the address directly first (if addressStr is a hex address)
             Address addr = program.getAddressFactory().getAddress(address);
@@ -401,25 +401,24 @@ public class AnalysisService {
                 Function func = program.getFunctionManager().getFunctionContaining(fromAddr);
                 String funcName = func != null ? func.getName() : "not in function";
 
-                refs.add(JsonBuilder.object()
-                        .put("from", fromAddr.toString())
-                        .put("to", addr.toString())
-                        .put("type", refType.getName())
-                        .put("function", funcName)
-                        .build());
+                refs.add(new ReferenceToItem(
+                        fromAddr.toString(),
+                        addr.toString(),
+                        refType.getName(),
+                        funcName));
             }
 
             if (refs.isEmpty()) {
                 return StatusOutput.error("No references found to " + address);
             }
 
-            Collections.sort(refs);
+            refs.sort(Comparator.comparing(ReferenceToItem::from));
             return ListOutput.paginate(refs, offset, limit);
         } catch (Exception e) {
             return StatusOutput.error("Error getting references: " + e.getMessage());
         }
     }
-    
+
     @McpTool(description = """
         List all references FROM a specific address.
 
@@ -430,7 +429,7 @@ public class AnalysisService {
         Note: Complements list_references which shows references TO an address.
 
         Example: list_references_from("main") -> "00401000 -> 00401234 (strlen) [CALL]" """,
-        outputType = ListOutput.class)
+        outputType = ListOutput.class, responseType = ReferenceFromItem.class)
     public ToolOutput listReferencesFrom(
             @Param("Source address or symbol name (e.g., \"00401000\" or \"main\")") String address,
             @Param(value = "Starting index for pagination (default: 0)", defaultValue = "0") int offset,
@@ -439,7 +438,7 @@ public class AnalysisService {
         if (program == null) return StatusOutput.error("No program loaded");
         if (address == null) return StatusOutput.error("Address or name is required");
 
-        List<String> refs = new ArrayList<>();
+        List<ReferenceFromItem> refs = new ArrayList<>();
         try {
             // Try to get the address directly first (if addressStr is a hex address)
             Address addr = program.getAddressFactory().getAddress(address);
@@ -466,20 +465,19 @@ public class AnalysisService {
                 Function func = program.getFunctionManager().getFunctionContaining(toAddr);
                 String funcName = func != null ? func.getName() : "not in function";
 
-                refs.add(JsonBuilder.object()
-                        .put("from", addr.toString())
-                        .put("to", toAddr.toString())
-                        .put("destination", destName)
-                        .put("type", refType.getName())
-                        .put("function", funcName)
-                        .build());
+                refs.add(new ReferenceFromItem(
+                        addr.toString(),
+                        toAddr.toString(),
+                        destName,
+                        refType.getName(),
+                        funcName));
             }
 
             if (refs.isEmpty()) {
                 return StatusOutput.error("No references found from " + address);
             }
 
-            Collections.sort(refs);
+            refs.sort(Comparator.comparing(ReferenceFromItem::from));
             return ListOutput.paginate(refs, offset, limit);
         } catch (Exception e) {
             return StatusOutput.error("Error getting references from: " + e.getMessage());

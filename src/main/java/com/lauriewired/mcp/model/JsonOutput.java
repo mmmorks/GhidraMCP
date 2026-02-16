@@ -1,13 +1,20 @@
 package com.lauriewired.mcp.model;
 
+import com.lauriewired.mcp.utils.Json;
+
 /**
- * Output for tools that return already-structured JSON (e.g., VariableService methods).
+ * Output for tools that return structured data via record objects.
+ * The data object is serialized to JSON via Jackson.
  */
-public record JsonOutput(String rawJson) implements ToolOutput {
+public record JsonOutput(Object data) implements ToolOutput {
 
     @Override
     public String toStructuredJson() {
-        return rawJson;
+        if (data instanceof String s) {
+            // Legacy support: if data is already a JSON string, return as-is
+            return s;
+        }
+        return Json.serialize(data);
     }
 
 }

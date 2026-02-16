@@ -9,7 +9,8 @@ import com.lauriewired.mcp.model.JsonOutput;
 import com.lauriewired.mcp.model.ListOutput;
 import com.lauriewired.mcp.model.StatusOutput;
 import com.lauriewired.mcp.model.ToolOutput;
-import com.lauriewired.mcp.utils.JsonBuilder;
+import com.lauriewired.mcp.model.response.SymbolAddressResult;
+import com.lauriewired.mcp.model.response.SymbolItem;
 
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.symbol.Symbol;
@@ -39,24 +40,21 @@ public class NamespaceService {
         Returns: Symbols with addresses in format "symbol_name -> address"
 
         Example: list_symbols(0, 5) -> ['main -> 00401000', 'gVar1 -> 00410010', ...] """,
-        outputType = ListOutput.class)
+        outputType = ListOutput.class, responseType = SymbolItem.class)
     public ToolOutput listSymbols(
             @Param(value = "Starting index for pagination (0-based)", defaultValue = "0") int offset,
             @Param(value = "Maximum symbols to return", defaultValue = "100") int limit) {
         Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
 
-        List<String> items = new ArrayList<>();
+        List<SymbolItem> items = new ArrayList<>();
         for (Symbol symbol : program.getSymbolTable().getAllSymbols(false)) {
-            items.add(JsonBuilder.object()
-                    .put("name", symbol.getName())
-                    .put("address", symbol.getAddress().toString())
-                    .build());
+            items.add(new SymbolItem(symbol.getName(), symbol.getAddress().toString()));
         }
         return ListOutput.paginate(items, offset, limit);
     }
-    
-    @McpTool(outputType = JsonOutput.class, description = """
+
+    @McpTool(outputType = JsonOutput.class, responseType = SymbolAddressResult.class, description = """
         Get the memory address of a named symbol in the program.
 
         Looks up symbols (functions, variables, labels) by name in the symbol table.
@@ -77,11 +75,7 @@ public class NamespaceService {
 
         if (symbolIterator.hasNext()) {
             Symbol symbol = symbolIterator.next();
-            String json = JsonBuilder.object()
-                    .put("symbol", symbolName)
-                    .put("address", symbol.getAddress().toString())
-                    .build();
-            return new JsonOutput(json);
+            return new JsonOutput(new SymbolAddressResult(symbolName, symbol.getAddress().toString()));
         } else {
             return StatusOutput.error("Symbol not found");
         }

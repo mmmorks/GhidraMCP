@@ -133,63 +133,66 @@ class ParamTypeTest {
     }
 
     // =========================================================================
-    // toJsonSchemaFragment tests
+    // toJsonSchemaMap tests
     // =========================================================================
 
     @Test
-    void testToJsonSchemaFragment_String() {
-        String fragment = ParamType.STRING.toJsonSchemaFragment("name", "A name", true, null);
-        assertTrue(fragment.contains("\"name\""));
-        assertTrue(fragment.contains("\"type\": \"string\""));
-        assertTrue(fragment.contains("\"description\": \"A name\""));
+    void testToJsonSchemaMap_String() {
+        var schema = ParamType.STRING.toJsonSchemaMap("A name", true, null);
+        assertEquals("string", schema.get("type"));
+        assertEquals("A name", schema.get("description"));
     }
 
     @Test
-    void testToJsonSchemaFragment_IntegerWithDefault() {
-        String fragment = ParamType.INTEGER.toJsonSchemaFragment("offset", "Start", false, "0");
-        assertTrue(fragment.contains("\"type\": \"integer\""));
-        assertTrue(fragment.contains("\"default\": 0"));
+    void testToJsonSchemaMap_IntegerWithDefault() {
+        var schema = ParamType.INTEGER.toJsonSchemaMap("Start", false, "0");
+        assertEquals("integer", schema.get("type"));
+        assertEquals(0L, schema.get("default"));
     }
 
     @Test
-    void testToJsonSchemaFragment_Long() {
-        String fragment = ParamType.LONG.toJsonSchemaFragment("value", "Numeric value", true, null);
-        assertTrue(fragment.contains("\"type\": \"integer\""));
-        assertTrue(fragment.contains("\"description\": \"Numeric value\""));
+    void testToJsonSchemaMap_Long() {
+        var schema = ParamType.LONG.toJsonSchemaMap("Numeric value", true, null);
+        assertEquals("integer", schema.get("type"));
+        assertEquals("Numeric value", schema.get("description"));
     }
 
     @Test
-    void testToJsonSchemaFragment_LongWithDefault() {
-        String fragment = ParamType.LONG.toJsonSchemaFragment("amount", "Amount", false, "100");
-        assertTrue(fragment.contains("\"type\": \"integer\""));
-        assertTrue(fragment.contains("\"default\": 100"));
+    void testToJsonSchemaMap_LongWithDefault() {
+        var schema = ParamType.LONG.toJsonSchemaMap("Amount", false, "100");
+        assertEquals("integer", schema.get("type"));
+        assertEquals(100L, schema.get("default"));
     }
 
     @Test
-    void testToJsonSchemaFragment_BooleanWithDefault() {
-        String fragment = ParamType.BOOLEAN.toJsonSchemaFragment("flag", "A flag", false, "true");
-        assertTrue(fragment.contains("\"type\": \"boolean\""));
-        assertTrue(fragment.contains("\"default\": true"));
+    void testToJsonSchemaMap_BooleanWithDefault() {
+        var schema = ParamType.BOOLEAN.toJsonSchemaMap("A flag", false, "true");
+        assertEquals("boolean", schema.get("type"));
+        assertEquals(true, schema.get("default"));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void testToJsonSchemaMap_StringMap() {
+        var schema = ParamType.STRING_MAP.toJsonSchemaMap("Renames", true, null);
+        assertEquals("object", schema.get("type"));
+        var addlProps = (Map<String, Object>) schema.get("additionalProperties");
+        assertEquals("string", addlProps.get("type"));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void testToJsonSchemaMap_LongMap() {
+        var schema = ParamType.LONG_MAP.toJsonSchemaMap("Values", true, null);
+        assertEquals("object", schema.get("type"));
+        var addlProps = (Map<String, Object>) schema.get("additionalProperties");
+        assertEquals("integer", addlProps.get("type"));
     }
 
     @Test
-    void testToJsonSchemaFragment_StringMap() {
-        String fragment = ParamType.STRING_MAP.toJsonSchemaFragment("renames", "Renames", true, null);
-        assertTrue(fragment.contains("\"type\": \"object\""));
-        assertTrue(fragment.contains("\"additionalProperties\": {\"type\": \"string\"}"));
-    }
-
-    @Test
-    void testToJsonSchemaFragment_LongMap() {
-        String fragment = ParamType.LONG_MAP.toJsonSchemaFragment("values", "Values", true, null);
-        assertTrue(fragment.contains("\"type\": \"object\""));
-        assertTrue(fragment.contains("\"additionalProperties\": {\"type\": \"integer\"}"));
-    }
-
-    @Test
-    void testToJsonSchemaFragment_StringPairList() {
-        String fragment = ParamType.STRING_PAIR_LIST.toJsonSchemaFragment("fields", "Fields", false, null);
-        assertTrue(fragment.contains("\"type\": \"array\""));
-        assertTrue(fragment.contains("\"items\":"));
+    void testToJsonSchemaMap_StringPairList() {
+        var schema = ParamType.STRING_PAIR_LIST.toJsonSchemaMap("Fields", false, null);
+        assertEquals("array", schema.get("type"));
+        assertTrue(schema.containsKey("items"));
     }
 }

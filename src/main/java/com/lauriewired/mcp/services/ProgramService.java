@@ -4,7 +4,7 @@ import com.lauriewired.mcp.api.McpTool;
 import com.lauriewired.mcp.model.JsonOutput;
 import com.lauriewired.mcp.model.StatusOutput;
 import com.lauriewired.mcp.model.ToolOutput;
-import com.lauriewired.mcp.utils.JsonBuilder;
+import com.lauriewired.mcp.model.response.ProgramInfoResult;
 
 import ghidra.app.services.ProgramManager;
 import ghidra.framework.plugintool.PluginTool;
@@ -19,7 +19,7 @@ public class ProgramService {
 
     /**
      * Creates a new ProgramService
-     * 
+     *
      * @param tool the plugin tool from Ghidra
      */
     public ProgramService(PluginTool tool) {
@@ -28,7 +28,7 @@ public class ProgramService {
 
     /**
      * Gets the currently active program in Ghidra
-     * 
+     *
      * @return the current program or null if none is loaded
      */
     public Program getCurrentProgram() {
@@ -40,7 +40,7 @@ public class ProgramService {
         return pm != null ? pm.getCurrentProgram() : null;
     }
 
-    @McpTool(outputType = JsonOutput.class, description = """
+    @McpTool(outputType = JsonOutput.class, responseType = ProgramInfoResult.class, description = """
         Get metadata about the currently loaded binary.
 
         Returns architecture, endianness, file format, base address, entry point,
@@ -58,22 +58,19 @@ public class ProgramService {
         AddressIterator entryPoints = program.getSymbolTable().getExternalEntryPointIterator();
         String entryPoint = entryPoints.hasNext() ? entryPoints.next().toString() : null;
 
-        String json = JsonBuilder.object()
-                .put("name", program.getName())
-                .put("format", program.getExecutableFormat())
-                .put("processor", program.getLanguage().getProcessor().toString())
-                .put("architecture", program.getLanguageID().toString())
-                .put("endian", program.getLanguage().getLanguageDescription().getEndian().toString())
-                .put("addressSize", program.getLanguage().getLanguageDescription().getSize())
-                .put("compiler", program.getCompilerSpec().getCompilerSpecID().toString())
-                .put("imageBase", program.getImageBase().toString())
-                .put("minAddress", program.getMinAddress().toString())
-                .put("maxAddress", program.getMaxAddress().toString())
-                .putIfNotNull("entryPoint", entryPoint)
-                .put("functionCount", program.getFunctionManager().getFunctionCount())
-                .put("symbolCount", program.getSymbolTable().getNumSymbols())
-                .build();
-
-        return new JsonOutput(json);
+        return new JsonOutput(new ProgramInfoResult(
+                program.getName(),
+                program.getExecutableFormat(),
+                program.getLanguage().getProcessor().toString(),
+                program.getLanguageID().toString(),
+                program.getLanguage().getLanguageDescription().getEndian().toString(),
+                program.getLanguage().getLanguageDescription().getSize(),
+                program.getCompilerSpec().getCompilerSpecID().toString(),
+                program.getImageBase().toString(),
+                program.getMinAddress().toString(),
+                program.getMaxAddress().toString(),
+                entryPoint,
+                program.getFunctionManager().getFunctionCount(),
+                program.getSymbolTable().getNumSymbols()));
     }
 }

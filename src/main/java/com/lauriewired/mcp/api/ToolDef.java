@@ -9,6 +9,7 @@ import java.util.Map;
 
 import com.lauriewired.mcp.model.ToolOutput;
 import com.lauriewired.mcp.utils.HttpUtils;
+import com.lauriewired.mcp.utils.Json;
 import com.sun.net.httpserver.HttpExchange;
 
 /**
@@ -22,13 +23,15 @@ public class ToolDef {
     private final List<ToolParamDef> params;
     private final boolean hasComplexTypes;  // true if any param is a Map or List type
     private final Class<? extends ToolOutput> outputType;
+    private final Class<?> responseType;    // response record type for schema generation
 
     private ToolDef(String name, String rawDescription, boolean post, List<ToolParamDef> params,
-                    Class<? extends ToolOutput> outputType) {
+                    Class<? extends ToolOutput> outputType, Class<?> responseType) {
         this.name = name;
         this.post = post;
         this.params = params;
         this.outputType = outputType;
+        this.responseType = responseType;
         this.hasComplexTypes = params.stream().anyMatch(p ->
             p.type() == ParamType.STRING_MAP || p.type() == ParamType.LONG_MAP || p.type() == ParamType.STRING_PAIR_LIST);
         this.description = buildFullDescription(rawDescription, params);
@@ -59,7 +62,8 @@ public class ToolDef {
             paramDefs.add(new ToolParamDef(paramName, paramType, required, defaultValue, paramAnn.value()));
         }
 
-        return new ToolDef(toolName, annotation.description(), annotation.post(), paramDefs, annotation.outputType());
+        return new ToolDef(toolName, annotation.description(), annotation.post(), paramDefs,
+            annotation.outputType(), annotation.responseType());
     }
 
     /**
@@ -148,52 +152,56 @@ public class ToolDef {
      * Generate JSON for the /mcp/tools listing (one tool entry).
      */
     public String toToolJson() {
-        StringBuilder sb = new StringBuilder();
-        sb.append("{");
-        sb.append("\"name\": \"").append(escapeJson(name)).append("\"");
-        sb.append(", \"description\": \"").append(escapeJson(description)).append("\"");
-        sb.append(", \"method\": \"").append(post ? "POST" : "GET").append("\"");
-        sb.append(", \"inputSchema\": ").append(toInputSchemaJson());
-        sb.append(", \"outputSchema\": ").append(ToolOutput.schemaFor(outputType));
-        sb.append("}");
-        return sb.toString();
+        Map<String, Object> tool = new LinkedHashMap<>();
+        tool.put("name", name);
+        tool.put("description", description);
+        tool.put("method", post ? "POST" : "GET");
+        tool.put("inputSchema", buildInputSchemaMap());
+
+        String schema = SchemaGenerator.generateSchema(responseType, outputType);
+        if (schema != null) {
+            try {
+                tool.put("outputSchema", Json.mapper().readValue(schema, Object.class));
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to parse generated schema for tool: " + name, e);
+            }
+        }
+
+        return Json.serialize(tool);
+    }
+
+    /**
+     * Build the input schema as a Map for Jackson serialization.
+     */
+    private Map<String, Object> buildInputSchemaMap() {
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("type", "object");
+
+        if (!params.isEmpty()) {
+            Map<String, Object> properties = new LinkedHashMap<>();
+            for (ToolParamDef p : params) {
+                properties.put(p.name(), p.type().toJsonSchemaMap(p.description(), p.required(),
+                    p.defaultValue() != null ? String.valueOf(p.defaultValue()) : null));
+            }
+            schema.put("properties", properties);
+
+            List<String> required = params.stream()
+                .filter(ToolParamDef::required)
+                .map(ToolParamDef::name)
+                .toList();
+            if (!required.isEmpty()) {
+                schema.put("required", required);
+            }
+        }
+
+        return schema;
     }
 
     /**
      * Generate JSON Schema for this tool's input parameters.
      */
     public String toInputSchemaJson() {
-        StringBuilder sb = new StringBuilder();
-        sb.append("{\"type\": \"object\"");
-
-        if (!params.isEmpty()) {
-            sb.append(", \"properties\": {");
-            boolean first = true;
-            for (ToolParamDef p : params) {
-                if (!first) sb.append(", ");
-                sb.append(p.type().toJsonSchemaFragment(p.name(), p.description(), p.required(),
-                    p.defaultValue() != null ? String.valueOf(p.defaultValue()) : null));
-                first = false;
-            }
-            sb.append("}");
-
-            // Required array
-            List<String> required = params.stream()
-                .filter(ToolParamDef::required)
-                .map(ToolParamDef::name)
-                .toList();
-            if (!required.isEmpty()) {
-                sb.append(", \"required\": [");
-                for (int i = 0; i < required.size(); i++) {
-                    if (i > 0) sb.append(", ");
-                    sb.append("\"").append(required.get(i)).append("\"");
-                }
-                sb.append("]");
-            }
-        }
-
-        sb.append("}");
-        return sb.toString();
+        return Json.serialize(buildInputSchemaMap());
     }
 
     public String getName() { return name; }
@@ -239,14 +247,5 @@ public class ToolDef {
             case BOOLEAN -> Boolean.parseBoolean(defaultStr);
             default -> defaultStr;
         };
-    }
-
-    private static String escapeJson(String s) {
-        if (s == null) return "";
-        return s.replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t");
     }
 }

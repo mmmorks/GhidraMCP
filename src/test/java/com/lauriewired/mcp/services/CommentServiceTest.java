@@ -124,14 +124,14 @@ public class CommentServiceTest {
     @DisplayName("getComment returns error when no program is loaded")
     void testGetComment_NoProgram() {
         String result = commentService.getComment("0x1000").toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
     @DisplayName("getComment returns error for null address")
     void testGetComment_NullAddress() {
         String result = commentService.getComment(null).toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test

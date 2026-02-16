@@ -318,7 +318,7 @@ public class ApiEndpointIntegrationTest {
         verify(mockServer).createContext(eq("/rename_variables"), handlerCaptor.capture());
         HttpHandler handler = handlerCaptor.getValue();
 
-        String jsonBody = "{\"function_identifier\": \"main\", \"renames\": {\"local_10\": \"buffer\", \"local_14\": \"size\"}}";
+        String jsonBody = "{\"function_identifier\":\"main\", \"renames\":{\"local_10\":\"buffer\", \"local_14\":\"size\"}}";
         ByteArrayInputStream inputStream = new ByteArrayInputStream(jsonBody.getBytes());
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
 
@@ -335,7 +335,7 @@ public class ApiEndpointIntegrationTest {
         expectedRenames.put("local_14", "size");
 
         when(mockVariableService.renameVariables("main", expectedRenames))
-            .thenReturn(new JsonOutput("{\"status\": \"success\", \"renamed\": 2}"));
+            .thenReturn(new JsonOutput("{\"status\":\"success\", \"renamed\":2}"));
 
         handler.handle(mockExchange);
 

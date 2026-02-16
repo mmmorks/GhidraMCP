@@ -1,6 +1,6 @@
 package com.lauriewired.mcp.model;
 
-import com.lauriewired.mcp.utils.HttpUtils;
+import com.lauriewired.mcp.utils.Json;
 
 /**
  * Output for mutation operations that return success/failure status.
@@ -19,7 +19,7 @@ public record StatusOutput(boolean success, String message) implements ToolOutpu
 
     @Override
     public String toStructuredJson() {
-        return "{\"success\": " + success + ", \"message\": \"" + HttpUtils.escapeJson(message) + "\"}";
+        return Json.serialize(this);
     }
 
 }

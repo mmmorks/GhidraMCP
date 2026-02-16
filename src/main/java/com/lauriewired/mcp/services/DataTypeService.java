@@ -19,8 +19,11 @@ import com.lauriewired.mcp.model.JsonOutput;
 import com.lauriewired.mcp.model.ListOutput;
 import com.lauriewired.mcp.model.StatusOutput;
 import com.lauriewired.mcp.model.ToolOutput;
+import com.lauriewired.mcp.model.response.DataTypeDetailResult;
+import com.lauriewired.mcp.model.response.DataTypeItem;
+import com.lauriewired.mcp.model.response.DataTypeUsageItem;
+import com.lauriewired.mcp.model.response.UpdateResult;
 import com.lauriewired.mcp.utils.HttpUtils;
-import com.lauriewired.mcp.utils.JsonBuilder;
 import com.lauriewired.mcp.utils.ProgramTransaction;
 
 import ghidra.program.model.data.Array;
@@ -52,7 +55,7 @@ import ghidra.util.UniversalID;
  */
 public class DataTypeService {
     private final ProgramService programService;
-    
+
     // Pattern to match array syntax like "type[size]"
     private static final Pattern ARRAY_PATTERN = Pattern.compile("^(.+?)\\[([0-9]+)\\]$");
 
@@ -97,11 +100,11 @@ public class DataTypeService {
             sb.append("}");
             lines.add(sb.toString());
         }
-        
+
         return HttpUtils.paginateList(lines, offset, limit);
     }
 
-    @McpTool(post = true, outputType = JsonOutput.class, description = """
+    @McpTool(post = true, outputType = JsonOutput.class, responseType = UpdateResult.class, description = """
         Bulk update a structure: rename fields, change field types, resize, and/or rename.
 
         All changes are applied in a single transaction with per-field error reporting.
@@ -256,26 +259,16 @@ public class DataTypeService {
 
             tx.commit();
 
-            JsonBuilder.JsonArrayBuilder resultsArray = JsonBuilder.array();
-            for (String r : results) {
-                resultsArray.addString(r);
-            }
-
-            String json = JsonBuilder.object()
-                    .put("name", name)
-                    .putArray("results", resultsArray)
-                    .putObject("summary", JsonBuilder.object()
-                            .put("succeeded", succeeded)
-                            .put("failed", failed))
-                    .build();
-            return new JsonOutput(json);
+            UpdateResult result = new UpdateResult(name, results,
+                    new UpdateResult.Summary(succeeded, failed));
+            return new JsonOutput(result);
         } catch (Exception e) {
             Msg.error(this, "Error updating structure", e);
             return StatusOutput.error("Failed to update structure: " + e.getMessage());
         }
     }
 
-    @McpTool(post = true, outputType = JsonOutput.class, description = """
+    @McpTool(post = true, outputType = JsonOutput.class, responseType = UpdateResult.class, description = """
         Bulk update an enum: rename values, change numeric values, resize, and/or rename.
 
         All changes are applied in a single transaction with per-entry error reporting.
@@ -415,19 +408,9 @@ public class DataTypeService {
 
             tx.commit();
 
-            JsonBuilder.JsonArrayBuilder resultsArray = JsonBuilder.array();
-            for (String r : results) {
-                resultsArray.addString(r);
-            }
-
-            String json = JsonBuilder.object()
-                    .put("name", name)
-                    .putArray("results", resultsArray)
-                    .putObject("summary", JsonBuilder.object()
-                            .put("succeeded", succeeded)
-                            .put("failed", failed))
-                    .build();
-            return new JsonOutput(json);
+            UpdateResult result = new UpdateResult(name, results,
+                    new UpdateResult.Summary(succeeded, failed));
+            return new JsonOutput(result);
         } catch (Exception e) {
             Msg.error(this, "Error updating enum", e);
             return StatusOutput.error("Failed to update enum: " + e.getMessage());
@@ -486,17 +469,17 @@ public class DataTypeService {
         if (dtm == null || typeName == null || typeName.isEmpty()) {
             return null;
         }
-        
+
         // Try exact match first
         DataType result = searchByNameInAllCategories(dtm, typeName);
         if (result != null) {
             return result;
         }
-        
+
         // Try lowercase
         return searchByNameInAllCategories(dtm, typeName.toLowerCase());
     }
-    
+
     /**
      * Helper method to search for a data type by name in all categories
      */
@@ -505,7 +488,7 @@ public class DataTypeService {
         Iterator<DataType> allTypes = dtm.getAllDataTypes();
         while (allTypes.hasNext()) {
             DataType dt = allTypes.next();
-            // Check if the name matches exactly (case-sensitive) 
+            // Check if the name matches exactly (case-sensitive)
             if (dt.getName().equals(name)) {
                 return dt;
             }
@@ -529,19 +512,19 @@ public class DataTypeService {
         if (dtm == null || typeName == null || typeName.isEmpty()) {
             return null;
         }
-        
+
         // First try to find exact match in all categories
         DataType dataType = findDataTypeByNameInAllCategories(dtm, typeName);
         if (dataType != null) {
             return dataType;
         }
-        
+
         // Check for array syntax like "type[size]"
         Matcher arrayMatcher = ARRAY_PATTERN.matcher(typeName);
         if (arrayMatcher.matches()) {
             String baseTypeName = arrayMatcher.group(1);
             String sizeStr = arrayMatcher.group(2);
-            
+
             try {
                 int arraySize = Integer.parseInt(sizeStr);
                 if (arraySize > 0 && arraySize <= 1000000) { // Reasonable size limits
@@ -556,26 +539,26 @@ public class DataTypeService {
                 // Invalid array size format, fall through to other type resolution
             }
         }
-        
+
         // Check for Windows-style pointer types (PXXX)
         if (typeName.startsWith("P") && typeName.length() > 1) {
             String baseTypeName = typeName.substring(1);
-            
+
             // Special case for PVOID
             if (baseTypeName.equals("VOID")) {
                 return new ghidra.program.model.data.PointerDataType(dtm.getDataType("/void"));
             }
-            
+
             // Try to find the base type
             DataType baseType = findDataTypeByNameInAllCategories(dtm, baseTypeName);
             if (baseType != null) {
                 return new ghidra.program.model.data.PointerDataType(baseType);
             }
-            
+
             // Base type not found, fall back to void*
             return new ghidra.program.model.data.PointerDataType(dtm.getDataType("/void"));
         }
-        
+
         // Handle common built-in types
         switch (typeName.toLowerCase()) {
             case "int", "long" -> {
@@ -614,7 +597,7 @@ public class DataTypeService {
                 if (directType != null) {
                     return directType;
                 }
-                
+
                 // Could not resolve type
                 return null;
             }
@@ -634,7 +617,7 @@ public class DataTypeService {
         return (result instanceof StatusOutput s) ? s.message() : result.toStructuredJson();
     }
 
-    @McpTool(post = true, outputType = StatusOutput.class, description = """
+    @McpTool(post = true, outputType = StatusOutput.class, responseType = StatusOutput.class, description = """
         Create a new structure data type in Ghidra, optionally with inline fields.
 
         Creates a structure with the specified name, and when fields are provided,
@@ -702,7 +685,7 @@ public class DataTypeService {
         }
     }
 
-    @McpTool(post = true, outputType = StatusOutput.class, description = """
+    @McpTool(post = true, outputType = StatusOutput.class, responseType = StatusOutput.class, description = """
         Add a field to an existing structure.
 
         Adds a new field with specified type at given offset or appends to end.
@@ -768,7 +751,7 @@ public class DataTypeService {
         return (result instanceof StatusOutput s) ? s.message() : result.toStructuredJson();
     }
 
-    @McpTool(post = true, outputType = StatusOutput.class, description = """
+    @McpTool(post = true, outputType = StatusOutput.class, responseType = StatusOutput.class, description = """
         Create a new enum data type in Ghidra, optionally with inline values.
 
         Creates an enumeration with the specified name, and when values are provided,
@@ -832,7 +815,7 @@ public class DataTypeService {
         }
     }
 
-    @McpTool(post = true, outputType = StatusOutput.class, description = """
+    @McpTool(post = true, outputType = StatusOutput.class, responseType = StatusOutput.class, description = """
         Add a value to an existing enum.
 
         Adds a named constant with numeric value to the enumeration.
@@ -883,7 +866,7 @@ public class DataTypeService {
 
         ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
         List<Enum> enums = new ArrayList<>();
-        
+
         // Get all enums from the data type manager
         Iterator<DataType> allTypes = dtm.getAllDataTypes();
         while (allTypes.hasNext()) {
@@ -892,14 +875,14 @@ public class DataTypeService {
                 enums.add(enumDataType);
             }
         }
-        
+
         Collections.sort(enums, Comparator.comparing(Enum::getName));
-        
+
         List<String> lines = new ArrayList<>();
         for (Enum enumType : enums) {
             StringBuilder sb = new StringBuilder();
             sb.append(enumType.getName()).append(" (").append(enumType.getLength()).append(" bytes): {");
-            
+
             String[] names = enumType.getNames();
             for (int i = 0; i < names.length; i++) {
                 if (i > 0) sb.append(", ");
@@ -908,7 +891,7 @@ public class DataTypeService {
             sb.append("}");
             lines.add(sb.toString());
         }
-        
+
         return HttpUtils.paginateList(lines, offset, limit);
     }
 
@@ -922,9 +905,9 @@ public class DataTypeService {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
         if (structureName == null || structureName.isEmpty()) return "Structure name is required";
-        
+
         ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
-        
+
         // Find the structure by name
         DataType dataType = dtm.getDataType("/" + structureName);
         if (dataType == null) {
@@ -938,14 +921,14 @@ public class DataTypeService {
                 }
             }
         }
-        
+
         if (dataType == null || !(dataType instanceof Structure)) {
             return "Structure not found: " + structureName;
         }
-        
+
         Structure struct = (Structure) dataType;
         StringBuilder result = new StringBuilder();
-        
+
         // Structure header information
         result.append("Structure: ").append(struct.getName()).append("\n");
         result.append("Category: ").append(struct.getCategoryPath()).append("\n");
@@ -954,7 +937,7 @@ public class DataTypeService {
         result.append("Packed: ").append(struct.isPackingEnabled() ? "Yes" : "No").append("\n");
         result.append("Description: ").append(struct.getDescription() != null ? struct.getDescription() : "None").append("\n");
         result.append("\nFields:\n");
-        
+
         // List all fields
         DataTypeComponent[] components = struct.getComponents();
         if (components.length == 0) {
@@ -966,14 +949,14 @@ public class DataTypeService {
                     comp.getFieldName() != null ? comp.getFieldName() : "(unnamed)",
                     comp.getDataType().getName(),
                     comp.getLength()));
-                
+
                 if (comp.getComment() != null) {
                     result.append(" // ").append(comp.getComment());
                 }
                 result.append("\n");
             }
         }
-        
+
         // Show undefined components if any
         DataTypeComponent[] definedComponents = struct.getDefinedComponents();
         if (definedComponents.length < components.length) {
@@ -991,10 +974,10 @@ public class DataTypeService {
                     lastEnd, struct.getLength() - 1, struct.getLength() - lastEnd));
             }
         }
-        
+
         return result.toString();
     }
-    
+
     /**
      * Get detailed information about an enum including all values
      *
@@ -1005,9 +988,9 @@ public class DataTypeService {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
         if (enumName == null || enumName.isEmpty()) return "Enum name is required";
-        
+
         ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
-        
+
         // Find the enum by name
         DataType dataType = dtm.getDataType("/" + enumName);
         if (dataType == null) {
@@ -1021,21 +1004,21 @@ public class DataTypeService {
                 }
             }
         }
-        
+
         if (dataType == null || !(dataType instanceof Enum)) {
             return "Enum not found: " + enumName;
         }
-        
+
         Enum enumType = (Enum) dataType;
         StringBuilder result = new StringBuilder();
-        
+
         // Enum header information
         result.append("Enum: ").append(enumType.getName()).append("\n");
         result.append("Category: ").append(enumType.getCategoryPath()).append("\n");
         result.append("Size: ").append(enumType.getLength()).append(" bytes\n");
         result.append("Description: ").append(enumType.getDescription() != null ? enumType.getDescription() : "None").append("\n");
         result.append("\nValues:\n");
-        
+
         // List all values sorted by numeric value
         String[] names = enumType.getNames();
         List<Map.Entry<String, Long>> entries = new ArrayList<>();
@@ -1043,7 +1026,7 @@ public class DataTypeService {
             entries.add(Map.entry(name, enumType.getValue(name)));
         }
         entries.sort(Map.Entry.comparingByValue());
-        
+
         if (entries.isEmpty()) {
             result.append("  (no values defined)\n");
         } else {
@@ -1054,10 +1037,10 @@ public class DataTypeService {
                     entry.getValue()));
             }
         }
-        
+
         return result.toString();
     }
-    
+
     /**
      * List all fields of a structure
      *
@@ -1068,9 +1051,9 @@ public class DataTypeService {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
         if (structureName == null || structureName.isEmpty()) return "Structure name is required";
-        
+
         ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
-        
+
         // Find the structure by name
         DataType dataType = dtm.getDataType("/" + structureName);
         if (dataType == null) {
@@ -1084,18 +1067,18 @@ public class DataTypeService {
                 }
             }
         }
-        
+
         if (dataType == null || !(dataType instanceof Structure)) {
             return "Structure not found: " + structureName;
         }
-        
+
         Structure struct = (Structure) dataType;
         DataTypeComponent[] components = struct.getComponents();
-        
+
         if (components.length == 0) {
             return "Structure " + structureName + " has no fields defined";
         }
-        
+
         List<String> fields = new ArrayList<>();
         for (DataTypeComponent comp : components) {
             StringBuilder fieldInfo = new StringBuilder(String.format("Offset: 0x%04X, Name: %s, Type: %s, Size: %d bytes",
@@ -1110,11 +1093,11 @@ public class DataTypeService {
 
             fields.add(fieldInfo.toString());
         }
-        
+
         return String.join("\n", fields);
     }
 
-    @McpTool(outputType = ListOutput.class, description = """
+    @McpTool(outputType = ListOutput.class, responseType = DataTypeItem.class, description = """
         List data types (structures and/or enums) in the program with pagination.
 
         Returns: Data types with summary info, prefixed with [struct] or [enum]
@@ -1130,7 +1113,7 @@ public class DataTypeService {
         String normalizedKind = (kind == null || kind.isEmpty()) ? "all" : kind.toLowerCase();
 
         ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
-        List<String> items = new ArrayList<>();
+        List<DataTypeItem> items = new ArrayList<>();
 
         if ("all".equals(normalizedKind) || "struct".equals(normalizedKind)) {
             List<Structure> structs = new ArrayList<>();
@@ -1146,11 +1129,7 @@ public class DataTypeService {
                            .append(comp.getFieldName());
                 }
                 summary.append("}");
-                items.add(JsonBuilder.object()
-                        .put("kind", "struct")
-                        .put("name", struct.getName())
-                        .put("summary", summary.toString())
-                        .build());
+                items.add(new DataTypeItem("struct", struct.getName(), summary.toString(), null));
             }
         }
 
@@ -1172,19 +1151,14 @@ public class DataTypeService {
                     summary.append(names[i]).append("=").append(enumType.getValue(names[i]));
                 }
                 summary.append("}");
-                items.add(JsonBuilder.object()
-                        .put("kind", "enum")
-                        .put("name", enumType.getName())
-                        .put("size", enumType.getLength())
-                        .put("summary", summary.toString())
-                        .build());
+                items.add(new DataTypeItem("enum", enumType.getName(), summary.toString(), enumType.getLength()));
             }
         }
 
         return ListOutput.paginate(items, offset, limit);
     }
 
-    @McpTool(outputType = JsonOutput.class, description = """
+    @McpTool(outputType = JsonOutput.class, responseType = DataTypeDetailResult.class, description = """
         Get detailed information about a named data type (auto-detects struct vs enum).
 
         For structures: returns full field layout with offsets, types, sizes, and comments.
@@ -1206,43 +1180,42 @@ public class DataTypeService {
         }
 
         if (dataType instanceof Structure struct) {
-            return new JsonOutput(formatStructureJson(struct));
+            return new JsonOutput(formatStructureResult(struct));
         } else if (dataType instanceof Enum enumType) {
-            return new JsonOutput(formatEnumJson(enumType));
+            return new JsonOutput(formatEnumResult(enumType));
         } else {
-            String json = JsonBuilder.object()
-                    .put("kind", dataType.getClass().getSimpleName())
-                    .put("name", dataType.getName())
-                    .put("size", dataType.getLength())
-                    .putIfNotNull("description", dataType.getDescription())
-                    .build();
-            return new JsonOutput(json);
+            DataTypeDetailResult result = new DataTypeDetailResult(
+                    dataType.getClass().getSimpleName(),
+                    dataType.getName(),
+                    dataType.getLength(),
+                    dataType.getDescription(),
+                    null,
+                    null);
+            return new JsonOutput(result);
         }
     }
 
-    private String formatStructureJson(Structure struct) {
-        JsonBuilder.JsonArrayBuilder fieldsArray = JsonBuilder.array();
+    private DataTypeDetailResult formatStructureResult(Structure struct) {
+        List<DataTypeDetailResult.Field> fields = new ArrayList<>();
         for (DataTypeComponent comp : struct.getComponents()) {
-            JsonBuilder field = JsonBuilder.object()
-                    .put("offset", comp.getOffset())
-                    .put("name", comp.getFieldName() != null ? comp.getFieldName() : "(unnamed)")
-                    .put("type", comp.getDataType().getName())
-                    .put("size", comp.getLength());
-            if (comp.getComment() != null) {
-                field.put("comment", comp.getComment());
-            }
-            fieldsArray.addRaw(field.build());
+            fields.add(new DataTypeDetailResult.Field(
+                    comp.getOffset(),
+                    comp.getFieldName() != null ? comp.getFieldName() : "(unnamed)",
+                    comp.getDataType().getName(),
+                    comp.getLength(),
+                    comp.getComment()));
         }
 
-        return JsonBuilder.object()
-                .put("kind", "struct")
-                .put("name", struct.getName())
-                .put("size", struct.getLength())
-                .putArray("fields", fieldsArray)
-                .build();
+        return new DataTypeDetailResult(
+                "struct",
+                struct.getName(),
+                struct.getLength(),
+                null,
+                fields,
+                null);
     }
 
-    private String formatEnumJson(Enum enumType) {
+    private DataTypeDetailResult formatEnumResult(Enum enumType) {
         String[] names = enumType.getNames();
         List<Map.Entry<String, Long>> entries = new ArrayList<>();
         for (String n : names) {
@@ -1250,20 +1223,18 @@ public class DataTypeService {
         }
         entries.sort(Map.Entry.comparingByValue());
 
-        JsonBuilder.JsonArrayBuilder valuesArray = JsonBuilder.array();
+        List<DataTypeDetailResult.Value> values = new ArrayList<>();
         for (Map.Entry<String, Long> entry : entries) {
-            valuesArray.addRaw(JsonBuilder.object()
-                    .put("name", entry.getKey())
-                    .put("value", entry.getValue())
-                    .build());
+            values.add(new DataTypeDetailResult.Value(entry.getKey(), entry.getValue()));
         }
 
-        return JsonBuilder.object()
-                .put("kind", "enum")
-                .put("name", enumType.getName())
-                .put("size", enumType.getLength())
-                .putArray("values", valuesArray)
-                .build();
+        return new DataTypeDetailResult(
+                "enum",
+                enumType.getName(),
+                enumType.getLength(),
+                null,
+                null,
+                values);
     }
 
     /**
@@ -1312,7 +1283,7 @@ public class DataTypeService {
         return a.getClass().equals(b.getClass()) && a.getName().equals(b.getName());
     }
 
-    @McpTool(outputType = ListOutput.class, description = """
+    @McpTool(outputType = ListOutput.class, responseType = DataTypeUsageItem.class, description = """
         Find all locations where a data type is used in the program.
 
         Searches defined data items and function signatures (return types, parameters,
@@ -1362,7 +1333,7 @@ public class DataTypeService {
             fieldOffset = fieldComp.getOffset();
         }
 
-        List<String> results = new ArrayList<>();
+        List<DataTypeUsageItem> results = new ArrayList<>();
         Listing listing = program.getListing();
 
         // --- 1. Search defined data ---
@@ -1384,26 +1355,25 @@ public class DataTypeService {
                 // Check return type
                 DataType retBase = getBaseDataType(func.getReturnType());
                 if (dataTypesMatch(retBase, targetBase)) {
-                    results.add(JsonBuilder.object()
-                            .put("category", "Return type")
-                            .put("function", func.getName())
-                            .put("address", func.getEntryPoint().toString())
-                            .put("type", func.getReturnType().getName())
-                            .build());
+                    results.add(new DataTypeUsageItem(
+                            "Return type",
+                            func.getEntryPoint().toString(),
+                            null,
+                            func.getReturnType().getName(),
+                            func.getName()));
                 }
 
                 // Check all variables (parameters + locals)
                 for (Variable var : func.getAllVariables()) {
                     DataType varBase = getBaseDataType(var.getDataType());
                     if (dataTypesMatch(varBase, targetBase)) {
-                        String kind = (var instanceof Parameter) ? "Param" : "Local";
-                        results.add(JsonBuilder.object()
-                                .put("category", kind + " variable")
-                                .put("name", var.getName())
-                                .put("function", func.getName())
-                                .put("address", func.getEntryPoint().toString())
-                                .put("type", var.getDataType().getName())
-                                .build());
+                        String varKind = (var instanceof Parameter) ? "Param" : "Local";
+                        results.add(new DataTypeUsageItem(
+                                varKind + " variable",
+                                func.getEntryPoint().toString(),
+                                var.getName(),
+                                var.getDataType().getName(),
+                                func.getName()));
                     }
                 }
             }
@@ -1443,25 +1413,25 @@ public class DataTypeService {
      * mirroring Ghidra's native behaviour of reporting field-level addresses.
      * Skips individual array elements for performance (same optimisation Ghidra uses).
      *
-     * @param results     accumulator for result strings
+     * @param results     accumulator for result items
      * @param data        the data item to inspect
      * @param targetBase  the unwrapped target type to match against
      * @param fieldName   optional field name filter (null to match any)
      * @param fieldOffset byte offset of the field within the composite (-1 if no filter)
      */
-    private void collectDataTypeMatches(List<String> results, Data data,
+    private void collectDataTypeMatches(List<DataTypeUsageItem> results, Data data,
             DataType targetBase, String fieldName, int fieldOffset) {
         DataType base = getBaseDataType(data.getDataType());
 
         // Direct match at top level (only when not filtering by field)
         if (fieldOffset < 0 && dataTypesMatch(base, targetBase)) {
             String label = data.getLabel();
-            results.add(JsonBuilder.object()
-                    .put("category", "Data")
-                    .put("name", label != null ? label : "(unnamed)")
-                    .put("address", data.getMinAddress().toString())
-                    .put("type", data.getDataType().getName())
-                    .build());
+            results.add(new DataTypeUsageItem(
+                    "Data",
+                    data.getMinAddress().toString(),
+                    label != null ? label : "(unnamed)",
+                    data.getDataType().getName(),
+                    null));
             return;
         }
 
@@ -1494,12 +1464,12 @@ public class DataTypeService {
                 String childField = child.getFieldName();
                 String fieldDesc = childField != null ? childField : ("offset_0x" +
                         Integer.toHexString(child.getParentOffset()));
-                results.add(JsonBuilder.object()
-                        .put("category", "Data")
-                        .put("name", parentName + "." + fieldDesc)
-                        .put("address", child.getMinAddress().toString())
-                        .put("type", child.getDataType().getName())
-                        .build());
+                results.add(new DataTypeUsageItem(
+                        "Data",
+                        child.getMinAddress().toString(),
+                        parentName + "." + fieldDesc,
+                        child.getDataType().getName(),
+                        null));
             } else {
                 // Recurse deeper for nested composites
                 collectDataTypeMatches(results, child, targetBase, fieldName, fieldOffset);

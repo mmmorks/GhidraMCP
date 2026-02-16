@@ -5,7 +5,7 @@ import com.lauriewired.mcp.api.Param;
 import com.lauriewired.mcp.model.JsonOutput;
 import com.lauriewired.mcp.model.StatusOutput;
 import com.lauriewired.mcp.model.ToolOutput;
-import com.lauriewired.mcp.utils.JsonBuilder;
+import com.lauriewired.mcp.model.response.CommentResult;
 import com.lauriewired.mcp.utils.ProgramTransaction;
 
 import ghidra.program.model.address.Address;
@@ -18,7 +18,7 @@ import ghidra.util.Msg;
  */
 public class CommentService {
     private final ProgramService programService;
-    
+
     /**
      * Creates a new CommentService
      *
@@ -27,7 +27,7 @@ public class CommentService {
     public CommentService(ProgramService programService) {
         this.programService = programService;
     }
-    
+
     @McpTool(post = true, description = """
         Set a comment at an address.
 
@@ -39,7 +39,7 @@ public class CommentService {
             set_comment("00401010", "Initialize config", "decompiler")
             set_comment("00401010", "Save return address", "eol")
             set_comment("00401000", "--- Main Entry ---", "plate") """,
-        outputType = StatusOutput.class)
+        outputType = StatusOutput.class, responseType = StatusOutput.class)
     public ToolOutput setComment(
             @Param("Target address (e.g., \"00401000\" or \"ram:00401000\")") String address,
             @Param("Comment text to set") String comment,
@@ -64,12 +64,6 @@ public class CommentService {
 
     /**
      * Set a comment using the specified comment type constant
-     *
-     * @param addressStr address where the comment should be placed
-     * @param comment comment text
-     * @param commentType type of comment (CodeUnit.PRE_COMMENT, CodeUnit.EOL_COMMENT, etc.)
-     * @param transactionName name of the transaction for the program history
-     * @return true if successful
      */
     private boolean setCommentAtAddress(String addressStr, String comment, int commentType, String transactionName) {
         Program program = programService.getCurrentProgram();
@@ -86,8 +80,8 @@ public class CommentService {
             return false;
         }
     }
-    
-    @McpTool(outputType = JsonOutput.class, description = """
+
+    @McpTool(outputType = JsonOutput.class, responseType = CommentResult.class, description = """
         Get all comments at a specific address.
 
         Retrieves all comment types (pre/decompiler, post, eol/disassembly, plate, repeatable).
@@ -108,16 +102,14 @@ public class CommentService {
             CodeUnit codeUnit = program.getListing().getCodeUnitAt(addr);
             if (codeUnit == null) return StatusOutput.error("No code unit at address: " + address);
 
-            String json = JsonBuilder.object()
-                    .put("address", address)
-                    .putObject("comments", JsonBuilder.object()
-                            .put("pre", codeUnit.getComment(CodeUnit.PRE_COMMENT))
-                            .put("post", codeUnit.getComment(CodeUnit.POST_COMMENT))
-                            .put("eol", codeUnit.getComment(CodeUnit.EOL_COMMENT))
-                            .put("plate", codeUnit.getComment(CodeUnit.PLATE_COMMENT))
-                            .put("repeatable", codeUnit.getComment(CodeUnit.REPEATABLE_COMMENT)))
-                    .build();
-            return new JsonOutput(json);
+            return new JsonOutput(new CommentResult(
+                    address,
+                    new CommentResult.Comments(
+                            codeUnit.getComment(CodeUnit.PRE_COMMENT),
+                            codeUnit.getComment(CodeUnit.POST_COMMENT),
+                            codeUnit.getComment(CodeUnit.EOL_COMMENT),
+                            codeUnit.getComment(CodeUnit.PLATE_COMMENT),
+                            codeUnit.getComment(CodeUnit.REPEATABLE_COMMENT))));
         } catch (Exception e) {
             return StatusOutput.error("Error getting comments: " + e.getMessage());
         }

@@ -195,6 +195,6 @@ public class ProgramServiceTest {
     void testGetProgramInfo_NoProgram() {
         programService = new TestProgramService((MockablePluginTool) null);
         String result = programService.getProgramInfo().toStructuredJson();
-        assertTrue(result.contains("\"message\": \"No program loaded\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 }

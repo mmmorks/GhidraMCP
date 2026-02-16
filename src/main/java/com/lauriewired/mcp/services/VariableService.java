@@ -3,12 +3,14 @@ package com.lauriewired.mcp.services;
 import com.lauriewired.mcp.api.McpTool;
 import com.lauriewired.mcp.api.Param;
 import com.lauriewired.mcp.utils.GhidraUtils;
-import com.lauriewired.mcp.utils.HttpUtils;
 import com.lauriewired.mcp.utils.ProgramTransaction;
 import com.lauriewired.mcp.model.JsonOutput;
 import com.lauriewired.mcp.model.StatusOutput;
 import com.lauriewired.mcp.model.TextOutput;
 import com.lauriewired.mcp.model.ToolOutput;
+import com.lauriewired.mcp.model.response.RenameVariablesResult;
+import com.lauriewired.mcp.model.response.SetVariableTypesResult;
+import com.lauriewired.mcp.model.response.SplitVariableResult;
 import ghidra.app.decompiler.DecompInterface;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.data.AbstractIntegerDataType;
@@ -29,40 +31,16 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Spliterators;
-import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
 /**
  * Service for variable-related operations
  */
 public class VariableService {
-    // Variable information record for cleaner data handling
-    private record VariableInfo(String name, String dataType, String storage) {
-        VariableInfo(String name, String dataType) {
-            this(name, dataType, null);
-        }
-        
-        boolean hasStorage() {
-            return storage != null;
-        }
-        
-        String toJson() {
-            return String.format("""
-                {
-                  "name": "%s",
-                  "dataType": "%s"%s
-                }""",
-                HttpUtils.escapeJson(name),
-                HttpUtils.escapeJson(dataType),
-                hasStorage() ? 
-                    String.format(",\n      \"storage\": \"%s\"", HttpUtils.escapeJson(storage)) : ""
-            );
-        }
-    }
-    
     private final ProgramService programService;
     private final FunctionService functionService;
 
@@ -76,7 +54,7 @@ public class VariableService {
         this.programService = programService;
         this.functionService = functionService;
     }
-    
+
     @McpTool(post = true, description = """
         Batch rename local variables within a single function.
 
@@ -95,7 +73,7 @@ public class VariableService {
              from that point in the function onward, then rename it here.
 
         Example: rename_variables("main", {"local_10": "buffer_size", "param_1": "argc"}) """,
-        outputType = JsonOutput.class)
+        outputType = JsonOutput.class, responseType = RenameVariablesResult.class)
     public ToolOutput renameVariables(
             @Param("Function name (e.g., \"main\") or address (e.g., \"00401000\", \"ram:00401000\")") String functionIdentifier,
             @Param("Map of current variable names to new names") java.util.Map<String, String> renames) {
@@ -177,24 +155,11 @@ public class VariableService {
             return StatusOutput.error("Failed to rename variables (transaction rolled back): " + e.getMessage());
         }
 
-        // Build response
-        var renamed = renames.entrySet().stream()
-            .map(e -> String.format("    \"%s\": \"%s\"",
-                HttpUtils.escapeJson(e.getKey()), HttpUtils.escapeJson(e.getValue())))
-            .collect(Collectors.joining(",\n"));
-
-        return new JsonOutput(String.format("""
-            {
-              "status": "Variables renamed successfully",
-              "function": "%s",
-              "renamed": {
-            %s
-              },
-              "count": %d
-            }""",
-            HttpUtils.escapeJson(func.getName()),
-            renamed,
-            renames.size()));
+        return new JsonOutput(new RenameVariablesResult(
+                "Variables renamed successfully",
+                func.getName(),
+                new LinkedHashMap<>(renames),
+                renames.size()));
     }
 
     @McpTool(post = true, description = """
@@ -206,7 +171,7 @@ public class VariableService {
         Returns: Status of the split operation
 
         Example: split_variable("main", "local_10", "00401050", "loop_counter") """,
-        outputType = JsonOutput.class)
+        outputType = JsonOutput.class, responseType = SplitVariableResult.class)
     public ToolOutput splitVariable(
             @Param("Function name (e.g., \"main\") or address (e.g., \"00401000\", \"ram:00401000\")") String functionIdentifier,
             @Param("Current variable name to split") String variableName,
@@ -347,8 +312,8 @@ public class VariableService {
                 return StatusOutput.error("Variable renamed, but failed to get updated symbol map");
             }
 
-            // Convert symbols to VariableInfo records
-            List<VariableInfo> variables = new ArrayList<>();
+            // Convert symbols to VarInfo records
+            List<SplitVariableResult.VarInfo> variables = new ArrayList<>();
             updatedSymbolMap.getSymbols().forEachRemaining(symbol -> {
                 String symbolName = symbol.getName();
                 String dataTypeName = symbol.getDataType().getName();
@@ -359,7 +324,7 @@ public class VariableService {
                     storage = var.getSymbol().getStorage().toString();
                 }
 
-                variables.add(new VariableInfo(symbolName, dataTypeName, storage));
+                variables.add(new SplitVariableResult.VarInfo(symbolName, dataTypeName, storage));
             });
 
             // Re-decompile once more to get the updated code after renaming
@@ -374,32 +339,13 @@ public class VariableService {
                 decompiled = "Decompilation unavailable";
             }
 
-            // Create enhanced JSON response using text blocks
-            var variablesJson = variables.stream()
-                .map(VariableInfo::toJson)
-                .collect(Collectors.joining(",\n    "));
-
-            var splitAddressBlock = usageAddress != null && !usageAddress.isEmpty()
-                ? String.format("  \"splitAddress\": \"%s\",\n", HttpUtils.escapeJson(usageAddress))
-                : "";
-
-            var jsonResponse = String.format("""
-                {
-                  "status": "Variable split and renamed",
-                  "originalVariable": "%s",
-                  "newVariable": "%s",
-                %s  "variables": [
-                    %s
-                  ],
-                  "decompiled": "%s"
-                }""",
-                HttpUtils.escapeJson(variableName),
-                HttpUtils.escapeJson(resolvedName),
-                splitAddressBlock,
-                variablesJson,
-                HttpUtils.escapeJson(decompiled));
-
-            return new JsonOutput(jsonResponse);
+            return new JsonOutput(new SplitVariableResult(
+                    "Variable split and renamed",
+                    variableName,
+                    resolvedName,
+                    (usageAddress != null && !usageAddress.isEmpty()) ? usageAddress : null,
+                    variables,
+                    decompiled));
 
         } catch (Exception e) {
             String errorMsg = "Variable renamed, but failed to collect variable info: " + e.getMessage();
@@ -407,7 +353,7 @@ public class VariableService {
             return new TextOutput("Variable renamed");
         }
     }
-    
+
     /**
      * Set the data type of a local variable in a function
      *
@@ -486,7 +432,7 @@ public class VariableService {
             return false;
         }
     }
-    
+
     @McpTool(post = true, description = """
         Batch set data types for local variables in a function.
 
@@ -499,7 +445,7 @@ public class VariableService {
         Note: Supports built-in types, pointers, and structures. Windows-style types also supported.
 
         Example: set_variable_types("00401000", {"local_10": "int", "local_14": "char *"}) """,
-        outputType = JsonOutput.class)
+        outputType = JsonOutput.class, responseType = SetVariableTypesResult.class)
     public ToolOutput setVariableTypes(
             @Param("Function name (e.g., \"main\") or address (e.g., \"00401000\", \"ram:00401000\")") String functionIdentifier,
             @Param("Map of variable names to new data types") Map<String, String> types) {
@@ -554,24 +500,11 @@ public class VariableService {
                 return StatusOutput.error("Failed to set variable types (transaction rolled back): " + e.getMessage());
             }
 
-            // Build response
-            var applied = types.entrySet().stream()
-                .map(e -> String.format("    \"%s\": \"%s\"",
-                    HttpUtils.escapeJson(e.getKey()), HttpUtils.escapeJson(e.getValue())))
-                .collect(Collectors.joining(",\n"));
-
-            return new JsonOutput(String.format("""
-                {
-                  "status": "Variable types set successfully",
-                  "function": "%s",
-                  "applied": {
-                %s
-                  },
-                  "count": %d
-                }""",
-                HttpUtils.escapeJson(func.getName()),
-                applied,
-                types.size()));
+            return new JsonOutput(new SetVariableTypesResult(
+                    "Variable types set successfully",
+                    func.getName(),
+                    new LinkedHashMap<>(types),
+                    types.size()));
         } catch (Exception e) {
             Msg.error(this, "Error in batch set variable types", e);
             return StatusOutput.error("Error: " + e.getMessage());
@@ -580,7 +513,7 @@ public class VariableService {
 
     /**
      * Find an exact match for a varnode at the specified address
-     * 
+     *
      * @param instances array of variable instances to search
      * @param usageAddress target address to match
      * @return matching varnode or null if no match found
@@ -594,7 +527,7 @@ public class VariableService {
                     Msg.info(this, "Found exact match with definition at " + usageAddress);
                     return true;
                 }
-                
+
                 // Check uses
                 var hasMatchingUse = StreamSupport
                     .stream(Spliterators.spliteratorUnknownSize(
@@ -606,30 +539,30 @@ public class VariableService {
                         }
                         return false;
                     });
-                
+
                 return hasMatchingUse;
             })
             .findFirst()
             .orElse(null);
     }
-    
+
     /**
      * Find a varnode used near the specified address within a given range
-     * 
+     *
      * @param instances array of variable instances to search
      * @param targetAddress the target address to look near
-     * @param rangeBytes the range in bytes to search (±)
+     * @param rangeBytes the range in bytes to search (+/-)
      * @return a varnode near the target address, or null if none found
      */
     private Varnode findNearbyVarnodeUsage(Varnode[] instances, Address targetAddress, int rangeBytes) {
         var targetOffset = targetAddress.getOffset();
-        
+
         record DistanceInfo(Varnode varnode, long distance) {}
-        
+
         return Arrays.stream(instances)
             .map(instance -> {
                 long minDistance = Long.MAX_VALUE;
-                
+
                 // Check definition
                 PcodeOp defOp = instance.getDef();
                 if (defOp != null) {
@@ -639,7 +572,7 @@ public class VariableService {
                         minDistance = Math.min(minDistance, distance);
                     }
                 }
-                
+
                 // Check all uses
                 Iterator<PcodeOp> uses = instance.getDescendants();
                 while (uses.hasNext()) {
@@ -650,7 +583,7 @@ public class VariableService {
                         minDistance = Math.min(minDistance, distance);
                     }
                 }
-                
+
                 return new DistanceInfo(instance, minDistance);
             })
             .filter(info -> info.distance() <= rangeBytes)
@@ -658,10 +591,10 @@ public class VariableService {
             .map(DistanceInfo::varnode)
             .orElse(null);
     }
-    
+
     /**
      * Find any usage of a variable when no specific match is found
-     * 
+     *
      * @param instances array of variable instances
      * @return any varnode from the instances array, preferably one with a definition or uses
      */
@@ -669,7 +602,7 @@ public class VariableService {
         if (instances.length == 0) {
             return null;
         }
-        
+
         // Try to find varnode with definition, then with uses, then fallback to first
         return Arrays.stream(instances)
             .filter(v -> v.getDef() != null)
