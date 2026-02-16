@@ -13,13 +13,15 @@ public class AnalysisServiceTest {
 
     private AnalysisService analysisService;
     private ProgramService programService;
+    private FunctionService functionService;
 
     @BeforeEach
     @SuppressWarnings("unused")
     void setUp() {
         // Test with null tool since we can't easily mock PluginTool
         programService = new ProgramService(null);
-        analysisService = new AnalysisService(programService);
+        functionService = new FunctionService(null, programService);
+        analysisService = new AnalysisService(programService, functionService);
     }
 
     @Test
@@ -30,22 +32,22 @@ public class AnalysisServiceTest {
     }
 
     @Test
-    @DisplayName("analyzeControlFlow returns error for null address")
-    void testAnalyzeControlFlow_NullAddress() {
+    @DisplayName("analyzeControlFlow returns error for null identifier")
+    void testAnalyzeControlFlow_NullIdentifier() {
         String result = analysisService.analyzeControlFlow(null);
         assertEquals("No program loaded", result);
     }
 
     @Test
-    @DisplayName("analyzeControlFlow returns error for empty address")
-    void testAnalyzeControlFlow_EmptyAddress() {
+    @DisplayName("analyzeControlFlow returns error for empty identifier")
+    void testAnalyzeControlFlow_EmptyIdentifier() {
         String result = analysisService.analyzeControlFlow("");
         assertEquals("No program loaded", result);
     }
 
     @Test
-    @DisplayName("analyzeControlFlow handles invalid address format")
-    void testAnalyzeControlFlow_InvalidAddress() {
+    @DisplayName("analyzeControlFlow handles invalid identifier")
+    void testAnalyzeControlFlow_InvalidIdentifier() {
         String result = analysisService.analyzeControlFlow("invalid");
         assertEquals("No program loaded", result);
     }
@@ -58,15 +60,15 @@ public class AnalysisServiceTest {
     }
 
     @Test
-    @DisplayName("analyzeDataFlow returns error for null address")
-    void testAnalyzeDataFlow_NullAddress() {
+    @DisplayName("analyzeDataFlow returns error for null identifier")
+    void testAnalyzeDataFlow_NullIdentifier() {
         String result = analysisService.analyzeDataFlow(null, "variable");
         assertEquals("No program loaded", result);
     }
 
     @Test
-    @DisplayName("analyzeDataFlow returns error for empty address")
-    void testAnalyzeDataFlow_EmptyAddress() {
+    @DisplayName("analyzeDataFlow returns error for empty identifier")
+    void testAnalyzeDataFlow_EmptyIdentifier() {
         String result = analysisService.analyzeDataFlow("", "variable");
         assertEquals("No program loaded", result);
     }
@@ -86,48 +88,59 @@ public class AnalysisServiceTest {
     }
 
     @Test
-    @DisplayName("analyzeCallGraph returns error when no program is loaded")
-    void testAnalyzeCallGraph_NoProgram() {
-        String result = analysisService.analyzeCallGraph("0x1000", 3);
+    @DisplayName("getCallGraph returns error when no program is loaded")
+    void testGetCallGraph_NoProgram() {
+        String result = analysisService.getCallGraph("0x1000", 3, "both");
         assertEquals("No program loaded", result);
     }
 
     @Test
-    @DisplayName("analyzeCallGraph returns error for null address")
-    void testAnalyzeCallGraph_NullAddress() {
-        String result = analysisService.analyzeCallGraph(null, 3);
+    @DisplayName("getCallGraph returns error for null identifier")
+    void testGetCallGraph_NullIdentifier() {
+        String result = analysisService.getCallGraph(null, 3, "both");
         assertEquals("No program loaded", result);
     }
 
     @Test
-    @DisplayName("analyzeCallGraph returns error for empty address")
-    void testAnalyzeCallGraph_EmptyAddress() {
-        String result = analysisService.analyzeCallGraph("", 3);
+    @DisplayName("getCallGraph returns error for empty identifier")
+    void testGetCallGraph_EmptyIdentifier() {
+        String result = analysisService.getCallGraph("", 3, "both");
         assertEquals("No program loaded", result);
     }
 
     @Test
-    @DisplayName("analyzeCallGraph limits depth to maximum of 5")
-    void testAnalyzeCallGraph_MaxDepth() {
-        String result = analysisService.analyzeCallGraph("0x1000", 10);
+    @DisplayName("getCallGraph limits depth to maximum of 5")
+    void testGetCallGraph_MaxDepth() {
+        String result = analysisService.getCallGraph("0x1000", 10, "both");
         assertEquals("No program loaded", result);
-        // Note: With a real program, we would verify depth is limited to 5
     }
 
     @Test
-    @DisplayName("analyzeCallGraph handles zero depth")
-    void testAnalyzeCallGraph_ZeroDepth() {
-        String result = analysisService.analyzeCallGraph("0x1000", 0);
+    @DisplayName("getCallGraph handles zero depth")
+    void testGetCallGraph_ZeroDepth() {
+        String result = analysisService.getCallGraph("0x1000", 0, "both");
         assertEquals("No program loaded", result);
-        // Note: With a real program, we would verify depth is set to minimum of 1
     }
 
     @Test
-    @DisplayName("analyzeCallGraph handles negative depth")
-    void testAnalyzeCallGraph_NegativeDepth() {
-        String result = analysisService.analyzeCallGraph("0x1000", -1);
+    @DisplayName("getCallGraph handles negative depth")
+    void testGetCallGraph_NegativeDepth() {
+        String result = analysisService.getCallGraph("0x1000", -1, "both");
         assertEquals("No program loaded", result);
-        // Note: With a real program, we would verify depth is set to minimum of 1
+    }
+
+    @Test
+    @DisplayName("getCallGraph handles callers direction")
+    void testGetCallGraph_CallersDirection() {
+        String result = analysisService.getCallGraph("0x1000", 2, "callers");
+        assertEquals("No program loaded", result);
+    }
+
+    @Test
+    @DisplayName("getCallGraph handles callees direction")
+    void testGetCallGraph_CalleesDirection() {
+        String result = analysisService.getCallGraph("0x1000", 2, "callees");
+        assertEquals("No program loaded", result);
     }
 
     @Test
@@ -182,7 +195,7 @@ public class AnalysisServiceTest {
     @Test
     @DisplayName("Constructor accepts null program service without throwing")
     void testConstructor_NullProgramService() {
-        assertDoesNotThrow(() -> new AnalysisService(null));
+        assertDoesNotThrow(() -> new AnalysisService(null, null));
     }
 
     // Note: Testing with actual Program would require a full Ghidra environment

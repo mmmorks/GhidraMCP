@@ -307,32 +307,31 @@ public class FunctionService {
 
     /**
      * Set a function's prototype with proper error handling
-     * 
-     * @param functionAddrStr function address
+     *
+     * @param functionIdentifier function name or address
      * @param prototype function prototype in C style
      * @return result of the operation
      */
-    public PrototypeResult setFunctionPrototype(String functionAddrStr, String prototype) {
+    public PrototypeResult setFunctionPrototype(String functionIdentifier, String prototype) {
         // Input validation
         Program program = programService.getCurrentProgram();
         if (program == null) return new PrototypeResult(false, "No program loaded");
-        if (functionAddrStr == null || functionAddrStr.isEmpty()) {
-            return new PrototypeResult(false, "Function address is required");
+        if (functionIdentifier == null || functionIdentifier.isEmpty()) {
+            return new PrototypeResult(false, "Function identifier is required");
         }
         if (prototype == null || prototype.isEmpty()) {
             return new PrototypeResult(false, "Function prototype is required");
         }
 
         try {
-            Address addr = program.getAddressFactory().getAddress(functionAddrStr);
-            Function func = GhidraUtils.getFunctionForAddress(program, addr);
-
+            Function func = resolveFunction(program, functionIdentifier);
             if (func == null) {
-                String msg = "Could not find function at address: " + functionAddrStr;
+                String msg = "Function not found: " + functionIdentifier;
                 Msg.error(this, msg);
                 return new PrototypeResult(false, msg);
             }
 
+            Address addr = func.getEntryPoint();
             Msg.info(this, "Setting prototype for function " + func.getName() + ": " + prototype);
             return parseFunctionSignatureAndApply(program, addr, prototype);
 

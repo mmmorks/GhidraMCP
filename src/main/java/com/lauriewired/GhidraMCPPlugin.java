@@ -77,10 +77,10 @@ public class GhidraMCPPlugin extends Plugin {
         this.functionService = new FunctionService(tool, programService);
         this.namespaceService = new NamespaceService(programService);
         this.dataTypeService = new DataTypeService(programService);
-        this.analysisService = new AnalysisService(programService);
+        this.analysisService = new AnalysisService(programService, functionService);
         this.commentService = new CommentService(programService);
         this.memoryService = new MemoryService(programService, dataTypeService);
-        this.variableService = new VariableService(programService);
+        this.variableService = new VariableService(programService, functionService);
         this.searchService = new SearchService(programService);
         
         Msg.info(GhidraMCPPlugin.class, "All services initialized");

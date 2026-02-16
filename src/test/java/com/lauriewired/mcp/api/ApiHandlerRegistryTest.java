@@ -149,14 +149,15 @@ class ApiHandlerRegistryTest {
         verify(mockHttpServer).createContext(eq("/add_enum_value"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/find_data_type_usage"), any(HttpHandler.class));
 
+        // Program endpoints
+        verify(mockHttpServer).createContext(eq("/get_program_info"), any(HttpHandler.class));
+
         // Analysis endpoints
         verify(mockHttpServer).createContext(eq("/list_references"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/analyze_control_flow"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/analyze_data_flow"), any(HttpHandler.class));
-        verify(mockHttpServer).createContext(eq("/analyze_call_graph"), any(HttpHandler.class));
+        verify(mockHttpServer).createContext(eq("/get_call_graph"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/list_references_from"), any(HttpHandler.class));
-        verify(mockHttpServer).createContext(eq("/get_function_callers"), any(HttpHandler.class));
-        verify(mockHttpServer).createContext(eq("/get_call_hierarchy"), any(HttpHandler.class));
 
         // Memory endpoints
         verify(mockHttpServer).createContext(eq("/get_memory_layout"), any(HttpHandler.class));
@@ -168,11 +169,8 @@ class ApiHandlerRegistryTest {
         verify(mockHttpServer).createContext(eq("/get_address_data_type"), any(HttpHandler.class));
 
         // Comment endpoints
-        verify(mockHttpServer).createContext(eq("/set_decompiler_comment"), any(HttpHandler.class));
-        verify(mockHttpServer).createContext(eq("/set_disassembly_comment"), any(HttpHandler.class));
-        verify(mockHttpServer).createContext(eq("/get_comments"), any(HttpHandler.class));
-        verify(mockHttpServer).createContext(eq("/get_decompiler_comment"), any(HttpHandler.class));
-        verify(mockHttpServer).createContext(eq("/get_disassembly_comment"), any(HttpHandler.class));
+        verify(mockHttpServer).createContext(eq("/get_comment"), any(HttpHandler.class));
+        verify(mockHttpServer).createContext(eq("/set_comment"), any(HttpHandler.class));
 
         // Search endpoints
         verify(mockHttpServer).createContext(eq("/search_memory"), any(HttpHandler.class));
@@ -310,7 +308,7 @@ class ApiHandlerRegistryTest {
         registry.registerAllEndpoints();
 
         // Verify the expected number of endpoints were registered
-        // 44 endpoints total
-        verify(mockHttpServer, times(44)).createContext(anyString(), any(HttpHandler.class));
+        // 40 endpoints total (was 44: +1 get_program_info, -3 call-graph consolidated to 1, -5 comment consolidated to 2)
+        verify(mockHttpServer, times(40)).createContext(anyString(), any(HttpHandler.class));
     }
 }

@@ -3,8 +3,6 @@ package com.lauriewired.mcp.api;
 import java.io.IOException;
 import java.util.Map;
 import java.util.Optional;
-import java.util.function.BiFunction;
-
 import com.lauriewired.mcp.McpServerManager;
 import com.lauriewired.mcp.model.PrototypeResult;
 import com.lauriewired.mcp.services.AnalysisService;
@@ -104,6 +102,7 @@ public class ApiHandlerRegistry {
         HttpServer server = serverManager.getServer();
         
         // Register endpoints for all services
+        registerProgramEndpoints(server);
         registerFunctionEndpoints(server);
         registerNamespaceEndpoints(server);
         registerDataTypeEndpoints(server);
@@ -152,6 +151,15 @@ public class ApiHandlerRegistry {
         server.createContext(endpoint, wrapWithTelemetryAndTimeout(handler, toolName, endpoint));
     }
     
+    /**
+     * Register program-level endpoints
+     */
+    private void registerProgramEndpoints(HttpServer server) {
+        registerEndpoint(server, "get_program_info", exchange -> {
+            HttpUtils.sendResponse(exchange, programService.getProgramInfo());
+        });
+    }
+
     /**
      * Register function-related endpoints
      */
@@ -211,11 +219,11 @@ public class ApiHandlerRegistry {
         registerEndpoint(server, "set_function_prototype", exchange -> {
             try {
                 Map<String, String> params = HttpUtils.parsePostParams(exchange);
-                String functionAddress = params.get("function_address");
+                String functionIdentifier = params.get("function_identifier");
                 String prototype = params.get("prototype");
-                
+
                 // Call the set prototype function and get detailed result
-                PrototypeResult result = functionService.setFunctionPrototype(functionAddress, prototype);
+                PrototypeResult result = functionService.setFunctionPrototype(functionIdentifier, prototype);
                 
                 // Format response based on success/failure and any messages
                 String response;
@@ -412,26 +420,27 @@ public class ApiHandlerRegistry {
         // Analyze control flow
         registerEndpoint(server, "analyze_control_flow", exchange -> {
             Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-            String address = qparams.get("address");
-            HttpUtils.sendResponse(exchange, analysisService.analyzeControlFlow(address));
+            String functionIdentifier = qparams.get("function_identifier");
+            HttpUtils.sendResponse(exchange, analysisService.analyzeControlFlow(functionIdentifier));
         });
-        
+
         // Analyze data flow
         registerEndpoint(server, "analyze_data_flow", exchange -> {
             Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-            String address = qparams.get("address");
+            String functionIdentifier = qparams.get("function_identifier");
             String variableName = qparams.get("variable");
-            HttpUtils.sendResponse(exchange, analysisService.analyzeDataFlow(address, variableName));
+            HttpUtils.sendResponse(exchange, analysisService.analyzeDataFlow(functionIdentifier, variableName));
         });
-        
-        // Analyze call graph
-        registerEndpoint(server, "analyze_call_graph", exchange -> {
+
+        // Get call graph (unified: callers, callees, or both)
+        registerEndpoint(server, "get_call_graph", exchange -> {
             Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-            String address = qparams.get("address");
+            String functionIdentifier = qparams.get("function_identifier");
             int depth = HttpUtils.parseIntOrDefault(qparams.get("depth"), 2);
-            HttpUtils.sendResponse(exchange, analysisService.analyzeCallGraph(address, depth));
+            String direction = qparams.getOrDefault("direction", "both");
+            HttpUtils.sendResponse(exchange, analysisService.getCallGraph(functionIdentifier, depth, direction));
         });
-        
+
         // List references from
         registerEndpoint(server, "list_references_from", exchange -> {
             Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
@@ -441,20 +450,6 @@ public class ApiHandlerRegistry {
             HttpUtils.sendResponse(exchange, analysisService.listReferencesFrom(address, offset, limit));
         });
         
-        // Get function callers
-        registerEndpoint(server, "get_function_callers", exchange -> {
-            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-            String functionName = qparams.get("function_name");
-            HttpUtils.sendResponse(exchange, analysisService.getFunctionCallers(functionName));
-        });
-        
-        // Get call hierarchy
-        registerEndpoint(server, "get_call_hierarchy", exchange -> {
-            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-            String functionName = qparams.get("function_name");
-            int depth = HttpUtils.parseIntOrDefault(qparams.get("depth"), 2);
-            HttpUtils.sendResponse(exchange, analysisService.getCallHierarchy(functionName, depth));
-        });
     }
     
     /**
@@ -530,48 +525,33 @@ public class ApiHandlerRegistry {
         });
     }
 
-    private static HttpHandler createCommentHandler(BiFunction<String, String, Boolean> setter) {
-        return exchange -> {
-            try {
-                Map<String, String> params = HttpUtils.parsePostParams(exchange);
-                String address = params.get("address");
-                String comment = params.get("comment");
-                boolean success = setter.apply(address, comment);
-                
-                HttpUtils.sendResponse(exchange,
-                        success ? "Comment set successfully" : "Failed to set comment");
-            } catch (IOException e) {
-                HttpUtils.sendResponse(exchange, "Error parsing parameters: " + e.getMessage());
-            }
-        };
-    } 
     /**
      * Register comments endpoints
      */
     private void registerCommentEndpoints(HttpServer server) {
-
-        registerEndpoint(server, "set_decompiler_comment", createCommentHandler(commentService::setDecompilerComment));
-        registerEndpoint(server, "set_disassembly_comment", createCommentHandler(commentService::setDisassemblyComment));
-        
-        // Get comments
-        registerEndpoint(server, "get_comments", exchange -> {
+        // Get comment(s) at address — returns all types
+        registerEndpoint(server, "get_comment", exchange -> {
             Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
             String address = qparams.get("address");
             HttpUtils.sendResponse(exchange, commentService.getComments(address));
         });
-        
-        // Get decompiler comment
-        registerEndpoint(server, "get_decompiler_comment", exchange -> {
-            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-            String address = qparams.get("address");
-            HttpUtils.sendResponse(exchange, commentService.getDecompilerComment(address));
-        });
-        
-        // Get disassembly comment
-        registerEndpoint(server, "get_disassembly_comment", exchange -> {
-            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-            String address = qparams.get("address");
-            HttpUtils.sendResponse(exchange, commentService.getDisassemblyComment(address));
+
+        // Set comment at address with specified type
+        registerEndpoint(server, "set_comment", exchange -> {
+            try {
+                Map<String, String> params = HttpUtils.parsePostParams(exchange);
+                String address = params.get("address");
+                String comment = params.get("comment");
+                String commentType = params.get("type");
+                if (commentType == null || commentType.isEmpty()) {
+                    HttpUtils.sendResponse(exchange, "Error: 'type' parameter is required (pre, post, eol, plate, repeatable)");
+                    return;
+                }
+                boolean success = commentService.setComment(address, comment, commentType);
+                HttpUtils.sendResponse(exchange, success ? "Comment set successfully" : "Failed to set comment. Valid types: pre, post, eol, plate, repeatable");
+            } catch (IOException e) {
+                HttpUtils.sendResponse(exchange, "Error parsing parameters: " + e.getMessage());
+            }
         });
     }
     
@@ -630,49 +610,48 @@ public class ApiHandlerRegistry {
      * Register variable-related endpoints
      */
     private void registerVariableEndpoints(HttpServer server) {
-        // Batch rename variables endpoint (JSON body: {"function_name": "...", "renames": {"old": "new", ...}})
+        // Batch rename variables endpoint (JSON body: {"function_identifier": "...", "renames": {"old": "new", ...}})
         registerEndpoint(server, "rename_variables", exchange -> {
             try {
                 var body = new String(exchange.getRequestBody().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
-                // Simple JSON parsing without external library
-                var functionName = extractJsonString(body, "function_name");
+                var functionIdentifier = extractJsonString(body, "function_identifier");
                 var renames = extractJsonObject(body, "renames");
 
-                var result = variableService.batchRenameVariables(functionName, renames);
+                var result = variableService.batchRenameVariables(functionIdentifier, renames);
                 HttpUtils.sendResponse(exchange, result);
             } catch (Exception e) {
                 HttpUtils.sendResponse(exchange, String.format("Error: %s", e.getMessage()));
             }
         });
-        
+
         // Split variable endpoint
         registerEndpoint(server, "split_variable", exchange -> {
             try {
                 var params = HttpUtils.parsePostParams(exchange);
-                var functionName = params.get("function_name");
+                var functionIdentifier = params.get("function_identifier");
                 var variableName = params.get("variable_name");
                 var usageAddress = params.get("usage_address");
-                
+
                 // Use Optional to handle the optional new_name parameter
                 var newName = Optional.ofNullable(params.get("new_name"))
                     .filter(name -> !name.isEmpty())
                     .orElse(variableName + "_split");
-                
-                var result = variableService.renameVariableInFunction(functionName, variableName, newName, usageAddress);
+
+                var result = variableService.renameVariableInFunction(functionIdentifier, variableName, newName, usageAddress);
                 HttpUtils.sendResponse(exchange, result);
             } catch (IOException e) {
                 HttpUtils.sendResponse(exchange, String.format("Error: %s", e.getMessage()));
             }
         });
-        
-        // Batch set variable types endpoint (JSON body: {"function_address": "...", "types": {"var": "type", ...}})
+
+        // Batch set variable types endpoint (JSON body: {"function_identifier": "...", "types": {"var": "type", ...}})
         registerEndpoint(server, "set_variable_types", exchange -> {
             try {
                 var body = new String(exchange.getRequestBody().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
-                var functionAddress = extractJsonString(body, "function_address");
+                var functionIdentifier = extractJsonString(body, "function_identifier");
                 var types = extractJsonObject(body, "types");
 
-                var result = variableService.batchSetVariableTypes(functionAddress, types);
+                var result = variableService.batchSetVariableTypes(functionIdentifier, types);
                 HttpUtils.sendResponse(exchange, result);
             } catch (Exception e) {
                 HttpUtils.sendResponse(exchange, String.format("Error: %s", e.getMessage()));

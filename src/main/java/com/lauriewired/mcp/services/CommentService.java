@@ -23,30 +23,29 @@ public class CommentService {
     }
     
     /**
-     * Set a comment for a given address in the function pseudocode
-     * 
+     * Set a comment at an address with the specified comment type string.
+     *
      * @param addressStr address where the comment should be placed
      * @param comment comment text
-     * @return true if successful
+     * @param commentType comment type: "pre"/"decompiler", "post", "eol"/"disassembly", "plate", "repeatable"
+     * @return true if successful, false if invalid type or error
      */
-    public boolean setDecompilerComment(String addressStr, String comment) {
-        return setCommentAtAddress(addressStr, comment, CodeUnit.PRE_COMMENT, "Set decompiler comment");
+    public boolean setComment(String addressStr, String comment, String commentType) {
+        int type = switch (commentType.toLowerCase()) {
+            case "pre", "decompiler" -> CodeUnit.PRE_COMMENT;
+            case "post" -> CodeUnit.POST_COMMENT;
+            case "eol", "disassembly" -> CodeUnit.EOL_COMMENT;
+            case "plate" -> CodeUnit.PLATE_COMMENT;
+            case "repeatable" -> CodeUnit.REPEATABLE_COMMENT;
+            default -> -1;
+        };
+        if (type == -1) return false;
+        return setCommentAtAddress(addressStr, comment, type, "Set " + commentType + " comment");
     }
-    
+
     /**
-     * Set a comment for a given address in the function disassembly
-     * 
-     * @param addressStr address where the comment should be placed
-     * @param comment comment text
-     * @return true if successful
-     */
-    public boolean setDisassemblyComment(String addressStr, String comment) {
-        return setCommentAtAddress(addressStr, comment, CodeUnit.EOL_COMMENT, "Set disassembly comment");
-    }
-    
-    /**
-     * Set a comment using the specified comment type (PRE_COMMENT or EOL_COMMENT)
-     * 
+     * Set a comment using the specified comment type constant
+     *
      * @param addressStr address where the comment should be placed
      * @param comment comment text
      * @param commentType type of comment (CodeUnit.PRE_COMMENT, CodeUnit.EOL_COMMENT, etc.)
@@ -134,61 +133,4 @@ public class CommentService {
         }
     }
     
-    /**
-     * Get decompiler comment at a specific address
-     *
-     * @param addressStr address to get comment from
-     * @return decompiler comment or message if none found
-     */
-    public String getDecompilerComment(String addressStr) {
-        Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
-        if (addressStr == null || addressStr.isEmpty()) return "Address is required";
-        
-        try {
-            Address addr = program.getAddressFactory().getAddress(addressStr);
-            if (addr == null) return "Invalid address: " + addressStr;
-            
-            CodeUnit codeUnit = program.getListing().getCodeUnitAt(addr);
-            if (codeUnit == null) return "No code unit at address: " + addressStr;
-            
-            String comment = codeUnit.getComment(CodeUnit.PRE_COMMENT);
-            if (comment != null) {
-                return "Decompiler comment at " + addressStr + ":\n" + comment;
-            } else {
-                return "No decompiler comment found at " + addressStr;
-            }
-        } catch (Exception e) {
-            return "Error getting decompiler comment: " + e.getMessage();
-        }
-    }
-    
-    /**
-     * Get disassembly comment at a specific address
-     *
-     * @param addressStr address to get comment from
-     * @return disassembly comment or message if none found
-     */
-    public String getDisassemblyComment(String addressStr) {
-        Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
-        if (addressStr == null || addressStr.isEmpty()) return "Address is required";
-        
-        try {
-            Address addr = program.getAddressFactory().getAddress(addressStr);
-            if (addr == null) return "Invalid address: " + addressStr;
-            
-            CodeUnit codeUnit = program.getListing().getCodeUnitAt(addr);
-            if (codeUnit == null) return "No code unit at address: " + addressStr;
-            
-            String comment = codeUnit.getComment(CodeUnit.EOL_COMMENT);
-            if (comment != null) {
-                return "Disassembly comment at " + addressStr + ":\n" + comment;
-            } else {
-                return "No disassembly comment found at " + addressStr;
-            }
-        } catch (Exception e) {
-            return "Error getting disassembly comment: " + e.getMessage();
-        }
-    }
 }

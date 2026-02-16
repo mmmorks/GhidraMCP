@@ -14,12 +14,14 @@ public class VariableServiceTest {
 
     private VariableService variableService;
     private ProgramService programService;
+    private FunctionService functionService;
 
     @BeforeEach
     void setUp() {
         // Test with null tool since we can't easily mock PluginTool
         programService = new ProgramService(null);
-        variableService = new VariableService(programService);
+        functionService = new FunctionService(null, programService);
+        variableService = new VariableService(programService, functionService);
     }
 
     @Test
@@ -183,9 +185,9 @@ public class VariableServiceTest {
     }
 
     @Test
-    @DisplayName("Constructor accepts null program service without throwing")
+    @DisplayName("Constructor accepts null services without throwing")
     void testConstructor_NullProgramService() {
-        assertDoesNotThrow(() -> new VariableService(null));
+        assertDoesNotThrow(() -> new VariableService(null, null));
     }
 
     // ===== Tests for batchSetVariableTypes =====
@@ -199,19 +201,19 @@ public class VariableServiceTest {
     }
 
     @Test
-    @DisplayName("batchSetVariableTypes returns error for null function address")
-    void testBatchSetVariableTypes_NullAddress() {
+    @DisplayName("batchSetVariableTypes returns error for null function identifier")
+    void testBatchSetVariableTypes_NullIdentifier() {
         String result = variableService.batchSetVariableTypes(null,
             java.util.Map.of("local_10", "int"));
-        assertEquals("Function address is required", result);
+        assertEquals("Function identifier is required", result);
     }
 
     @Test
-    @DisplayName("batchSetVariableTypes returns error for empty function address")
-    void testBatchSetVariableTypes_EmptyAddress() {
+    @DisplayName("batchSetVariableTypes returns error for empty function identifier")
+    void testBatchSetVariableTypes_EmptyIdentifier() {
         String result = variableService.batchSetVariableTypes("",
             java.util.Map.of("local_10", "int"));
-        assertEquals("Function address is required", result);
+        assertEquals("Function identifier is required", result);
     }
 
     @Test

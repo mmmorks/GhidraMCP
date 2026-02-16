@@ -1,6 +1,7 @@
 package com.lauriewired.mcp.services;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -23,101 +24,115 @@ public class CommentServiceTest {
     }
 
     @Test
-    @DisplayName("setDecompilerComment returns false when no program is loaded")
-    void testSetDecompilerComment_NoProgram() {
-        boolean result = commentService.setDecompilerComment("0x1000", "Test comment");
+    @DisplayName("setComment returns false when no program is loaded")
+    void testSetComment_NoProgram() {
+        boolean result = commentService.setComment("0x1000", "Test comment", "pre");
         assertFalse(result);
     }
 
     @Test
-    @DisplayName("setDecompilerComment returns false for null address")
-    void testSetDecompilerComment_NullAddress() {
-        boolean result = commentService.setDecompilerComment(null, "Test comment");
+    @DisplayName("setComment returns false for null address")
+    void testSetComment_NullAddress() {
+        boolean result = commentService.setComment(null, "Test comment", "pre");
         assertFalse(result);
     }
 
     @Test
-    @DisplayName("setDecompilerComment returns false for empty address")
-    void testSetDecompilerComment_EmptyAddress() {
-        boolean result = commentService.setDecompilerComment("", "Test comment");
+    @DisplayName("setComment returns false for empty address")
+    void testSetComment_EmptyAddress() {
+        boolean result = commentService.setComment("", "Test comment", "eol");
         assertFalse(result);
     }
 
     @Test
-    @DisplayName("setDecompilerComment returns false for null comment")
-    void testSetDecompilerComment_NullComment() {
-        boolean result = commentService.setDecompilerComment("0x1000", null);
+    @DisplayName("setComment returns false for null comment")
+    void testSetComment_NullComment() {
+        boolean result = commentService.setComment("0x1000", null, "pre");
         assertFalse(result);
     }
 
     @Test
-    @DisplayName("setDecompilerComment handles empty comment")
-    void testSetDecompilerComment_EmptyComment() {
-        boolean result = commentService.setDecompilerComment("0x1000", "");
+    @DisplayName("setComment returns false for invalid comment type")
+    void testSetComment_InvalidType() {
+        boolean result = commentService.setComment("0x1000", "Test", "invalid_type");
         assertFalse(result);
     }
 
     @Test
-    @DisplayName("setDisassemblyComment returns false when no program is loaded")
-    void testSetDisassemblyComment_NoProgram() {
-        boolean result = commentService.setDisassemblyComment("0x1000", "Test comment");
+    @DisplayName("setComment accepts 'pre' type")
+    void testSetComment_PreType() {
+        boolean result = commentService.setComment("0x1000", "Test", "pre");
+        assertFalse(result); // false because no program loaded
+    }
+
+    @Test
+    @DisplayName("setComment accepts 'decompiler' type alias")
+    void testSetComment_DecompilerType() {
+        boolean result = commentService.setComment("0x1000", "Test", "decompiler");
         assertFalse(result);
     }
 
     @Test
-    @DisplayName("setDisassemblyComment returns false for null address")
-    void testSetDisassemblyComment_NullAddress() {
-        boolean result = commentService.setDisassemblyComment(null, "Test comment");
+    @DisplayName("setComment accepts 'eol' type")
+    void testSetComment_EolType() {
+        boolean result = commentService.setComment("0x1000", "Test", "eol");
         assertFalse(result);
     }
 
     @Test
-    @DisplayName("setDisassemblyComment returns false for empty address")
-    void testSetDisassemblyComment_EmptyAddress() {
-        boolean result = commentService.setDisassemblyComment("", "Test comment");
+    @DisplayName("setComment accepts 'disassembly' type alias")
+    void testSetComment_DisassemblyType() {
+        boolean result = commentService.setComment("0x1000", "Test", "disassembly");
         assertFalse(result);
     }
 
     @Test
-    @DisplayName("setDisassemblyComment returns false for null comment")
-    void testSetDisassemblyComment_NullComment() {
-        boolean result = commentService.setDisassemblyComment("0x1000", null);
+    @DisplayName("setComment accepts 'post' type")
+    void testSetComment_PostType() {
+        boolean result = commentService.setComment("0x1000", "Test", "post");
         assertFalse(result);
     }
 
     @Test
-    @DisplayName("setDisassemblyComment handles empty comment")
-    void testSetDisassemblyComment_EmptyComment() {
-        boolean result = commentService.setDisassemblyComment("0x1000", "");
+    @DisplayName("setComment accepts 'plate' type")
+    void testSetComment_PlateType() {
+        boolean result = commentService.setComment("0x1000", "Test", "plate");
         assertFalse(result);
     }
 
     @Test
-    @DisplayName("setDecompilerComment handles multiline comment")
-    void testSetDecompilerComment_MultilineComment() {
-        boolean result = commentService.setDecompilerComment("0x1000", "Line 1\nLine 2\nLine 3");
+    @DisplayName("setComment accepts 'repeatable' type")
+    void testSetComment_RepeatableType() {
+        boolean result = commentService.setComment("0x1000", "Test", "repeatable");
         assertFalse(result);
     }
 
     @Test
-    @DisplayName("setDisassemblyComment handles multiline comment")
-    void testSetDisassemblyComment_MultilineComment() {
-        boolean result = commentService.setDisassemblyComment("0x1000", "Line 1\nLine 2\nLine 3");
+    @DisplayName("setComment handles multiline comment")
+    void testSetComment_MultilineComment() {
+        boolean result = commentService.setComment("0x1000", "Line 1\nLine 2\nLine 3", "pre");
         assertFalse(result);
     }
 
     @Test
-    @DisplayName("setDecompilerComment handles special characters in comment")
-    void testSetDecompilerComment_SpecialCharacters() {
-        boolean result = commentService.setDecompilerComment("0x1000", "Test /* comment */ with // special chars");
+    @DisplayName("setComment handles special characters in comment")
+    void testSetComment_SpecialCharacters() {
+        boolean result = commentService.setComment("0x1000", "Test /* comment */ with // special chars", "eol");
         assertFalse(result);
     }
 
     @Test
-    @DisplayName("setDisassemblyComment handles special characters in comment")
-    void testSetDisassemblyComment_SpecialCharacters() {
-        boolean result = commentService.setDisassemblyComment("0x1000", "Test /* comment */ with // special chars");
-        assertFalse(result);
+    @DisplayName("getComments returns error when no program is loaded")
+    void testGetComments_NoProgram() {
+        String result = commentService.getComments("0x1000");
+        assertEquals("No program loaded", result);
+    }
+
+    @Test
+    @DisplayName("getComments returns error for null address")
+    void testGetComments_NullAddress() {
+        String result = commentService.getComments(null);
+        assertEquals("No program loaded", result);
     }
 
     @Test

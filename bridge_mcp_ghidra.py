@@ -91,6 +91,23 @@ def get_current_function() -> str:
     return safe_get("get_current_function")
 
 @mcp.tool()
+def get_program_info() -> str:
+    """
+    Get metadata about the currently loaded binary.
+
+    Returns architecture, endianness, file format, base address, entry point,
+    and counts of functions/symbols. This is typically the first tool to call
+    when starting analysis of a new binary.
+
+    Parameters: None
+
+    Returns: Program metadata including processor, format, addresses, and counts
+
+    Example: get_program_info() -> "Program: firmware.bin\nFormat: ELF\nProcessor: ARM..."
+    """
+    return safe_get("get_program_info")
+
+@mcp.tool()
 def get_memory_layout(offset: int = 0, limit: int = 100) -> str:
     """
     Get the memory layout of the program (segments/sections).
@@ -251,14 +268,14 @@ def rename_function(function_identifier: str, new_name: str) -> str:
     })
 
 @mcp.tool()
-def set_function_prototype(function_address: str, prototype: str) -> str:
+def set_function_prototype(function_identifier: str, prototype: str) -> str:
     """
     Set or modify a function's signature/prototype.
 
     Changes return type, parameter types and names to improve decompiler output.
 
     Parameters:
-        function_address: Function address (e.g., "00401000")
+        function_identifier: Function name (e.g., "main") or address (e.g., "00401000", "ram:00401000")
         prototype: C-style function signature (e.g., "int main(int argc, char **argv)")
 
     Returns: Success or failure message with details
@@ -267,7 +284,7 @@ def set_function_prototype(function_address: str, prototype: str) -> str:
 
     Example: set_function_prototype("00401000", "int process_data(char *buffer, size_t length)")
     """
-    return safe_post("set_function_prototype", {"function_address": function_address, "prototype": prototype})
+    return safe_post("set_function_prototype", {"function_identifier": function_identifier, "prototype": prototype})
 
 
 # =============================================================================
@@ -275,7 +292,7 @@ def set_function_prototype(function_address: str, prototype: str) -> str:
 # =============================================================================
 
 @mcp.tool()
-def rename_variables(function_name: str, renames: dict[str, str]) -> str:
+def rename_variables(function_identifier: str, renames: dict[str, str]) -> str:
     """
     Batch rename local variables within a single function.
 
@@ -284,7 +301,7 @@ def rename_variables(function_name: str, renames: dict[str, str]) -> str:
     all renames are executed together for efficiency.
 
     Parameters:
-        function_name: Name of the function containing the variables
+        function_identifier: Function name (e.g., "main") or address (e.g., "00401000", "ram:00401000")
         renames: Dictionary mapping current variable names to new names,
                  e.g., {"local_10": "buffer_size", "local_14": "file_handle"}
 
@@ -301,12 +318,12 @@ def rename_variables(function_name: str, renames: dict[str, str]) -> str:
     Example: rename_variables("main", {"local_10": "buffer_size", "param_1": "argc"})
     """
     return safe_post("rename_variables", {
-        "function_name": function_name,
+        "function_identifier": function_identifier,
         "renames": renames
     })
 
 @mcp.tool()
-def set_variable_types(function_address: str, types: dict[str, str]) -> str:
+def set_variable_types(function_identifier: str, types: dict[str, str]) -> str:
     """
     Batch set data types for local variables in a function.
 
@@ -315,7 +332,7 @@ def set_variable_types(function_address: str, types: dict[str, str]) -> str:
     all type changes are executed together for efficiency.
 
     Parameters:
-        function_address: Function address (e.g., "00401000")
+        function_identifier: Function name (e.g., "main") or address (e.g., "00401000", "ram:00401000")
         types: Dictionary mapping variable names to new data types,
                e.g., {"local_10": "int", "local_14": "char *", "local_18": "POINT"}
 
@@ -326,12 +343,12 @@ def set_variable_types(function_address: str, types: dict[str, str]) -> str:
     Example: set_variable_types("00401000", {"local_10": "int", "local_14": "char *"})
     """
     return safe_post("set_variable_types", {
-        "function_address": function_address,
+        "function_identifier": function_identifier,
         "types": types
     })
 
 @mcp.tool()
-def split_variable(function_name: str, variable_name: str, usage_address: str, new_name: str = "") -> str:
+def split_variable(function_identifier: str, variable_name: str, usage_address: str, new_name: str = "") -> str:
     """
     Split or rename a variable at a specific usage address within a function.
 
@@ -339,7 +356,7 @@ def split_variable(function_name: str, variable_name: str, usage_address: str, n
     Splitting assigns a distinct name at one usage site without affecting others.
 
     Parameters:
-        function_name: Name of function containing the variable
+        function_identifier: Function name (e.g., "main") or address (e.g., "00401000", "ram:00401000")
         variable_name: Current variable name to split
         usage_address: Address where this specific usage occurs (bare hex, no 0x prefix)
         new_name: New name for the variable at this usage (optional; Ghidra auto-generates if empty)
@@ -349,7 +366,7 @@ def split_variable(function_name: str, variable_name: str, usage_address: str, n
     Example: split_variable("main", "local_10", "00401050", "loop_counter")
     """
     data = {
-        "function_name": function_name,
+        "function_identifier": function_identifier,
         "variable_name": variable_name,
         "usage_address": usage_address,
     }
@@ -401,60 +418,30 @@ def list_references_from(address: str, offset: int = 0, limit: int = 100) -> str
     return safe_get("list_references_from", {"address": address, "offset": offset, "limit": limit})
 
 @mcp.tool()
-def get_function_callers(function_name: str) -> str:
+def get_call_graph(function_identifier: str, depth: int = 2, direction: str = "both") -> str:
     """
-    Get all functions that call a specific function.
+    Get the call graph for a function.
 
-    Finds all callers of the specified function by name.
+    Shows callers (functions that call this one), callees (functions this one calls), or both.
 
     Parameters:
-        function_name: Name of the function to find callers for
-
-    Returns: List of calling functions with their addresses
-
-    Note: Helps understand function usage and dependencies.
-
-    Example: get_function_callers("process_data") -> "Called by: main at 00401000"
-    """
-    return safe_get("get_function_callers", {"function_name": function_name})
-
-@mcp.tool()
-def get_call_hierarchy(function_name: str, depth: int = 2) -> str:
-    """
-    Get complete call hierarchy for a function (callers and callees).
-
-    Shows both functions that call this function and functions it calls.
-
-    Parameters:
-        function_name: Name of the function to analyze
+        function_identifier: Function name (e.g., "main") or address (e.g., "00401000", "ram:00401000")
         depth: Maximum depth to traverse (1-5, default: 2)
-
-    Returns: Hierarchical view of function relationships
-
-    Note: Provides complete context of function's role in program.
-
-    Example: get_call_hierarchy("main", 3) -> Full call tree
-    """
-    return safe_get("get_call_hierarchy", {"function_name": function_name, "depth": depth})
-
-@mcp.tool()
-def analyze_call_graph(address: str, depth: int = 2) -> str:
-    """
-    Analyze the call graph starting from a function.
-
-    Creates hierarchical representation of function calls to specified depth.
-
-    Parameters:
-        address: Starting function address (e.g., "00401000")
-        depth: Maximum call depth to traverse (default: 2, max: 5)
+        direction: "callers" for upstream only, "callees" for downstream only,
+                   "both" for full hierarchy (default: "both")
 
     Returns: Hierarchical call graph with function names and addresses
 
-    Note: Only considers static function calls. Helps understand program structure.
-
-    Example: analyze_call_graph("00401000", 3) -> "Call Graph Analysis..."
+    Examples:
+        get_call_graph("main") -> full call hierarchy for main
+        get_call_graph("process_data", direction="callers") -> who calls process_data
+        get_call_graph("00401000", depth=3, direction="callees") -> what does this function call
     """
-    return safe_get("analyze_call_graph", {"address": address, "depth": depth})
+    return safe_get("get_call_graph", {
+        "function_identifier": function_identifier,
+        "depth": depth,
+        "direction": direction
+    })
 
 
 # =============================================================================
@@ -462,42 +449,42 @@ def analyze_call_graph(address: str, depth: int = 2) -> str:
 # =============================================================================
 
 @mcp.tool()
-def analyze_control_flow(address: str) -> str:
+def analyze_control_flow(function_identifier: str) -> str:
     """
-    Analyze the control flow of a function at the given address.
+    Analyze the control flow of a function.
 
     Creates a textual control flow graph (CFG) showing how basic blocks connect.
 
     Parameters:
-        address: Function address (e.g., "00401000") - entry point or any address within
+        function_identifier: Function name (e.g., "main") or address (e.g., "00401000", "ram:00401000")
 
     Returns: Detailed CFG with blocks, jumps, and instructions
 
     Note: Basic blocks are instruction sequences with single entry/exit points.
     Essential for understanding branching and loops.
 
-    Example: analyze_control_flow("00401000") -> "Control Flow Analysis for function:..."
+    Example: analyze_control_flow("main") -> "Control Flow Analysis for function:..."
     """
-    return safe_get("analyze_control_flow", {"address": address})
+    return safe_get("analyze_control_flow", {"function_identifier": function_identifier})
 
 @mcp.tool()
-def analyze_data_flow(address: str, variable: str) -> str:
+def analyze_data_flow(function_identifier: str, variable: str) -> str:
     """
     Analyze the data flow for a variable in a function.
 
     Tracks where a variable is defined (written) and used (read) throughout execution paths.
 
     Parameters:
-        address: Function address (e.g., "00401000")
+        function_identifier: Function name (e.g., "main") or address (e.g., "00401000", "ram:00401000")
         variable: Variable name to track
 
     Returns: Detailed analysis with variable info, definitions and uses
 
     Note: Helps understand value propagation and useful for analyzing algorithms.
 
-    Example: analyze_data_flow("00401000", "local_10") -> "Data Flow Analysis..."
+    Example: analyze_data_flow("main", "local_10") -> "Data Flow Analysis..."
     """
-    return safe_get("analyze_data_flow", {"address": address, "variable": variable})
+    return safe_get("analyze_data_flow", {"function_identifier": function_identifier, "variable": variable})
 
 
 # =============================================================================
@@ -887,96 +874,51 @@ def rename_data(address: str, new_name: str) -> str:
 # =============================================================================
 
 @mcp.tool()
-def get_comments(address: str) -> str:
+def get_comment(address: str) -> str:
     """
     Get all comments at a specific address.
 
-    Retrieves all comment types (pre, post, EOL, plate, repeatable).
+    Retrieves all comment types (pre/decompiler, post, eol/disassembly, plate, repeatable).
 
     Parameters:
         address: Address to get comments from (e.g., "00401000")
 
-    Returns: All comments found at the address by type
+    Returns: All comments found at the address, organized by type
 
-    Note: Shows which comment types are present and their content.
-
-    Example: get_comments("00401000") -> "Pre Comment: Initialize system..."
+    Example: get_comment("00401000") -> "Pre Comment (Decompiler): Initialize system..."
     """
-    return safe_get("get_comments", {"address": address})
+    return safe_get("get_comment", {"address": address})
+
 
 @mcp.tool()
-def get_decompiler_comment(address: str) -> str:
+def set_comment(address: str, comment: str, type: str) -> str:
     """
-    Get the decompiler comment at a specific address.
+    Set a comment at an address.
 
-    Retrieves the pre-comment shown in decompiled view.
-
-    Parameters:
-        address: Address to get comment from (e.g., "00401000")
-
-    Returns: Decompiler comment or message if none found
-
-    Note: These comments appear above lines in decompiled code.
-
-    Example: get_decompiler_comment("00401000") -> "Initialize hardware registers"
-    """
-    return safe_get("get_decompiler_comment", {"address": address})
-
-@mcp.tool()
-def get_disassembly_comment(address: str) -> str:
-    """
-    Get the disassembly comment at a specific address.
-
-    Retrieves the end-of-line comment shown in disassembly view.
-
-    Parameters:
-        address: Address to get comment from (e.g., "00401000")
-
-    Returns: Disassembly comment or message if none found
-
-    Note: These comments appear at the end of assembly lines.
-
-    Example: get_disassembly_comment("00401000") -> "Save return address"
-    """
-    return safe_get("get_disassembly_comment", {"address": address})
-
-@mcp.tool()
-def set_decompiler_comment(address: str, comment: str) -> str:
-    """
-    Set a comment for an address in the decompiled pseudocode view.
-
-    Adds a pre-comment to document code purpose or behavior in decompiled output.
+    Creates or replaces a comment of the specified type.
 
     Parameters:
         address: Target address (e.g., "00401000" or "ram:00401000")
-        comment: Comment text to add
+        comment: Comment text to set
+        type: Comment type — one of:
+              "pre" or "decompiler" — appears above line in decompiled code
+              "eol" or "disassembly" — appears at end of assembly line
+              "post" — appears after the line
+              "plate" — appears as a block header
+              "repeatable" — propagated to references
 
-    Returns: Success or failure message with details
+    Returns: Success or failure message
 
-    Note: Comments persist in Ghidra database between sessions. Appears before the line.
-
-    Example: set_decompiler_comment("00401010", "Initialize the configuration")
+    Examples:
+        set_comment("00401010", "Initialize config", "decompiler")
+        set_comment("00401010", "Save return address", "eol")
+        set_comment("00401000", "--- Main Entry ---", "plate")
     """
-    return safe_post("set_decompiler_comment", {"address": address, "comment": comment})
-
-@mcp.tool()
-def set_disassembly_comment(address: str, comment: str) -> str:
-    """
-    Set a comment for an address in the assembly listing view.
-
-    Adds an end-of-line (EOL) comment to document the instruction's purpose.
-
-    Parameters:
-        address: Target address (e.g., "00401000" or "ram:00401000")
-        comment: Comment text to add
-
-    Returns: Success or failure message with details
-
-    Note: Comments persist in Ghidra database. Appears at the end of the line.
-
-    Example: set_disassembly_comment("00401010", "Initialize EAX register")
-    """
-    return safe_post("set_disassembly_comment", {"address": address, "comment": comment})
+    return safe_post("set_comment", {
+        "address": address,
+        "comment": comment,
+        "type": type
+    })
 
 
 # =============================================================================

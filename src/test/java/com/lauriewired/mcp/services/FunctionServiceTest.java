@@ -294,25 +294,25 @@ public class FunctionServiceTest {
     }
     
     @Test
-    @DisplayName("setFunctionPrototype returns error for null address")
-    void testSetFunctionPrototype_NullAddress() {
+    @DisplayName("setFunctionPrototype returns error for null identifier")
+    void testSetFunctionPrototype_NullIdentifier() {
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
         when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
-        
+
         PrototypeResult result = functionService.setFunctionPrototype(null, "int test(void)");
         assertFalse(result.isSuccess());
-        assertEquals("Function address is required", result.getErrorMessage());
+        assertEquals("Function identifier is required", result.getErrorMessage());
     }
-    
+
     @Test
-    @DisplayName("setFunctionPrototype returns error for empty address")
-    void testSetFunctionPrototype_EmptyAddress() {
+    @DisplayName("setFunctionPrototype returns error for empty identifier")
+    void testSetFunctionPrototype_EmptyIdentifier() {
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
         when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
-        
+
         PrototypeResult result = functionService.setFunctionPrototype("", "int test(void)");
         assertFalse(result.isSuccess());
-        assertEquals("Function address is required", result.getErrorMessage());
+        assertEquals("Function identifier is required", result.getErrorMessage());
     }
     
     @Test

@@ -40,31 +40,33 @@ import ghidra.util.task.ConsoleTaskMonitor;
  */
 public class AnalysisService {
     private final ProgramService programService;
+    private final FunctionService functionService;
 
     /**
      * Creates a new AnalysisService
      *
      * @param programService the program service for accessing the current program
+     * @param functionService the function service for resolving function identifiers
      */
-    public AnalysisService(ProgramService programService) {
+    public AnalysisService(ProgramService programService, FunctionService functionService) {
         this.programService = programService;
+        this.functionService = functionService;
     }
 
     /**
      * Analyze the control flow of a function
-     * 
-     * @param addressStr address of the function to analyze
+     *
+     * @param functionIdentifier function name or address
      * @return detailed control flow analysis
      */
-    public String analyzeControlFlow(String addressStr) {
+    public String analyzeControlFlow(String functionIdentifier) {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
-        if (addressStr == null || addressStr.isEmpty()) return "Address is required";
-        
+        if (functionIdentifier == null || functionIdentifier.isEmpty()) return "Function identifier is required";
+
         try {
-            Address addr = program.getAddressFactory().getAddress(addressStr);
-            Function func = GhidraUtils.getFunctionForAddress(program, addr);
-            if (func == null) return "No function found at or containing address " + addressStr;
+            Function func = functionService.resolveFunction(program, functionIdentifier);
+            if (func == null) return "Function not found: " + functionIdentifier;
             
             StringBuilder result = new StringBuilder();
             result.append("Control Flow Analysis for function: ").append(func.getName())
@@ -150,21 +152,20 @@ public class AnalysisService {
     
     /**
      * Analyze the data flow for a variable in a function
-     * 
-     * @param addressStr address of the function containing the variable
+     *
+     * @param functionIdentifier function name or address
      * @param variableName name of the variable to analyze
      * @return detailed data flow analysis
      */
-    public String analyzeDataFlow(String addressStr, String variableName) {
+    public String analyzeDataFlow(String functionIdentifier, String variableName) {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
-        if (addressStr == null || addressStr.isEmpty()) return "Address is required";
+        if (functionIdentifier == null || functionIdentifier.isEmpty()) return "Function identifier is required";
         if (variableName == null || variableName.isEmpty()) return "Variable name is required";
-        
+
         try {
-            Address addr = program.getAddressFactory().getAddress(addressStr);
-            Function func = GhidraUtils.getFunctionForAddress(program, addr);
-            if (func == null) return "No function found at or containing address " + addressStr;
+            Function func = functionService.resolveFunction(program, functionIdentifier);
+            if (func == null) return "Function not found: " + functionIdentifier;
             
             StringBuilder result = new StringBuilder();
             result.append("Data Flow Analysis for variable '").append(variableName)
@@ -261,40 +262,47 @@ public class AnalysisService {
     }
     
     /**
-     * Analyze the call graph starting from a function
-     * 
-     * @param addressStr address of the function to start from
-     * @param depth maximum depth to traverse
-     * @return hierarchical representation of the call graph
+     * Get the call graph for a function.
+     *
+     * @param functionIdentifier function name or address
+     * @param depth max traversal depth (1-5)
+     * @param direction "callers", "callees", or "both"
+     * @return formatted call graph
      */
-    public String analyzeCallGraph(String addressStr, int depth) {
+    public String getCallGraph(String functionIdentifier, int depth, String direction) {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
-        if (addressStr == null || addressStr.isEmpty()) return "Address is required";
-        
-        // Limit depth to prevent excessive output
+        if (functionIdentifier == null || functionIdentifier.isEmpty())
+            return "Function identifier is required";
+
         depth = Math.min(Math.max(depth, 1), 5);
-        
-        try {
-            Address addr = program.getAddressFactory().getAddress(addressStr);
-            Function rootFunc = GhidraUtils.getFunctionForAddress(program, addr);
-            if (rootFunc == null) return "No function found at or containing address " + addressStr;
-            
-            StringBuilder result = new StringBuilder();
-            result.append("Call Graph Analysis for function: ").append(rootFunc.getName())
-                  .append(" at ").append(rootFunc.getEntryPoint())
-                  .append(" (depth: ").append(depth).append(")\n\n");
-            
-            // Set to track visited functions to avoid cycles
+
+        Function targetFunc = functionService.resolveFunction(program, functionIdentifier);
+        if (targetFunc == null) return "Function not found: " + functionIdentifier;
+
+        String dir = (direction == null || direction.isEmpty()) ? "both" : direction.toLowerCase();
+
+        StringBuilder result = new StringBuilder();
+        result.append("Call Graph for ").append(targetFunc.getName())
+              .append(" at ").append(targetFunc.getEntryPoint())
+              .append(" (direction: ").append(dir)
+              .append(", depth: ").append(depth).append(")\n\n");
+
+        if ("callers".equals(dir) || "both".equals(dir)) {
+            result.append("CALLERS (functions that call ").append(targetFunc.getName()).append("):\n");
             Set<Function> visited = new HashSet<>();
-            
-            // Start the recursive call graph traversal
-            buildCallGraph(rootFunc, result, visited, 0, depth);
-            
-            return result.toString();
-        } catch (Exception e) {
-            return "Error analyzing call graph: " + e.getMessage();
+            buildCallerHierarchy(targetFunc, result, visited, 0, depth);
+            result.append("\n");
         }
+
+        if ("callees".equals(dir) || "both".equals(dir)) {
+            result.append("CALLEES (functions called by ").append(targetFunc.getName()).append("):\n");
+            Set<Function> visited = new HashSet<>();
+            buildCallGraph(targetFunc, result, visited, 0, depth);
+            result.append("\n");
+        }
+
+        return result.toString();
     }
     
     /**
@@ -481,118 +489,6 @@ public class AnalysisService {
             return String.join("\n", paginatedRefs);
         } catch (Exception e) {
             return "Error getting references from: " + e.getMessage();
-        }
-    }
-    
-    /**
-     * Get all functions that call a specific function
-     *
-     * @param functionName name of the function to find callers for
-     * @return list of functions that call the specified function
-     */
-    public String getFunctionCallers(String functionName) {
-        Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
-        if (functionName == null || functionName.isEmpty()) return "Function name is required";
-        
-        try {
-            // Find the function by name
-            Function targetFunc = null;
-            for (Function func : program.getFunctionManager().getFunctions(true)) {
-                if (func.getName().equals(functionName)) {
-                    targetFunc = func;
-                    break;
-                }
-            }
-            
-            if (targetFunc == null) {
-                return "Function not found: " + functionName;
-            }
-            
-            Set<Function> callers = new HashSet<>();
-            ReferenceManager refMgr = program.getReferenceManager();
-            
-            // Get all references to the function's entry point
-            for (Reference ref : refMgr.getReferencesTo(targetFunc.getEntryPoint())) {
-                if (ref.getReferenceType().isCall()) {
-                    Address fromAddr = ref.getFromAddress();
-                    Function callerFunc = program.getFunctionManager().getFunctionContaining(fromAddr);
-                    if (callerFunc != null) {
-                        callers.add(callerFunc);
-                    }
-                }
-            }
-            
-            if (callers.isEmpty()) {
-                return "No callers found for function: " + functionName;
-            }
-            
-            // Sort callers by name
-            List<Function> sortedCallers = new ArrayList<>(callers);
-            sortedCallers.sort(Comparator.comparing(Function::getName));
-            
-            StringBuilder result = new StringBuilder();
-            result.append("Functions that call ").append(functionName).append(":\n");
-            for (Function caller : sortedCallers) {
-                result.append("  - ").append(caller.getName())
-                      .append(" at ").append(caller.getEntryPoint()).append("\n");
-            }
-            
-            return result.toString();
-        } catch (Exception e) {
-            return "Error getting function callers: " + e.getMessage();
-        }
-    }
-    
-    /**
-     * Get the complete call hierarchy for a function
-     *
-     * @param functionName name of the function to analyze
-     * @param depth maximum depth to traverse (both callers and callees)
-     * @return hierarchical representation of callers and callees
-     */
-    public String getCallHierarchy(String functionName, int depth) {
-        Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
-        if (functionName == null || functionName.isEmpty()) return "Function name is required";
-        
-        // Limit depth to prevent excessive output
-        depth = Math.min(Math.max(depth, 1), 5);
-        
-        try {
-            // Find the function by name
-            Function targetFunc = null;
-            for (Function func : program.getFunctionManager().getFunctions(true)) {
-                if (func.getName().equals(functionName)) {
-                    targetFunc = func;
-                    break;
-                }
-            }
-            
-            if (targetFunc == null) {
-                return "Function not found: " + functionName;
-            }
-            
-            StringBuilder result = new StringBuilder();
-            result.append("Call Hierarchy for function: ").append(functionName)
-                  .append(" at ").append(targetFunc.getEntryPoint())
-                  .append(" (depth: ").append(depth).append(")\n\n");
-            
-            // Get callers
-            result.append("CALLERS (functions that call ").append(functionName).append("):\n");
-            Set<Function> visitedCallers = new HashSet<>();
-            buildCallerHierarchy(targetFunc, result, visitedCallers, 0, depth);
-            
-            result.append("\n");
-            
-            // Get callees (reuse existing analyzeCallGraph logic)
-            result.append("CALLEES (functions called by ").append(functionName).append("):\n");
-            Set<Function> visitedCallees = new HashSet<>();
-            buildCallGraph(targetFunc, result, visitedCallees, 0, depth);
-            
-            return result.toString();
-        } catch (Exception e) {
-            return "Error getting call hierarchy: " + e.getMessage();
         }
     }
     

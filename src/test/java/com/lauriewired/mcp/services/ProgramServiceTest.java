@@ -184,8 +184,16 @@ public class ProgramServiceTest {
         // This tests that the TestProgramService(PluginTool) constructor works
         // We can't mock PluginTool, but we can pass null
         TestProgramService service = new TestProgramService((PluginTool) null);
-        
+
         Program result = service.getCurrentProgram();
         assertNull(result);
+    }
+
+    @Test
+    @DisplayName("getProgramInfo returns error when no program loaded")
+    void testGetProgramInfo_NoProgram() {
+        programService = new TestProgramService((MockablePluginTool) null);
+        String result = programService.getProgramInfo();
+        assertEquals("No program loaded", result);
     }
 }

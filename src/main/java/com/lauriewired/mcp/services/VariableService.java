@@ -62,36 +62,34 @@ public class VariableService {
     }
     
     private final ProgramService programService;
-    
+    private final FunctionService functionService;
+
     /**
      * Creates a new VariableService
      *
      * @param programService the program service for accessing the current program
+     * @param functionService the function service for resolving function identifiers
      */
-    public VariableService(ProgramService programService) {
+    public VariableService(ProgramService programService, FunctionService functionService) {
         this.programService = programService;
+        this.functionService = functionService;
     }
     
     /**
      * Batch rename variables in a function. All renames happen in a single transaction
      * (all-or-nothing). The function is decompiled once, all renames are applied, then committed.
      *
-     * @param functionName name of the function containing the variables
+     * @param functionIdentifier function name or address
      * @param renames map of old variable name to new variable name
      * @return JSON response with operation results
      */
-    public String batchRenameVariables(String functionName, java.util.Map<String, String> renames) {
+    public String batchRenameVariables(String functionIdentifier, java.util.Map<String, String> renames) {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
         if (renames == null || renames.isEmpty()) return "No renames specified";
 
-        var func = StreamSupport
-            .stream(program.getFunctionManager().getFunctions(true).spliterator(), false)
-            .filter(f -> f.getName().equals(functionName))
-            .findFirst()
-            .orElse(null);
-
-        if (func == null) return "Function not found: " + functionName;
+        var func = functionService.resolveFunction(program, functionIdentifier);
+        if (func == null) return "Function not found: " + functionIdentifier;
 
         var decomp = new DecompInterface();
         decomp.openProgram(program);
@@ -179,7 +177,7 @@ public class VariableService {
               },
               "count": %d
             }""",
-            HttpUtils.escapeJson(functionName),
+            HttpUtils.escapeJson(func.getName()),
             renamed,
             renames.size());
     }
@@ -187,28 +185,22 @@ public class VariableService {
     /**
      * Rename or split a variable in a function
      *
-     * @param functionName name of the function containing the variable
+     * @param functionIdentifier function name or address
      * @param oldVarName current variable name
      * @param newVarName new variable name
      * @param usageAddressStr optional address where the variable is used (for splitting)
      * @return JSON response with operation result and variable information
      */
-    public String renameVariableInFunction(String functionName, String oldVarName, String newVarName, String usageAddressStr) {
+    public String renameVariableInFunction(String functionIdentifier, String oldVarName, String newVarName, String usageAddressStr) {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
-    
+
         var decomp = new DecompInterface();
         decomp.openProgram(program);
-    
-        // Use Optional properly with early return pattern
-        var func = StreamSupport
-            .stream(program.getFunctionManager().getFunctions(true).spliterator(), false)
-            .filter(f -> f.getName().equals(functionName))
-            .findFirst()
-            .orElse(null);
-    
+
+        var func = functionService.resolveFunction(program, functionIdentifier);
         if (func == null) {
-            return "Function not found";
+            return "Function not found: " + functionIdentifier;
         }
     
         var result = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
@@ -478,20 +470,19 @@ public class VariableService {
      * Batch set variable types in a function. All type changes happen in a single transaction
      * (all-or-nothing). The function is decompiled once, all types are validated, then applied.
      *
-     * @param functionAddrStr address of the function containing the variables
+     * @param functionIdentifier function name or address
      * @param typeMap map of variable name to new data type string
      * @return JSON response with operation results
      */
-    public String batchSetVariableTypes(String functionAddrStr, Map<String, String> typeMap) {
-        if (functionAddrStr == null || functionAddrStr.isEmpty()) return "Function address is required";
+    public String batchSetVariableTypes(String functionIdentifier, Map<String, String> typeMap) {
+        if (functionIdentifier == null || functionIdentifier.isEmpty()) return "Function identifier is required";
         if (typeMap == null || typeMap.isEmpty()) return "No variable types specified";
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
 
         try {
-            var addr = program.getAddressFactory().getAddress(functionAddrStr);
-            var func = GhidraUtils.getFunctionForAddress(program, addr);
-            if (func == null) return "Could not find function at address: " + functionAddrStr;
+            var func = functionService.resolveFunction(program, functionIdentifier);
+            if (func == null) return "Function not found: " + functionIdentifier;
 
             var results = GhidraUtils.decompileFunction(func, program);
             if (results == null || !results.decompileCompleted()) return "Decompilation failed";
@@ -544,13 +535,13 @@ public class VariableService {
             return String.format("""
                 {
                   "status": "Variable types set successfully",
-                  "function_address": "%s",
+                  "function": "%s",
                   "applied": {
                 %s
                   },
                   "count": %d
                 }""",
-                HttpUtils.escapeJson(functionAddrStr),
+                HttpUtils.escapeJson(func.getName()),
                 applied,
                 typeMap.size());
         } catch (Exception e) {
