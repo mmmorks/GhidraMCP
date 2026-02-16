@@ -1,8 +1,6 @@
 package com.lauriewired.mcp.model;
 
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 import com.lauriewired.mcp.utils.Json;
 
@@ -40,13 +38,7 @@ public record ListOutput(List<?> items, int totalItems, int offset, int limit) i
 
     @Override
     public String toStructuredJson() {
-        Map<String, Object> envelope = new LinkedHashMap<>();
-        envelope.put("items", items);
-        envelope.put("totalItems", totalItems);
-        envelope.put("offset", offset);
-        envelope.put("limit", limit);
-        envelope.put("hasMore", hasMore());
-        return Json.serialize(envelope);
+        return Json.serialize(this);
     }
 
 }

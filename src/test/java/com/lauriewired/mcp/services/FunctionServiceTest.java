@@ -185,7 +185,7 @@ public class FunctionServiceTest {
         
         String result = functionService.listFunctions(0, 10).toStructuredJson();
 
-        assertTrue(result.contains("\"totalItems\":0"));
+        assertTrue(result.contains("\"total_items\":0"));
         verify(mockFunctionManager).getFunctions(true);
     }
     

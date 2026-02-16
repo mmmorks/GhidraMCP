@@ -3,14 +3,16 @@ package com.lauriewired.mcp.utils;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 
 /**
  * Shared ObjectMapper singleton for JSON serialization.
- * Configured with NON_NULL inclusion to omit null fields.
+ * Configured with NON_NULL inclusion and snake_case naming to match MCP conventions.
  */
 public final class Json {
     private static final ObjectMapper MAPPER = new ObjectMapper()
-        .setSerializationInclusion(JsonInclude.Include.NON_NULL);
+        .setSerializationInclusion(JsonInclude.Include.NON_NULL)
+        .setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
 
     private Json() {}
 

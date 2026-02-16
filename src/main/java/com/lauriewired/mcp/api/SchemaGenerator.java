@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.github.victools.jsonschema.generator.Option;
 import com.github.victools.jsonschema.generator.OptionPreset;
@@ -22,6 +23,8 @@ import com.lauriewired.mcp.utils.Json;
  */
 public final class SchemaGenerator {
     private static final com.github.victools.jsonschema.generator.SchemaGenerator GENERATOR;
+    private static final PropertyNamingStrategies.SnakeCaseStrategy SNAKE_CASE =
+        new PropertyNamingStrategies.SnakeCaseStrategy();
 
     static {
         JacksonModule jacksonModule = new JacksonModule(JacksonOption.RESPECT_JSONPROPERTY_REQUIRED);
@@ -29,6 +32,13 @@ public final class SchemaGenerator {
             new SchemaGeneratorConfigBuilder(SchemaVersion.DRAFT_2020_12, OptionPreset.PLAIN_JSON)
                 .with(jacksonModule)
                 .with(Option.FORBIDDEN_ADDITIONAL_PROPERTIES_BY_DEFAULT);
+        // Apply snake_case naming to schema properties to match Jackson serialization
+        configBuilder.forFields()
+            .withPropertyNameOverrideResolver(field ->
+                SNAKE_CASE.translate(field.getDeclaredName()));
+        configBuilder.forMethods()
+            .withPropertyNameOverrideResolver(method ->
+                SNAKE_CASE.translate(method.getName()));
         SchemaGeneratorConfig config = configBuilder.build();
         GENERATOR = new com.github.victools.jsonschema.generator.SchemaGenerator(config);
     }
@@ -78,13 +88,13 @@ public final class SchemaGenerator {
         itemsArray.put("items", Json.mapper().convertValue(itemSchema, Map.class));
         properties.put("items", itemsArray);
 
-        properties.put("totalItems", Map.of("type", "integer"));
+        properties.put("total_items", Map.of("type", "integer"));
         properties.put("offset", Map.of("type", "integer"));
         properties.put("limit", Map.of("type", "integer"));
-        properties.put("hasMore", Map.of("type", "boolean"));
+        properties.put("has_more", Map.of("type", "boolean"));
 
         schema.put("properties", properties);
-        schema.put("required", List.of("items", "totalItems", "hasMore"));
+        schema.put("required", List.of("items", "total_items", "has_more"));
         schema.put("additionalProperties", false);
         return schema;
     }
