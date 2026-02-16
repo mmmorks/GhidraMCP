@@ -1,5 +1,6 @@
 package com.lauriewired.mcp.utils;
 
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
 
@@ -86,8 +87,106 @@ public class HttpUtilsTest {
     void testEscapeJson_Unicode() {
         String input = "Hello 世界 🌍";
         String result = HttpUtils.escapeJson(input);
-        // Apache Commons Text should handle Unicode appropriately
         assertNotNull(result);
         assertTrue(result.contains("Hello"));
+    }
+
+    // --- parseJsonBody tests ---
+
+    @Test
+    @DisplayName("parseJsonBody parses simple flat JSON")
+    void testParseJsonBody_SimpleFlatJson() {
+        String body = "{\"function_identifier\": \"main\", \"new_name\": \"entry\"}";
+        Map<String, String> result = HttpUtils.parseJsonBody(body);
+        assertEquals(2, result.size());
+        assertEquals("main", result.get("function_identifier"));
+        assertEquals("entry", result.get("new_name"));
+    }
+
+    @Test
+    @DisplayName("parseJsonBody handles numeric and boolean values")
+    void testParseJsonBody_NumericBooleanValues() {
+        String body = "{\"address\": \"0x1000\", \"size\": 42, \"clear_existing\": true}";
+        Map<String, String> result = HttpUtils.parseJsonBody(body);
+        assertEquals(3, result.size());
+        assertEquals("0x1000", result.get("address"));
+        assertEquals("42", result.get("size"));
+        assertEquals("true", result.get("clear_existing"));
+    }
+
+    @Test
+    @DisplayName("parseJsonBody handles escaped quotes in values")
+    void testParseJsonBody_EscapedQuotes() {
+        String body = "{\"prototype\": \"int func(char *msg, \\\"hello\\\")\"}";
+        Map<String, String> result = HttpUtils.parseJsonBody(body);
+        assertEquals("int func(char *msg, \"hello\")", result.get("prototype"));
+    }
+
+    @Test
+    @DisplayName("parseJsonBody handles empty body")
+    void testParseJsonBody_EmptyBody() {
+        assertEquals(0, HttpUtils.parseJsonBody("").size());
+        assertEquals(0, HttpUtils.parseJsonBody("{}").size());
+        assertEquals(0, HttpUtils.parseJsonBody(null).size());
+    }
+
+    @Test
+    @DisplayName("parseJsonBody skips null values")
+    void testParseJsonBody_NullValues() {
+        String body = "{\"name\": \"test\", \"extra\": null}";
+        Map<String, String> result = HttpUtils.parseJsonBody(body);
+        assertEquals(1, result.size());
+        assertEquals("test", result.get("name"));
+        assertFalse(result.containsKey("extra"));
+    }
+
+    @Test
+    @DisplayName("parseJsonBody skips nested objects and arrays")
+    void testParseJsonBody_NestedObjectsSkipped() {
+        String body = "{\"name\": \"main\", \"renames\": {\"a\": \"b\"}, \"tag\": \"v1\"}";
+        Map<String, String> result = HttpUtils.parseJsonBody(body);
+        assertEquals(2, result.size());
+        assertEquals("main", result.get("name"));
+        assertEquals("v1", result.get("tag"));
+        assertFalse(result.containsKey("renames"));
+    }
+
+    // --- escapeJson control chars ---
+
+    @Test
+    @DisplayName("escapeJson escapes backspace and form feed")
+    void testEscapeJson_BackspaceFormFeed() {
+        assertEquals("a\\bb\\fc", HttpUtils.escapeJson("a\bb\fc"));
+    }
+
+    @Test
+    @DisplayName("escapeJson escapes low control characters as unicode")
+    void testEscapeJson_ControlChars() {
+        // U+0001 should become \u0001
+        String input = "a\u0001b";
+        String result = HttpUtils.escapeJson(input);
+        assertEquals("a\\u0001b", result);
+    }
+
+    // --- isErrorResponse tests ---
+
+    @Test
+    @DisplayName("isErrorResponse detects error prefixes")
+    void testIsErrorResponse_DetectsErrors() {
+        assertTrue(HttpUtils.isErrorResponse("Error: something broke"));
+        assertTrue(HttpUtils.isErrorResponse("Failed to do something"));
+        assertTrue(HttpUtils.isErrorResponse("Invalid address"));
+        assertTrue(HttpUtils.isErrorResponse("No program loaded"));
+        assertTrue(HttpUtils.isErrorResponse("Function not found: main"));
+        assertTrue(HttpUtils.isErrorResponse("Could not resolve address"));
+    }
+
+    @Test
+    @DisplayName("isErrorResponse returns false for success messages")
+    void testIsErrorResponse_SuccessMessages() {
+        assertFalse(HttpUtils.isErrorResponse("Function renamed successfully"));
+        assertFalse(HttpUtils.isErrorResponse("main\nprintf\nmalloc"));
+        assertFalse(HttpUtils.isErrorResponse(""));
+        assertFalse(HttpUtils.isErrorResponse(null));
     }
 }

@@ -20,8 +20,21 @@ ghidra_server_url = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_GHIDRA_SERVER
 mcp = FastMCP("ghidra-mcp")
 
 def _handle_response(response: requests.Response) -> str:
-    """Process HTTP response into a string result."""
+    """Process HTTP response into a string result, parsing JSON envelope if present."""
     text = response.content.decode('utf-8').strip()
+    try:
+        envelope = json.loads(text)
+        if isinstance(envelope, dict) and "status" in envelope:
+            if envelope["status"] == "success":
+                data = envelope.get("data", "")
+                if isinstance(data, (dict, list)):
+                    return json.dumps(data, indent=2)
+                return str(data)
+            else:
+                return f"Error: {envelope.get('error', 'Unknown error')}"
+    except (json.JSONDecodeError, KeyError):
+        pass
+    # Legacy fallback
     if response.ok:
         return text
     return f"Error {response.status_code}: {text}"
@@ -802,7 +815,7 @@ def get_memory_data_type(address: str) -> str:
 
     Example: get_memory_data_type("00402000") -> "Type: DWORD, Value: 0x12345678"
     """
-    return safe_get("get_memory_data_type", {"address": address})
+    return safe_get("get_address_data_type", {"address": address})
 
 @mcp.tool()
 def set_address_data_type(address: str, data_type: str, clear_existing: bool = True) -> str:

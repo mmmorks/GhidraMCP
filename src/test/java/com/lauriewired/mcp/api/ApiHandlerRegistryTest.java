@@ -253,6 +253,63 @@ class ApiHandlerRegistryTest {
     }
 
     @Test
+    void testExtractJsonString_EscapedQuotes() {
+        String json = """
+            {"prototype": "int func(char *msg, \\"hello\\")"}""";
+        assertEquals("int func(char *msg, \"hello\")", ApiHandlerRegistry.extractJsonString(json, "prototype"));
+    }
+
+    @Test
+    void testExtractJsonString_EscapedBackslash() {
+        String json = """
+            {"path": "C:\\\\Users\\\\test"}""";
+        assertEquals("C:\\Users\\test", ApiHandlerRegistry.extractJsonString(json, "path"));
+    }
+
+    @Test
+    void testExtractJsonObject_EscapedQuotes() {
+        String json = """
+            {"renames": {"local_10": "msg_\\"hello\\""}}""";
+        Map<String, String> result = ApiHandlerRegistry.extractJsonObject(json, "renames");
+        assertEquals(1, result.size());
+        assertEquals("msg_\"hello\"", result.get("local_10"));
+    }
+
+    @Test
+    void testFindUnescapedQuote_SimpleQuote() {
+        assertEquals(5, ApiHandlerRegistry.findUnescapedQuote("hello\"world", 0));
+    }
+
+    @Test
+    void testFindUnescapedQuote_EscapedQuote() {
+        // In the string: hello\"world" — the first quote is escaped, the second is not
+        String s = "hello\\\"world\"";
+        assertEquals(12, ApiHandlerRegistry.findUnescapedQuote(s, 0));
+    }
+
+    @Test
+    void testFindUnescapedQuote_DoubleBackslashThenQuote() {
+        // \\\\" — two backslashes then a quote: quote is NOT escaped
+        String s = "hello\\\\\"world";
+        assertEquals(7, ApiHandlerRegistry.findUnescapedQuote(s, 0));
+    }
+
+    @Test
+    void testUnescapeJsonString_AllEscapes() {
+        assertEquals("a\"b\\c\nd", ApiHandlerRegistry.unescapeJsonString("a\\\"b\\\\c\\nd"));
+    }
+
+    @Test
+    void testUnescapeJsonString_Null() {
+        assertNull(ApiHandlerRegistry.unescapeJsonString(null));
+    }
+
+    @Test
+    void testUnescapeJsonString_NoEscapes() {
+        assertEquals("hello", ApiHandlerRegistry.unescapeJsonString("hello"));
+    }
+
+    @Test
     void testExtractJsonInt() {
         String json = """
             {"name": "MyStruct", "size": 64, "new_name": "Renamed"}""";

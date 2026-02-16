@@ -104,10 +104,18 @@ public class TelemetryInterceptor implements HttpHandler {
     
     private Map<String, Object> parsePostParams(String contentType, byte[] bodyBytes) throws IOException {
         Map<String, Object> params = new HashMap<>();
-        
-        if (contentType != null && contentType.contains("application/x-www-form-urlencoded") && bodyBytes != null) {
-            String body = new String(bodyBytes);
-            
+        if (bodyBytes == null) return params;
+
+        String body = new String(bodyBytes).trim();
+
+        // Handle JSON content type or auto-detect JSON body
+        if ((contentType != null && contentType.contains("application/json")) || body.startsWith("{")) {
+            Map<String, String> jsonParams = com.lauriewired.mcp.utils.HttpUtils.parseJsonBody(body);
+            params.putAll(jsonParams);
+            return params;
+        }
+
+        if (contentType != null && contentType.contains("application/x-www-form-urlencoded")) {
             for (String param : body.split("&")) {
                 String[] pair = param.split("=", 2);
                 if (pair.length == 2) {
@@ -115,7 +123,7 @@ public class TelemetryInterceptor implements HttpHandler {
                 }
             }
         }
-        
+
         return params;
     }
     

@@ -241,30 +241,32 @@ public class TimeoutHandler {
     }
     
     /**
-     * Send a timeout response to the client
+     * Send a timeout response to the client as JSON
      */
     private void sendTimeoutResponse(HttpExchange exchange) throws IOException {
-        String response = String.format("Request timeout - operation took longer than %.1f seconds",
+        String errorMsg = String.format("Request timeout - operation took longer than %.1f seconds",
             timeoutNanos / 1_000_000_000.0);
-        byte[] bytes = response.getBytes("UTF-8");
-        
-        exchange.getResponseHeaders().set("Content-Type", "text/plain; charset=utf-8");
+        String jsonBody = "{\"status\":\"error\",\"error\":\"" + HttpUtils.escapeJson(errorMsg) + "\"}";
+        byte[] bytes = jsonBody.getBytes("UTF-8");
+
+        exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
         exchange.sendResponseHeaders(408, bytes.length); // 408 Request Timeout
-        
+
         try (var os = exchange.getResponseBody()) {
             os.write(bytes);
         }
     }
-    
+
     /**
-     * Send an error response to the client
+     * Send an error response to the client as JSON
      */
     private void sendErrorResponse(HttpExchange exchange, String message) throws IOException {
-        byte[] bytes = message.getBytes("UTF-8");
-        
-        exchange.getResponseHeaders().set("Content-Type", "text/plain; charset=utf-8");
+        String jsonBody = "{\"status\":\"error\",\"error\":\"" + HttpUtils.escapeJson(message) + "\"}";
+        byte[] bytes = jsonBody.getBytes("UTF-8");
+
+        exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
         exchange.sendResponseHeaders(500, bytes.length); // 500 Internal Server Error
-        
+
         try (var os = exchange.getResponseBody()) {
             os.write(bytes);
         }

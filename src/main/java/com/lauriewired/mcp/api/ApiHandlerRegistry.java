@@ -238,11 +238,11 @@ public class ApiHandlerRegistry {
                 
                 HttpUtils.sendResponse(exchange, response);
             } catch (IOException e) {
-                HttpUtils.sendResponse(exchange, "Error processing request: " + e.getMessage());
+                HttpUtils.sendJsonErrorResponse(exchange, 500, "Error processing request: " + e.getMessage());
             }
         });
     }
-    
+
     /**
      * Register namespace and class endpoints
      */
@@ -287,7 +287,7 @@ public class ApiHandlerRegistry {
                         typeChanges.isEmpty() ? null : typeChanges);
                 HttpUtils.sendResponse(exchange, result);
             } catch (Exception e) {
-                HttpUtils.sendResponse(exchange, "Error: " + e.getMessage());
+                HttpUtils.sendJsonErrorResponse(exchange, 500, "Error: " + e.getMessage());
             }
         });
 
@@ -306,10 +306,10 @@ public class ApiHandlerRegistry {
                         valueChanges == null || valueChanges.isEmpty() ? null : valueChanges);
                 HttpUtils.sendResponse(exchange, result);
             } catch (Exception e) {
-                HttpUtils.sendResponse(exchange, "Error: " + e.getMessage());
+                HttpUtils.sendJsonErrorResponse(exchange, 500, "Error: " + e.getMessage());
             }
         });
-        
+
         // Create structure (JSON body with optional inline fields)
         registerEndpoint(server, "create_structure", exchange -> {
             try {
@@ -326,10 +326,10 @@ public class ApiHandlerRegistry {
                 String result = dataTypeService.createStructure(structName, size, categoryPath, fields);
                 HttpUtils.sendResponse(exchange, result);
             } catch (Exception e) {
-                HttpUtils.sendResponse(exchange, "Error: " + e.getMessage());
+                HttpUtils.sendJsonErrorResponse(exchange, 500, "Error: " + e.getMessage());
             }
         });
-        
+
         // Add structure field
         registerEndpoint(server, "add_structure_field", exchange -> {
             try {
@@ -345,10 +345,10 @@ public class ApiHandlerRegistry {
                                                                  fieldSize, offset, comment);
                 HttpUtils.sendResponse(exchange, result);
             } catch (IOException e) {
-                HttpUtils.sendResponse(exchange, "Error parsing parameters: " + e.getMessage());
+                HttpUtils.sendJsonErrorResponse(exchange, 500, "Error parsing parameters: " + e.getMessage());
             }
         });
-        
+
         // Get data type details (auto-detects struct vs enum)
         registerEndpoint(server, "get_data_type", exchange -> {
             Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
@@ -372,10 +372,10 @@ public class ApiHandlerRegistry {
                 String result = dataTypeService.createEnum(enumName, size, categoryPath, values);
                 HttpUtils.sendResponse(exchange, result);
             } catch (Exception e) {
-                HttpUtils.sendResponse(exchange, "Error: " + e.getMessage());
+                HttpUtils.sendJsonErrorResponse(exchange, 500, "Error: " + e.getMessage());
             }
         });
-        
+
         // Add enum value
         registerEndpoint(server, "add_enum_value", exchange -> {
             try {
@@ -387,12 +387,12 @@ public class ApiHandlerRegistry {
                 String result = dataTypeService.addEnumValue(enumName, valueName, value);
                 HttpUtils.sendResponse(exchange, result);
             } catch (IOException e) {
-                HttpUtils.sendResponse(exchange, "Error parsing parameters: " + e.getMessage());
+                HttpUtils.sendJsonErrorResponse(exchange, 500, "Error parsing parameters: " + e.getMessage());
             } catch (NumberFormatException e) {
-                HttpUtils.sendResponse(exchange, "Invalid numeric value: " + e.getMessage());
+                HttpUtils.sendJsonErrorResponse(exchange, 400, "Invalid numeric value: " + e.getMessage());
             }
         });
-        
+
         // Find data type usage
         registerEndpoint(server, "find_data_type_usage", exchange -> {
             Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
@@ -478,12 +478,16 @@ public class ApiHandlerRegistry {
             try {
                 params = HttpUtils.parsePostParams(exchange);
             } catch (IOException e) {
-                HttpUtils.sendResponse(exchange, "Error parsing parameters: " + e.getMessage());
+                HttpUtils.sendJsonErrorResponse(exchange, 500, "Error parsing parameters: " + e.getMessage());
                 return;
             }
             
             boolean success = memoryService.renameDataAtAddress(params.get("address"), params.get("new_name"));
-            HttpUtils.sendResponse(exchange, success ? "Renamed successfully" : "Rename failed");
+            if (success) {
+                HttpUtils.sendJsonResponse(exchange, "Renamed successfully");
+            } else {
+                HttpUtils.sendJsonErrorResponse(exchange, 400, "Rename failed");
+            }
         });
         
         // Set data type at address
@@ -497,10 +501,10 @@ public class ApiHandlerRegistry {
                 String result = memoryService.setAddressDataType(address, dataType, clearExisting);
                 HttpUtils.sendResponse(exchange, result);
             } catch (IOException e) {
-                HttpUtils.sendResponse(exchange, "Error parsing parameters: " + e.getMessage());
+                HttpUtils.sendJsonErrorResponse(exchange, 500, "Error parsing parameters: " + e.getMessage());
             }
         });
-        
+
         // Read memory
         registerEndpoint(server, "read_memory", exchange -> {
             Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
@@ -544,17 +548,21 @@ public class ApiHandlerRegistry {
                 String comment = params.get("comment");
                 String commentType = params.get("type");
                 if (commentType == null || commentType.isEmpty()) {
-                    HttpUtils.sendResponse(exchange, "Error: 'type' parameter is required (pre, post, eol, plate, repeatable)");
+                    HttpUtils.sendJsonErrorResponse(exchange, 400, "Error: 'type' parameter is required (pre, post, eol, plate, repeatable)");
                     return;
                 }
                 boolean success = commentService.setComment(address, comment, commentType);
-                HttpUtils.sendResponse(exchange, success ? "Comment set successfully" : "Failed to set comment. Valid types: pre, post, eol, plate, repeatable");
+                if (success) {
+                    HttpUtils.sendJsonResponse(exchange, "Comment set successfully");
+                } else {
+                    HttpUtils.sendJsonErrorResponse(exchange, 400, "Failed to set comment. Valid types: pre, post, eol, plate, repeatable");
+                }
             } catch (IOException e) {
-                HttpUtils.sendResponse(exchange, "Error parsing parameters: " + e.getMessage());
+                HttpUtils.sendJsonErrorResponse(exchange, 500, "Error parsing parameters: " + e.getMessage());
             }
         });
     }
-    
+
     /**
      * Register search-related endpoints
      */
@@ -571,7 +579,7 @@ public class ApiHandlerRegistry {
                 String result = searchService.searchMemory(query, asString, blockName, limit);
                 HttpUtils.sendResponse(exchange, result);
             } catch (IOException | RuntimeException e) {
-                HttpUtils.sendResponse(exchange, "Error processing search request: " + e.getMessage());
+                HttpUtils.sendJsonErrorResponse(exchange, 500, "Error processing search request: " + e.getMessage());
             }
         });
         
@@ -586,7 +594,7 @@ public class ApiHandlerRegistry {
                 String result = searchService.searchDisassembly(query, offset, limit);
                 HttpUtils.sendResponse(exchange, result);
             } catch (RuntimeException | IOException e) {
-                HttpUtils.sendResponse(exchange, "Error processing disassembly search: " + e.getMessage());
+                HttpUtils.sendJsonErrorResponse(exchange, 500, "Error processing disassembly search: " + e.getMessage());
             }
         });
         
@@ -601,7 +609,7 @@ public class ApiHandlerRegistry {
                 String result = searchService.searchDecompiledCode(query, offset, limit);
                 HttpUtils.sendResponse(exchange, result);
             } catch (IOException | RuntimeException e) {
-                HttpUtils.sendResponse(exchange, "Error processing decompiled code search: " + e.getMessage());
+                HttpUtils.sendJsonErrorResponse(exchange, 500, "Error processing decompiled code search: " + e.getMessage());
             }
         });
     }
@@ -620,7 +628,7 @@ public class ApiHandlerRegistry {
                 var result = variableService.batchRenameVariables(functionIdentifier, renames);
                 HttpUtils.sendResponse(exchange, result);
             } catch (Exception e) {
-                HttpUtils.sendResponse(exchange, String.format("Error: %s", e.getMessage()));
+                HttpUtils.sendJsonErrorResponse(exchange, 500, String.format("Error: %s", e.getMessage()));
             }
         });
 
@@ -640,7 +648,7 @@ public class ApiHandlerRegistry {
                 var result = variableService.renameVariableInFunction(functionIdentifier, variableName, newName, usageAddress);
                 HttpUtils.sendResponse(exchange, result);
             } catch (IOException e) {
-                HttpUtils.sendResponse(exchange, String.format("Error: %s", e.getMessage()));
+                HttpUtils.sendJsonErrorResponse(exchange, 500, String.format("Error: %s", e.getMessage()));
             }
         });
 
@@ -654,14 +662,82 @@ public class ApiHandlerRegistry {
                 var result = variableService.batchSetVariableTypes(functionIdentifier, types);
                 HttpUtils.sendResponse(exchange, result);
             } catch (Exception e) {
-                HttpUtils.sendResponse(exchange, String.format("Error: %s", e.getMessage()));
+                HttpUtils.sendJsonErrorResponse(exchange, 500, String.format("Error: %s", e.getMessage()));
             }
         });
     }
-    
+
+    /**
+     * Find the next unescaped double-quote in a string, starting from fromIndex.
+     * A quote is escaped if preceded by an odd number of backslashes.
+     */
+    static int findUnescapedQuote(String s, int fromIndex) {
+        int i = fromIndex;
+        while (i < s.length()) {
+            int q = s.indexOf('"', i);
+            if (q < 0) return -1;
+            // Count preceding backslashes
+            int backslashes = 0;
+            int j = q - 1;
+            while (j >= 0 && s.charAt(j) == '\\') {
+                backslashes++;
+                j--;
+            }
+            if (backslashes % 2 == 0) {
+                return q; // Even backslashes means the quote is NOT escaped
+            }
+            i = q + 1;
+        }
+        return -1;
+    }
+
+    /**
+     * Unescape a JSON string value: convert \" → ", \\ → \, \n → newline, etc.
+     */
+    static String unescapeJsonString(String s) {
+        if (s == null || s.indexOf('\\') < 0) return s;
+        StringBuilder sb = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '\\' && i + 1 < s.length()) {
+                char next = s.charAt(i + 1);
+                switch (next) {
+                    case '"':  sb.append('"');  i++; break;
+                    case '\\': sb.append('\\'); i++; break;
+                    case 'n':  sb.append('\n'); i++; break;
+                    case 'r':  sb.append('\r'); i++; break;
+                    case 't':  sb.append('\t'); i++; break;
+                    case 'b':  sb.append('\b'); i++; break;
+                    case 'f':  sb.append('\f'); i++; break;
+                    case '/':  sb.append('/');  i++; break;
+                    case 'u':
+                        if (i + 5 < s.length()) {
+                            try {
+                                int cp = Integer.parseInt(s.substring(i + 2, i + 6), 16);
+                                sb.append((char) cp);
+                                i += 5;
+                            } catch (NumberFormatException e) {
+                                sb.append(c);
+                            }
+                        } else {
+                            sb.append(c);
+                        }
+                        break;
+                    default:
+                        sb.append(c);
+                        break;
+                }
+            } else {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
+    }
+
     /**
      * Extract a JSON string value by key from a JSON object string.
      * Simple parser for {"key": "value"} patterns without external libraries.
+     * Handles escaped quotes within values.
      */
     static String extractJsonString(String json, String key) {
         String searchKey = "\"" + key + "\"";
@@ -674,10 +750,10 @@ public class ApiHandlerRegistry {
         int quoteStart = json.indexOf('"', colonIndex + 1);
         if (quoteStart < 0) return null;
 
-        int quoteEnd = json.indexOf('"', quoteStart + 1);
+        int quoteEnd = findUnescapedQuote(json, quoteStart + 1);
         if (quoteEnd < 0) return null;
 
-        return json.substring(quoteStart + 1, quoteEnd);
+        return unescapeJsonString(json.substring(quoteStart + 1, quoteEnd));
     }
 
     /**
@@ -753,15 +829,15 @@ public class ApiHandlerRegistry {
         while (i < inner.length()) {
             int qs1 = inner.indexOf('"', i);
             if (qs1 < 0) break;
-            int qe1 = inner.indexOf('"', qs1 + 1);
+            int qe1 = findUnescapedQuote(inner, qs1 + 1);
             if (qe1 < 0) break;
-            String k = inner.substring(qs1 + 1, qe1);
+            String k = unescapeJsonString(inner.substring(qs1 + 1, qe1));
 
             int qs2 = inner.indexOf('"', qe1 + 1);
             if (qs2 < 0) break;
-            int qe2 = inner.indexOf('"', qs2 + 1);
+            int qe2 = findUnescapedQuote(inner, qs2 + 1);
             if (qe2 < 0) break;
-            String v = inner.substring(qs2 + 1, qe2);
+            String v = unescapeJsonString(inner.substring(qs2 + 1, qe2));
 
             result.put(k, v);
             i = qe2 + 1;
@@ -831,14 +907,14 @@ public class ApiHandlerRegistry {
             // Extract two quoted strings from the pair
             int qs1 = pair.indexOf('"');
             if (qs1 < 0) { i = arrEnd; continue; }
-            int qe1 = pair.indexOf('"', qs1 + 1);
+            int qe1 = findUnescapedQuote(pair, qs1 + 1);
             if (qe1 < 0) { i = arrEnd; continue; }
             int qs2 = pair.indexOf('"', qe1 + 1);
             if (qs2 < 0) { i = arrEnd; continue; }
-            int qe2 = pair.indexOf('"', qs2 + 1);
+            int qe2 = findUnescapedQuote(pair, qs2 + 1);
             if (qe2 < 0) { i = arrEnd; continue; }
 
-            result.add(new String[]{pair.substring(qs1 + 1, qe1), pair.substring(qs2 + 1, qe2)});
+            result.add(new String[]{unescapeJsonString(pair.substring(qs1 + 1, qe1)), unescapeJsonString(pair.substring(qs2 + 1, qe2))});
             i = arrEnd;
         }
         return result;
@@ -875,9 +951,9 @@ public class ApiHandlerRegistry {
         while (i < inner.length()) {
             int qs1 = inner.indexOf('"', i);
             if (qs1 < 0) break;
-            int qe1 = inner.indexOf('"', qs1 + 1);
+            int qe1 = findUnescapedQuote(inner, qs1 + 1);
             if (qe1 < 0) break;
-            String k = inner.substring(qs1 + 1, qe1);
+            String k = unescapeJsonString(inner.substring(qs1 + 1, qe1));
 
             int colonIdx = inner.indexOf(':', qe1 + 1);
             if (colonIdx < 0) break;

@@ -70,18 +70,19 @@ public class TimeoutHandlerTest {
         HttpHandler quickHandler = exchange -> {
             HttpUtils.sendResponse(exchange, "Quick response");
         };
-        
+
         timeoutHandler = new TimeoutHandler(5); // 5 second timeout
         timeoutHandler.start(); // Start the monitor thread
         HttpHandler wrappedHandler = timeoutHandler.wrap(quickHandler);
         when(mockExchange.getRequestMethod()).thenReturn("GET");
-        
+
         // Execute
         wrappedHandler.handle(mockExchange);
-        
-        // Verify normal response was sent
-        verify(mockExchange).sendResponseHeaders(eq(200), eq(14L)); // "Quick response".length()
-        assertEquals("Quick response", responseBody.toString("UTF-8"));
+
+        // Verify JSON success response was sent
+        String expectedJson = "{\"status\":\"success\",\"data\":\"Quick response\"}";
+        verify(mockExchange).sendResponseHeaders(eq(200), eq((long) expectedJson.getBytes("UTF-8").length));
+        assertEquals(expectedJson, responseBody.toString("UTF-8"));
     }
     
     @Test
@@ -159,9 +160,10 @@ public class TimeoutHandlerTest {
         // Execute
         wrappedHandler.handle(mockExchange);
         
-        // Verify normal response was sent (not timeout)
-        verify(mockExchange).sendResponseHeaders(eq(200), eq(14L)); // "POST completed".length()
-        assertEquals("POST completed", responseBody.toString("UTF-8"));
+        // Verify JSON success response was sent (not timeout)
+        String expectedJson = "{\"status\":\"success\",\"data\":\"POST completed\"}";
+        verify(mockExchange).sendResponseHeaders(eq(200), eq((long) expectedJson.getBytes("UTF-8").length));
+        assertEquals(expectedJson, responseBody.toString("UTF-8"));
     }
     
     @Test
@@ -197,9 +199,11 @@ public class TimeoutHandlerTest {
         // Execute
         wrappedHandler.handle(mockExchange);
         
-        // Verify error response was sent
+        // Verify JSON error response was sent
         verify(mockExchange).sendResponseHeaders(eq(500), anyLong()); // 500 Internal Server Error
-        assertEquals("Internal server error", responseBody.toString("UTF-8"));
+        String responseStr = responseBody.toString("UTF-8");
+        assertTrue(responseStr.contains("\"status\":\"error\""), "Response should be JSON error envelope");
+        assertTrue(responseStr.contains("Internal server error"), "Response should contain error message");
     }
     
     @Test
