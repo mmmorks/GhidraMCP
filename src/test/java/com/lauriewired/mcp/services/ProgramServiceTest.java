@@ -193,7 +193,7 @@ public class ProgramServiceTest {
     @DisplayName("getProgramInfo returns error when no program loaded")
     void testGetProgramInfo_NoProgram() {
         programService = new TestProgramService((MockablePluginTool) null);
-        String result = programService.getProgramInfo();
+        String result = programService.getProgramInfo().toDisplayText();
         assertEquals("No program loaded", result);
     }
 }

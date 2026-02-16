@@ -5,6 +5,10 @@ import com.lauriewired.mcp.api.Param;
 import com.lauriewired.mcp.utils.GhidraUtils;
 import com.lauriewired.mcp.utils.HttpUtils;
 import com.lauriewired.mcp.utils.ProgramTransaction;
+import com.lauriewired.mcp.model.JsonOutput;
+import com.lauriewired.mcp.model.StatusOutput;
+import com.lauriewired.mcp.model.TextOutput;
+import com.lauriewired.mcp.model.ToolOutput;
 import ghidra.app.decompiler.DecompInterface;
 import ghidra.app.decompiler.DecompileResults;
 import ghidra.program.model.address.Address;
@@ -94,27 +98,28 @@ public class VariableService {
              use split_variable first to give that specific use of memory a distinct identity
              from that point in the function onward, then rename it here.
 
-        Example: rename_variables("main", {"local_10": "buffer_size", "param_1": "argc"}) """)
-    public String renameVariables(
+        Example: rename_variables("main", {"local_10": "buffer_size", "param_1": "argc"}) """,
+        outputType = JsonOutput.class)
+    public ToolOutput renameVariables(
             @Param("Function name (e.g., \"main\") or address (e.g., \"00401000\", \"ram:00401000\")") String functionIdentifier,
             @Param("Map of current variable names to new names") java.util.Map<String, String> renames) {
         Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
-        if (renames == null || renames.isEmpty()) return "No renames specified";
+        if (program == null) return StatusOutput.error("No program loaded");
+        if (renames == null || renames.isEmpty()) return StatusOutput.error("No renames specified");
 
         var func = functionService.resolveFunction(program, functionIdentifier);
-        if (func == null) return "Function not found: " + functionIdentifier;
+        if (func == null) return StatusOutput.error("Function not found: " + functionIdentifier);
 
         var decomp = new DecompInterface();
         decomp.openProgram(program);
         var result = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
-        if (result == null || !result.decompileCompleted()) return "Decompilation failed";
+        if (result == null || !result.decompileCompleted()) return StatusOutput.error("Decompilation failed");
 
         var highFunction = result.getHighFunction();
-        if (highFunction == null) return "Decompilation failed (no high function)";
+        if (highFunction == null) return StatusOutput.error("Decompilation failed (no high function)");
 
         var localSymbolMap = highFunction.getLocalSymbolMap();
-        if (localSymbolMap == null) return "Decompilation failed (no local symbol map)";
+        if (localSymbolMap == null) return StatusOutput.error("Decompilation failed (no local symbol map)");
 
         // Pre-validate: find all symbols and check for conflicts
         java.util.Map<String, HighSymbol> symbolMap = new java.util.LinkedHashMap<>();
@@ -131,12 +136,12 @@ public class VariableService {
         // Validate all renames before starting the transaction
         for (var entry : renames.entrySet()) {
             if (!symbolMap.containsKey(entry.getKey())) {
-                return "Variable not found: '" + entry.getKey() + "'";
+                return StatusOutput.error("Variable not found: '" + entry.getKey() + "'");
             }
             // Check that the new name doesn't conflict with an existing name
             // (unless it's one we're also renaming away from)
             if (existingNames.contains(entry.getValue()) && !renames.containsKey(entry.getValue())) {
-                return "Error: A variable with name '" + entry.getValue() + "' already exists in this function";
+                return StatusOutput.error("Error: A variable with name '" + entry.getValue() + "' already exists in this function");
             }
         }
 
@@ -173,7 +178,7 @@ public class VariableService {
             tx.commit();
         } catch (Exception e) {
             Msg.error(this, "Failed to batch rename variables", e);
-            return "Failed to rename variables (transaction rolled back): " + e.getMessage();
+            return StatusOutput.error("Failed to rename variables (transaction rolled back): " + e.getMessage());
         }
 
         // Build response
@@ -182,7 +187,7 @@ public class VariableService {
                 HttpUtils.escapeJson(e.getKey()), HttpUtils.escapeJson(e.getValue())))
             .collect(Collectors.joining(",\n"));
 
-        return String.format("""
+        return new JsonOutput(String.format("""
             {
               "status": "Variables renamed successfully",
               "function": "%s",
@@ -193,7 +198,7 @@ public class VariableService {
             }""",
             HttpUtils.escapeJson(func.getName()),
             renamed,
-            renames.size());
+            renames.size()));
     }
 
     @McpTool(post = true, description = """
@@ -204,37 +209,38 @@ public class VariableService {
 
         Returns: Status of the split operation
 
-        Example: split_variable("main", "local_10", "00401050", "loop_counter") """)
-    public String splitVariable(
+        Example: split_variable("main", "local_10", "00401050", "loop_counter") """,
+        outputType = JsonOutput.class)
+    public ToolOutput splitVariable(
             @Param("Function name (e.g., \"main\") or address (e.g., \"00401000\", \"ram:00401000\")") String functionIdentifier,
             @Param("Current variable name to split") String variableName,
             @Param("Address where this specific usage occurs (bare hex, no 0x prefix)") String usageAddress,
             @Param(value = "New name for the variable at this usage (optional; Ghidra auto-generates if empty)", defaultValue = "") String newName) {
         String resolvedName = (newName != null && !newName.isEmpty()) ? newName : variableName + "_split";
         Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
+        if (program == null) return StatusOutput.error("No program loaded");
 
         var decomp = new DecompInterface();
         decomp.openProgram(program);
 
         var func = functionService.resolveFunction(program, functionIdentifier);
         if (func == null) {
-            return "Function not found: " + functionIdentifier;
+            return StatusOutput.error("Function not found: " + functionIdentifier);
         }
 
         var result = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
         if (result == null || !result.decompileCompleted()) {
-            return "Decompilation failed";
+            return StatusOutput.error("Decompilation failed");
         }
 
         var highFunction = result.getHighFunction();
         if (highFunction == null) {
-            return "Decompilation failed (no high function)";
+            return StatusOutput.error("Decompilation failed (no high function)");
         }
 
         var localSymbolMap = highFunction.getLocalSymbolMap();
         if (localSymbolMap == null) {
-            return "Decompilation failed (no local symbol map)";
+            return StatusOutput.error("Decompilation failed (no local symbol map)");
         }
 
         HighSymbol highSymbol = null;
@@ -247,12 +253,12 @@ public class VariableService {
                 highSymbol = symbol;
             }
             if (symbolName.equals(resolvedName)) {
-                return "Error: A variable with name '" + resolvedName + "' already exists in this function";
+                return StatusOutput.error("Error: A variable with name '" + resolvedName + "' already exists in this function");
             }
         }
 
         if (highSymbol == null) {
-            return "Variable not found";
+            return StatusOutput.error("Variable not found");
         }
 
         // Find the specific Varnode to split if a usage address is provided
@@ -284,7 +290,7 @@ public class VariableService {
                 }
 
                 if (specificVarnode == null) {
-                    return "Could not find any variable usage, even after trying fallback strategies";
+                    return StatusOutput.error("Could not find any variable usage, even after trying fallback strategies");
                 }
 
                 Msg.info(this, "Selected varnode " +
@@ -292,7 +298,7 @@ public class VariableService {
                     "with no definition"));
 
             } catch (Exception e) {
-                return "Error finding variable usage: " + e.getMessage();
+                return StatusOutput.error("Error finding variable usage: " + e.getMessage());
             }
         }
 
@@ -324,7 +330,7 @@ public class VariableService {
             tx.commit();
         } catch (Exception e) {
             Msg.error(this, "Failed to rename variable", e);
-            return "Failed to rename variable: " + e.getMessage();
+            return StatusOutput.error("Failed to rename variable: " + e.getMessage());
         }
 
         // Get updated variable list after renaming
@@ -332,17 +338,17 @@ public class VariableService {
             // Re-decompile to get the updated state
             var updatedResult = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
             if (updatedResult == null || !updatedResult.decompileCompleted()) {
-                return "Variable renamed, but failed to get updated variable list";
+                return StatusOutput.error("Variable renamed, but failed to get updated variable list");
             }
 
             var updatedHighFunction = updatedResult.getHighFunction();
             if (updatedHighFunction == null) {
-                return "Variable renamed, but failed to get updated high function";
+                return StatusOutput.error("Variable renamed, but failed to get updated high function");
             }
 
             var updatedSymbolMap = updatedHighFunction.getLocalSymbolMap();
             if (updatedSymbolMap == null) {
-                return "Variable renamed, but failed to get updated symbol map";
+                return StatusOutput.error("Variable renamed, but failed to get updated symbol map");
             }
 
             // Convert symbols to VariableInfo records
@@ -397,12 +403,12 @@ public class VariableService {
                 variablesJson,
                 HttpUtils.escapeJson(decompiled));
 
-            return jsonResponse;
+            return new JsonOutput(jsonResponse);
 
         } catch (Exception e) {
             String errorMsg = "Variable renamed, but failed to collect variable info: " + e.getMessage();
             Msg.error(this, errorMsg, e);
-            return "Variable renamed";
+            return new TextOutput("Variable renamed");
         }
     }
     
@@ -496,24 +502,25 @@ public class VariableService {
 
         Note: Supports built-in types, pointers, and structures. Windows-style types also supported.
 
-        Example: set_variable_types("00401000", {"local_10": "int", "local_14": "char *"}) """)
-    public String setVariableTypes(
+        Example: set_variable_types("00401000", {"local_10": "int", "local_14": "char *"}) """,
+        outputType = JsonOutput.class)
+    public ToolOutput setVariableTypes(
             @Param("Function name (e.g., \"main\") or address (e.g., \"00401000\", \"ram:00401000\")") String functionIdentifier,
             @Param("Map of variable names to new data types") Map<String, String> types) {
-        if (functionIdentifier == null || functionIdentifier.isEmpty()) return "Function identifier is required";
-        if (types == null || types.isEmpty()) return "No variable types specified";
+        if (functionIdentifier == null || functionIdentifier.isEmpty()) return StatusOutput.error("Function identifier is required");
+        if (types == null || types.isEmpty()) return StatusOutput.error("No variable types specified");
         Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
+        if (program == null) return StatusOutput.error("No program loaded");
 
         try {
             var func = functionService.resolveFunction(program, functionIdentifier);
-            if (func == null) return "Function not found: " + functionIdentifier;
+            if (func == null) return StatusOutput.error("Function not found: " + functionIdentifier);
 
             var results = GhidraUtils.decompileFunction(func, program);
-            if (results == null || !results.decompileCompleted()) return "Decompilation failed";
+            if (results == null || !results.decompileCompleted()) return StatusOutput.error("Decompilation failed");
 
             var highFunction = results.getHighFunction();
-            if (highFunction == null) return "Decompilation failed (no high function)";
+            if (highFunction == null) return StatusOutput.error("Decompilation failed (no high function)");
 
             var dataTypeService = new DataTypeService(programService);
             var dtm = program.getDataTypeManager();
@@ -525,13 +532,13 @@ public class VariableService {
             for (var entry : types.entrySet()) {
                 var symbol = GhidraUtils.findVariableByName(highFunction, entry.getKey());
                 if (symbol == null) {
-                    return "Variable not found: '" + entry.getKey() + "'";
+                    return StatusOutput.error("Variable not found: '" + entry.getKey() + "'");
                 }
                 symbolMap.put(entry.getKey(), symbol);
 
                 var dataType = dataTypeService.resolveDataType(dtm, entry.getValue());
                 if (dataType == null) {
-                    return "Could not resolve data type: '" + entry.getValue() + "' for variable '" + entry.getKey() + "'";
+                    return StatusOutput.error("Could not resolve data type: '" + entry.getValue() + "' for variable '" + entry.getKey() + "'");
                 }
                 resolvedTypes.put(entry.getKey(), dataType);
             }
@@ -548,7 +555,7 @@ public class VariableService {
                 tx.commit();
             } catch (Exception e) {
                 Msg.error(this, "Failed to batch set variable types", e);
-                return "Failed to set variable types (transaction rolled back): " + e.getMessage();
+                return StatusOutput.error("Failed to set variable types (transaction rolled back): " + e.getMessage());
             }
 
             // Build response
@@ -557,7 +564,7 @@ public class VariableService {
                     HttpUtils.escapeJson(e.getKey()), HttpUtils.escapeJson(e.getValue())))
                 .collect(Collectors.joining(",\n"));
 
-            return String.format("""
+            return new JsonOutput(String.format("""
                 {
                   "status": "Variable types set successfully",
                   "function": "%s",
@@ -568,10 +575,10 @@ public class VariableService {
                 }""",
                 HttpUtils.escapeJson(func.getName()),
                 applied,
-                types.size());
+                types.size()));
         } catch (Exception e) {
             Msg.error(this, "Error in batch set variable types", e);
-            return "Error: " + e.getMessage();
+            return StatusOutput.error("Error: " + e.getMessage());
         }
     }
 

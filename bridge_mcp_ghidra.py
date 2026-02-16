@@ -2,7 +2,7 @@
 # requires-python = ">=3.10"
 # dependencies = [
 #     "requests>=2",
-#     "mcp>=1.2.0",
+#     "mcp>=1.26.0",
 # ]
 # ///
 
@@ -19,7 +19,7 @@ import logging
 
 import requests
 from mcp.server.lowlevel import Server
-from mcp.types import Tool, TextContent
+from mcp.types import Tool, TextContent, ToolAnnotations, CallToolResult
 import mcp.server.stdio
 
 DEFAULT_GHIDRA_SERVER = "http://127.0.0.1:8080"
@@ -45,27 +45,37 @@ def _fetch_tool_definitions() -> list[dict]:
         return []
 
 
-def _handle_response(response: requests.Response) -> str:
-    """Process HTTP response into a string result, parsing JSON envelope if present."""
+def _handle_response(response: requests.Response) -> tuple[str, dict | None]:
+    """Process HTTP response into (display_text, structured_data) tuple.
+
+    Parses the JSON envelope and extracts both the 'text' field (display) and
+    'data' field (structured).  Falls back gracefully for old-format responses.
+    """
     text = response.content.decode("utf-8").strip()
     try:
         envelope = json.loads(text)
         if isinstance(envelope, dict) and "status" in envelope:
             if envelope["status"] == "success":
-                data = envelope.get("data", "")
-                if isinstance(data, (dict, list)):
-                    return json.dumps(data, indent=2)
-                return str(data)
+                data = envelope.get("data")
+                display = envelope.get("text")
+                # Prefer the explicit 'text' field; fall back to stringified data
+                if display is None:
+                    if isinstance(data, (dict, list)):
+                        display = json.dumps(data, indent=2)
+                    else:
+                        display = str(data) if data is not None else ""
+                return display, data if isinstance(data, (dict, list)) else None
             else:
-                return f"Error: {envelope.get('error', 'Unknown error')}"
+                msg = f"Error: {envelope.get('error', 'Unknown error')}"
+                return msg, None
     except (json.JSONDecodeError, KeyError):
         pass
     if response.ok:
-        return text
-    return f"Error {response.status_code}: {text}"
+        return text, None
+    return f"Error {response.status_code}: {text}", None
 
 
-def _call_tool(tool_def: dict, arguments: dict) -> str:
+def _call_tool(tool_def: dict, arguments: dict) -> tuple[str, dict | None]:
     """Dispatch a tool call as GET or POST to the Ghidra plugin."""
     endpoint = tool_def["name"]
     method = tool_def.get("method", "GET").upper()
@@ -90,7 +100,7 @@ def _call_tool(tool_def: dict, arguments: dict) -> str:
             )
         return _handle_response(response)
     except Exception as e:
-        return f"Request failed: {e}"
+        return f"Request failed: {e}", None
 
 
 async def main():
@@ -107,22 +117,38 @@ async def main():
 
     @server.list_tools()
     async def list_tools() -> list[Tool]:
-        return [
-            Tool(
+        tools = []
+        for t in _tools:
+            # Derive readOnlyHint from HTTP method (GET = read-only, POST = mutation)
+            is_read_only = t.get("method", "GET").upper() == "GET"
+            annotations = ToolAnnotations(readOnlyHint=is_read_only)
+
+            tool_kwargs: dict = dict(
                 name=t["name"],
                 description=t.get("description", ""),
                 inputSchema=t.get("inputSchema", {"type": "object"}),
+                annotations=annotations,
             )
-            for t in _tools
-        ]
+            # Pass outputSchema if present
+            if "outputSchema" in t:
+                tool_kwargs["outputSchema"] = t["outputSchema"]
+
+            tools.append(Tool(**tool_kwargs))
+        return tools
 
     @server.call_tool()
-    async def call_tool(name: str, arguments: dict) -> list[TextContent]:
+    async def call_tool(name: str, arguments: dict) -> CallToolResult:
         tool_def = tool_lookup.get(name)
         if tool_def is None:
-            return [TextContent(type="text", text=f"Unknown tool: {name}")]
-        result = _call_tool(tool_def, arguments or {})
-        return [TextContent(type="text", text=result)]
+            return CallToolResult(
+                content=[TextContent(type="text", text=f"Unknown tool: {name}")],
+                isError=True,
+            )
+        display_text, structured_data = _call_tool(tool_def, arguments or {})
+        return CallToolResult(
+            content=[TextContent(type="text", text=display_text)],
+            structuredContent=structured_data,
+        )
 
     async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
         await server.run(read_stream, write_stream, server.create_initialization_options())

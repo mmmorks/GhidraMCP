@@ -11,6 +11,8 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 import com.lauriewired.mcp.model.PaginationResult;
+import com.lauriewired.mcp.model.StatusOutput;
+import com.lauriewired.mcp.model.ToolOutput;
 import com.sun.net.httpserver.HttpExchange;
 
 import ghidra.util.Msg;
@@ -313,6 +315,22 @@ public class HttpUtils {
             if (response.startsWith(prefix)) return true;
         }
         return false;
+    }
+
+    /**
+     * Send a structured HTTP response from a ToolOutput, including both structured JSON and display text.
+     * Routes StatusOutput with success==false to error response; otherwise sends success envelope.
+     */
+    public static void sendStructuredResponse(HttpExchange exchange, ToolOutput output) throws IOException {
+        if (output instanceof StatusOutput status && !status.success()) {
+            sendJsonErrorResponse(exchange, 400, status.message());
+        } else if (isErrorResponse(output.toDisplayText())) {
+            sendJsonErrorResponse(exchange, 400, output.toDisplayText());
+        } else {
+            String jsonBody = "{\"status\":\"success\",\"data\":" + output.toStructuredJson()
+                + ",\"text\":\"" + escapeJson(output.toDisplayText()) + "\"}";
+            sendRawJson(exchange, 200, jsonBody);
+        }
     }
 
     /**

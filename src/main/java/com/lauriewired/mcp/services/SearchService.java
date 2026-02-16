@@ -30,6 +30,9 @@ import ghidra.util.task.TaskMonitor;
 
 import com.lauriewired.mcp.api.McpTool;
 import com.lauriewired.mcp.api.Param;
+import com.lauriewired.mcp.model.StatusOutput;
+import com.lauriewired.mcp.model.TextOutput;
+import com.lauriewired.mcp.model.ToolOutput;
 
 /**
  * Service for search-related operations in Ghidra
@@ -54,18 +57,18 @@ public class SearchService {
         Returns: Memory matches with address, label, and context bytes
 
         Example: search_memory("Password", True) -> matches of "Password" string in memory """)
-    public String searchMemory(
+    public ToolOutput searchMemory(
             @Param("The pattern to search for (string or hex bytes like \"00 FF 32\")") String query,
             @Param(value = "True to search for UTF-8 string, False to search for hex bytes", defaultValue = "true") boolean asString,
             @Param(value = "Optional memory block name to restrict search", defaultValue = "") String blockName,
             @Param(value = "Maximum number of results to return", defaultValue = "10") int limit) {
         Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
-        if (query == null || query.isEmpty()) return "Search query is required";
-        
+        if (program == null) return StatusOutput.error("No program loaded");
+        if (query == null || query.isEmpty()) return StatusOutput.error("Search query is required");
+
         List<String> results = new ArrayList<>();
         Memory memory = program.getMemory();
-        
+
         try {
             // Create a byte matcher based on the input type
             ByteMatcher matcher;
@@ -189,7 +192,7 @@ public class SearchService {
             if (blockName != null && !blockName.isEmpty()) {
                 MemoryBlock block = memory.getBlock(blockName);
                 if (block == null) {
-                    return "Memory block not found: " + blockName;
+                    return StatusOutput.error("Memory block not found: " + blockName);
                 }
                 searchSet.add(block.getStart(), block.getEnd());
             } else {
@@ -226,14 +229,14 @@ public class SearchService {
             }
             
         } catch (NumberFormatException e) {
-            return "Error searching memory: " + e.getMessage();
+            return StatusOutput.error("Error searching memory: " + e.getMessage());
         }
-        
+
         if (results.isEmpty()) {
-            return "No matches found for query: " + query;
+            return new TextOutput("No matches found for query: " + query);
         }
-        
-        return String.join("\n\n", results);
+
+        return new TextOutput(String.join("\n\n", results));
     }
     
     /**
@@ -324,21 +327,21 @@ public class SearchService {
         Returns: Matching instructions with function context and nearby instructions
 
         Example: search_disassembly("mov.*eax") -> finds MOV instructions using EAX register """)
-    public String searchDisassembly(
+    public ToolOutput searchDisassembly(
             @Param("Regex pattern to search for in assembly instructions") String query,
             @Param(value = "Starting index for pagination", defaultValue = "0") int offset,
             @Param(value = "Maximum number of results to return", defaultValue = "10") int limit) {
         Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
-        if (query == null || query.isEmpty()) return "Search query is required";
-        
+        if (program == null) return StatusOutput.error("No program loaded");
+        if (query == null || query.isEmpty()) return StatusOutput.error("Search query is required");
+
         Pattern pattern;
         try {
             pattern = Pattern.compile(query, Pattern.CASE_INSENSITIVE);
         } catch (Exception e) {
-            return "Invalid regex pattern: " + e.getMessage();
+            return StatusOutput.error("Invalid regex pattern: " + e.getMessage());
         }
-        
+
         // Get the memory blocks to search through
         Memory memory = program.getMemory();
         List<MemoryBlock> codeBlocks = new ArrayList<>();
@@ -347,9 +350,9 @@ public class SearchService {
                 codeBlocks.add(block);
             }
         }
-        
+
         if (codeBlocks.isEmpty()) {
-            return "No executable code blocks found in program";
+            return StatusOutput.error("No executable code blocks found in program");
         }
         
         List<String> results = new ArrayList<>();
@@ -490,17 +493,17 @@ public class SearchService {
         }
         
         if (results.isEmpty()) {
-            return "No matches found for pattern: " + query;
+            return new TextOutput("No matches found for pattern: " + query);
         }
-        
+
         // Apply pagination
         int fromIndex = Math.min(offset, results.size());
         int toIndex = Math.min(offset + limit, results.size());
         List<String> paginatedResults = results.subList(fromIndex, toIndex);
-        
-        return String.join("\n", paginatedResults);
+
+        return new TextOutput(String.join("\n", paginatedResults));
     }
-    
+
     @McpTool(description = """
         Search for patterns in decompiled C-like code using regex.
 
@@ -511,21 +514,21 @@ public class SearchService {
         Note: This is resource-intensive as each function must be decompiled.
 
         Example: search_decompiled("malloc\\\\(.*\\\\)") -> finds malloc calls in decompiled code """)
-    public String searchDecompiled(
+    public ToolOutput searchDecompiled(
             @Param("Regex pattern to search for in decompiled code") String query,
             @Param(value = "Starting index for pagination", defaultValue = "0") int offset,
             @Param(value = "Maximum number of functions to search/return", defaultValue = "5") int limit) {
         Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
-        if (query == null || query.isEmpty()) return "Search query is required";
-        
+        if (program == null) return StatusOutput.error("No program loaded");
+        if (query == null || query.isEmpty()) return StatusOutput.error("Search query is required");
+
         Pattern pattern;
         try {
             pattern = Pattern.compile(query, Pattern.CASE_INSENSITIVE);
         } catch (Exception e) {
-            return "Invalid regex pattern: " + e.getMessage();
+            return StatusOutput.error("Invalid regex pattern: " + e.getMessage());
         }
-        
+
         List<String> results = new ArrayList<>();
         FunctionManager functionManager = program.getFunctionManager();
         DecompInterface decomp = new DecompInterface();
@@ -597,14 +600,14 @@ public class SearchService {
         }
         
         if (results.isEmpty()) {
-            return "No matches found for pattern: " + query;
+            return new TextOutput("No matches found for pattern: " + query);
         }
-        
+
         // Apply pagination
         int fromIndex = Math.min(offset, results.size());
         int toIndex = Math.min(offset + limit, results.size());
         List<String> paginatedResults = results.subList(fromIndex, toIndex);
-        
-        return String.join("\n\n", paginatedResults);
+
+        return new TextOutput(String.join("\n\n", paginatedResults));
     }
 }

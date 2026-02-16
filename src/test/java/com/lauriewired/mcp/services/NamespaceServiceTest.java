@@ -24,56 +24,56 @@ public class NamespaceServiceTest {
     @Test
     @DisplayName("listSymbols returns error when no program is loaded")
     void testListSymbols_NoProgram() {
-        String result = namespaceService.listSymbols(0, 10);
+        String result = namespaceService.listSymbols(0, 10).toDisplayText();
         assertEquals("No program loaded", result);
     }
 
     @Test
     @DisplayName("listSymbols handles negative offset")
     void testListSymbols_NegativeOffset() {
-        String result = namespaceService.listSymbols(-1, 10);
+        String result = namespaceService.listSymbols(-1, 10).toDisplayText();
         assertEquals("No program loaded", result);
     }
 
     @Test
     @DisplayName("listSymbols handles zero limit")
     void testListSymbols_ZeroLimit() {
-        String result = namespaceService.listSymbols(0, 0);
+        String result = namespaceService.listSymbols(0, 0).toDisplayText();
         assertEquals("No program loaded", result);
     }
 
     @Test
     @DisplayName("getSymbolAddress returns error when no program is loaded")
     void testGetSymbolAddress_NoProgram() {
-        String result = namespaceService.getSymbolAddress("main");
+        String result = namespaceService.getSymbolAddress("main").toDisplayText();
         assertEquals("No program loaded", result);
     }
 
     @Test
     @DisplayName("getSymbolAddress returns error for null symbol name")
     void testGetSymbolAddress_NullSymbolName() {
-        String result = namespaceService.getSymbolAddress(null);
+        String result = namespaceService.getSymbolAddress(null).toDisplayText();
         assertEquals("No program loaded", result);
     }
 
     @Test
     @DisplayName("getSymbolAddress returns error for empty symbol name")
     void testGetSymbolAddress_EmptySymbolName() {
-        String result = namespaceService.getSymbolAddress("");
+        String result = namespaceService.getSymbolAddress("").toDisplayText();
         assertEquals("No program loaded", result);
     }
 
     @Test
     @DisplayName("getSymbolAddress handles valid symbol name")
     void testGetSymbolAddress_ValidSymbolName() {
-        String result = namespaceService.getSymbolAddress("main");
+        String result = namespaceService.getSymbolAddress("main").toDisplayText();
         assertEquals("No program loaded", result);
     }
 
     @Test
     @DisplayName("getSymbolAddress handles symbol with special characters")
     void testGetSymbolAddress_SpecialCharacters() {
-        String result = namespaceService.getSymbolAddress("_start@plt");
+        String result = namespaceService.getSymbolAddress("_start@plt").toDisplayText();
         assertEquals("No program loaded", result);
     }
 

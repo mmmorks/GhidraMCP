@@ -5,7 +5,10 @@ import java.util.List;
 
 import com.lauriewired.mcp.api.McpTool;
 import com.lauriewired.mcp.api.Param;
-import com.lauriewired.mcp.utils.HttpUtils;
+import com.lauriewired.mcp.model.ListOutput;
+import com.lauriewired.mcp.model.StatusOutput;
+import com.lauriewired.mcp.model.TextOutput;
+import com.lauriewired.mcp.model.ToolOutput;
 
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.symbol.Symbol;
@@ -34,18 +37,19 @@ public class NamespaceService {
 
         Returns: Symbols with addresses in format "symbol_name -> address"
 
-        Example: list_symbols(0, 5) -> ['main -> 00401000', 'gVar1 -> 00410010', ...] """)
-    public String listSymbols(
+        Example: list_symbols(0, 5) -> ['main -> 00401000', 'gVar1 -> 00410010', ...] """,
+        outputType = ListOutput.class)
+    public ToolOutput listSymbols(
             @Param(value = "Starting index for pagination (0-based)", defaultValue = "0") int offset,
             @Param(value = "Maximum symbols to return", defaultValue = "100") int limit) {
         Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
+        if (program == null) return StatusOutput.error("No program loaded");
 
         List<String> lines = new ArrayList<>();
         for (Symbol symbol : program.getSymbolTable().getAllSymbols(false)) {
             lines.add(symbol.getName() + " -> " + symbol.getAddress());
         }
-        return HttpUtils.paginateList(lines, offset, limit);
+        return ListOutput.paginate(lines, offset, limit);
     }
     
     @McpTool(description = """
@@ -58,21 +62,21 @@ public class NamespaceService {
         Note: For functions, returns entry point; for data, returns storage location.
 
         Example: get_symbol_address("main") -> "00401000" """)
-    public String getSymbolAddress(
+    public ToolOutput getSymbolAddress(
             @Param("Symbol name (case-sensitive, exact match required)") String symbolName) {
         Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
-        if (symbolName == null || symbolName.isEmpty()) return "Symbol name is required";
+        if (program == null) return StatusOutput.error("No program loaded");
+        if (symbolName == null || symbolName.isEmpty()) return StatusOutput.error("Symbol name is required");
 
         SymbolTable symbolTable = program.getSymbolTable();
         SymbolIterator symbolIterator = symbolTable.getSymbols(symbolName);
-        
+
         if (symbolIterator.hasNext()) {
             // Use the first matching symbol's address
             Symbol symbol = symbolIterator.next();
-            return "Symbol '" + symbolName + "' found at address: " + symbol.getAddress().toString();
+            return new TextOutput("Symbol '" + symbolName + "' found at address: " + symbol.getAddress().toString());
         } else {
-            return "Symbol not found";
+            return StatusOutput.error("Symbol not found");
         }
     }
 }

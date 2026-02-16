@@ -12,6 +12,10 @@ import java.util.Set;
 
 import com.lauriewired.mcp.api.McpTool;
 import com.lauriewired.mcp.api.Param;
+import com.lauriewired.mcp.model.ListOutput;
+import com.lauriewired.mcp.model.StatusOutput;
+import com.lauriewired.mcp.model.TextOutput;
+import com.lauriewired.mcp.model.ToolOutput;
 import com.lauriewired.mcp.utils.GhidraUtils;
 
 import ghidra.app.decompiler.DecompileResults;
@@ -66,16 +70,16 @@ public class AnalysisService {
         Essential for understanding branching and loops.
 
         Example: analyze_control_flow("main") -> "Control Flow Analysis for function:..." """)
-    public String analyzeControlFlow(
+    public ToolOutput analyzeControlFlow(
             @Param("Function name (e.g., \"main\") or address (e.g., \"00401000\", \"ram:00401000\")") String functionIdentifier) {
         Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
-        if (functionIdentifier == null || functionIdentifier.isEmpty()) return "Function identifier is required";
+        if (program == null) return StatusOutput.error("No program loaded");
+        if (functionIdentifier == null || functionIdentifier.isEmpty()) return StatusOutput.error("Function identifier is required");
 
         try {
             Function func = functionService.resolveFunction(program, functionIdentifier);
-            if (func == null) return "Function not found: " + functionIdentifier;
-            
+            if (func == null) return StatusOutput.error("Function not found: " + functionIdentifier);
+
             StringBuilder result = new StringBuilder();
             result.append("Control Flow Analysis for function: ").append(func.getName())
                   .append(" at ").append(func.getEntryPoint()).append("\n\n");
@@ -152,12 +156,12 @@ public class AnalysisService {
                 result.append("\n");
             }
             
-            return result.toString();
+            return new TextOutput(result.toString());
         } catch (Exception e) {
-            return "Error analyzing control flow: " + e.getMessage();
+            return StatusOutput.error("Error analyzing control flow: " + e.getMessage());
         }
     }
-    
+
     @McpTool(description = """
         Analyze the data flow for a variable in a function.
 
@@ -168,17 +172,17 @@ public class AnalysisService {
         Note: Helps understand value propagation and useful for analyzing algorithms.
 
         Example: analyze_data_flow("main", "local_10") -> "Data Flow Analysis..." """)
-    public String analyzeDataFlow(
+    public ToolOutput analyzeDataFlow(
             @Param("Function name (e.g., \"main\") or address (e.g., \"00401000\", \"ram:00401000\")") String functionIdentifier,
             @Param("Variable name to track") String variable) {
         Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
-        if (functionIdentifier == null || functionIdentifier.isEmpty()) return "Function identifier is required";
-        if (variable == null || variable.isEmpty()) return "Variable name is required";
+        if (program == null) return StatusOutput.error("No program loaded");
+        if (functionIdentifier == null || functionIdentifier.isEmpty()) return StatusOutput.error("Function identifier is required");
+        if (variable == null || variable.isEmpty()) return StatusOutput.error("Variable name is required");
 
         try {
             Function func = functionService.resolveFunction(program, functionIdentifier);
-            if (func == null) return "Function not found: " + functionIdentifier;
+            if (func == null) return StatusOutput.error("Function not found: " + functionIdentifier);
 
             StringBuilder result = new StringBuilder();
             result.append("Data Flow Analysis for variable '").append(variable)
@@ -188,12 +192,12 @@ public class AnalysisService {
             // Decompile the function to get high-level variable information
             DecompileResults decompResults = GhidraUtils.decompileFunction(func, program);
             if (decompResults == null) {
-                return "Could not decompile function for data flow analysis";
+                return StatusOutput.error("Could not decompile function for data flow analysis");
             }
 
             HighFunction highFunc = decompResults.getHighFunction();
             if (highFunc == null) {
-                return "No high function available for data flow analysis";
+                return StatusOutput.error("No high function available for data flow analysis");
             }
 
             // Find the variable by name
@@ -201,12 +205,12 @@ public class AnalysisService {
                 GhidraUtils.findVariableByName(highFunc, variable);
 
             if (targetSymbol == null) {
-                return "Variable '" + variable + "' not found in function";
+                return StatusOutput.error("Variable '" + variable + "' not found in function");
             }
             
             HighVariable highVar = targetSymbol.getHighVariable();
             if (highVar == null) {
-                return "No high variable found for '" + variable + "'";
+                return StatusOutput.error("No high variable found for '" + variable + "'");
             }
             
             // Get information about the variable
@@ -268,12 +272,12 @@ public class AnalysisService {
                 }
             }
             
-            return result.toString();
+            return new TextOutput(result.toString());
         } catch (Exception e) {
-            return "Error analyzing data flow: " + e.getMessage();
+            return StatusOutput.error("Error analyzing data flow: " + e.getMessage());
         }
     }
-    
+
     @McpTool(description = """
         Get the call graph for a function.
 
@@ -285,19 +289,19 @@ public class AnalysisService {
             get_call_graph("main") -> full call hierarchy for main
             get_call_graph("process_data", direction="callers") -> who calls process_data
             get_call_graph("00401000", depth=3, direction="callees") -> what does this function call """)
-    public String getCallGraph(
+    public ToolOutput getCallGraph(
             @Param("Function name (e.g., \"main\") or address (e.g., \"00401000\", \"ram:00401000\")") String functionIdentifier,
             @Param(value = "Maximum depth to traverse (1-5, default: 2)", defaultValue = "2") int depth,
             @Param(value = "\"callers\" for upstream only, \"callees\" for downstream only, \"both\" for full hierarchy (default: \"both\")", defaultValue = "both") String direction) {
         Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
+        if (program == null) return StatusOutput.error("No program loaded");
         if (functionIdentifier == null || functionIdentifier.isEmpty())
-            return "Function identifier is required";
+            return StatusOutput.error("Function identifier is required");
 
         depth = Math.min(Math.max(depth, 1), 5);
 
         Function targetFunc = functionService.resolveFunction(program, functionIdentifier);
-        if (targetFunc == null) return "Function not found: " + functionIdentifier;
+        if (targetFunc == null) return StatusOutput.error("Function not found: " + functionIdentifier);
 
         String dir = (direction == null || direction.isEmpty()) ? "both" : direction.toLowerCase();
 
@@ -321,9 +325,9 @@ public class AnalysisService {
             result.append("\n");
         }
 
-        return result.toString();
+        return new TextOutput(result.toString());
     }
-    
+
     /**
      * Recursive helper method to build the call graph
      */
@@ -394,14 +398,15 @@ public class AnalysisService {
 
         Returns: References with source address, type, and containing function
 
-        Example: list_references("00401000") -> ['00400f50 -> 00401000 (from CALL in main)', ...] """)
-    public String listReferences(
+        Example: list_references("00401000") -> ['00400f50 -> 00401000 (from CALL in main)', ...] """,
+        outputType = ListOutput.class)
+    public ToolOutput listReferences(
             @Param("Target address (e.g., \"00401000\" or \"ram:00401000\")") String address,
             @Param(value = "Starting index for pagination (0-based)", defaultValue = "0") int offset,
             @Param(value = "Maximum references to return", defaultValue = "100") int limit) {
         Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
-        if (address == null) return "Address or name is required";
+        if (program == null) return StatusOutput.error("No program loaded");
+        if (address == null) return StatusOutput.error("Address or name is required");
 
         List<String> refs = new ArrayList<>();
         try {
@@ -414,39 +419,32 @@ public class AnalysisService {
             }
 
             if (addr == null) {
-                return "Could not resolve address for " + address;
+                return StatusOutput.error("Could not resolve address for " + address);
             }
-            
+
             ReferenceManager refMgr = program.getReferenceManager();
-            
+
             // Get references to this address
             for (Reference ref : refMgr.getReferencesTo(addr)) {
                 Address fromAddr = ref.getFromAddress();
                 ghidra.program.model.symbol.RefType refType = ref.getReferenceType();
-                
+
                 // Get function containing the reference if it exists
                 Function func = program.getFunctionManager().getFunctionContaining(fromAddr);
                 String funcName = func != null ? func.getName() : "not in function";
-                
-                refs.add(String.format("%s -> %s (from %s in %s)", 
+
+                refs.add(String.format("%s -> %s (from %s in %s)",
                     fromAddr, addr, refType.getName(), funcName));
             }
 
             if (refs.isEmpty()) {
-                return "No references found to " + address + " (address: " + addr + ")";
+                return new TextOutput("No references found to " + address + " (address: " + addr + ")");
             }
 
             Collections.sort(refs);
-            
-            // Apply pagination
-            List<String> paginatedRefs = refs.subList(
-                Math.min(offset, refs.size()),
-                Math.min(offset + limit, refs.size())
-            );
-            
-            return String.join("\n", paginatedRefs);
+            return ListOutput.paginate(refs, offset, limit);
         } catch (Exception e) {
-            return "Error getting references: " + e.getMessage();
+            return StatusOutput.error("Error getting references: " + e.getMessage());
         }
     }
     
@@ -459,14 +457,15 @@ public class AnalysisService {
 
         Note: Complements list_references which shows references TO an address.
 
-        Example: list_references_from("main") -> "00401000 -> 00401234 (strlen) [CALL]" """)
-    public String listReferencesFrom(
+        Example: list_references_from("main") -> "00401000 -> 00401234 (strlen) [CALL]" """,
+        outputType = ListOutput.class)
+    public ToolOutput listReferencesFrom(
             @Param("Source address or symbol name (e.g., \"00401000\" or \"main\")") String address,
             @Param(value = "Starting index for pagination (default: 0)", defaultValue = "0") int offset,
             @Param(value = "Maximum number of references to return (default: 100)", defaultValue = "100") int limit) {
         Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
-        if (address == null) return "Address or name is required";
+        if (program == null) return StatusOutput.error("No program loaded");
+        if (address == null) return StatusOutput.error("Address or name is required");
 
         List<String> refs = new ArrayList<>();
         try {
@@ -479,43 +478,36 @@ public class AnalysisService {
             }
 
             if (addr == null) {
-                return "Could not resolve address for " + address;
+                return StatusOutput.error("Could not resolve address for " + address);
             }
-            
+
             ReferenceManager refMgr = program.getReferenceManager();
-            
+
             // Get references from this address
             for (Reference ref : refMgr.getReferencesFrom(addr)) {
                 Address toAddr = ref.getToAddress();
                 ghidra.program.model.symbol.RefType refType = ref.getReferenceType();
-                
+
                 // Get symbol at destination if it exists
                 Symbol destSymbol = program.getSymbolTable().getPrimarySymbol(toAddr);
                 String destName = destSymbol != null ? destSymbol.getName() : "unnamed";
-                
+
                 // Get function containing the destination if it exists
                 Function func = program.getFunctionManager().getFunctionContaining(toAddr);
                 String funcName = func != null ? func.getName() : "not in function";
-                
+
                 refs.add(String.format("%s -> %s (%s) [%s in %s]",
                     addr, toAddr, destName, refType.getName(), funcName));
             }
 
             if (refs.isEmpty()) {
-                return "No references found from " + address + " (address: " + addr + ")";
+                return new TextOutput("No references found from " + address + " (address: " + addr + ")");
             }
 
             Collections.sort(refs);
-            
-            // Apply pagination
-            List<String> paginatedRefs = refs.subList(
-                Math.min(offset, refs.size()),
-                Math.min(offset + limit, refs.size())
-            );
-            
-            return String.join("\n", paginatedRefs);
+            return ListOutput.paginate(refs, offset, limit);
         } catch (Exception e) {
-            return "Error getting references from: " + e.getMessage();
+            return StatusOutput.error("Error getting references from: " + e.getMessage());
         }
     }
     

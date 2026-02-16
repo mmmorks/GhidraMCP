@@ -3,7 +3,10 @@ package com.lauriewired.mcp.services;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.lauriewired.mcp.model.PaginationResult;
+import com.lauriewired.mcp.model.ListOutput;
+import com.lauriewired.mcp.model.StatusOutput;
+import com.lauriewired.mcp.model.TextOutput;
+import com.lauriewired.mcp.model.ToolOutput;
 import com.lauriewired.mcp.utils.HttpUtils;
 import com.lauriewired.mcp.utils.ProgramTransaction;
 
@@ -66,21 +69,21 @@ public class MemoryService {
 
         Returns: Memory segments with name and address range
 
-        Example: get_memory_layout() -> ['.text: 00401000 - 00410000', '.data: 00411000 - 00412000', ...] """)
-    public String getMemoryLayout(
+        Example: get_memory_layout() -> ['.text: 00401000 - 00410000', '.data: 00411000 - 00412000', ...] """, outputType = ListOutput.class)
+    public ToolOutput getMemoryLayout(
             @Param(value = "Starting index for pagination (0-based)", defaultValue = "0") int offset,
             @Param(value = "Maximum segments to return", defaultValue = "100") int limit) {
         Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
+        if (program == null) return StatusOutput.error("No program loaded");
 
         List<String> lines = new ArrayList<>();
         for (MemoryBlock block : program.getMemory().getBlocks()) {
-            lines.add(String.format("%s: %s - %s", 
-                block.getName(), 
-                block.getStart(), 
+            lines.add(String.format("%s: %s - %s",
+                block.getName(),
+                block.getStart(),
                 block.getEnd()));
         }
-        return HttpUtils.paginateList(lines, offset, limit);
+        return ListOutput.paginate(lines, offset, limit);
     }
 
     @McpTool(description = """
@@ -92,12 +95,12 @@ public class MemoryService {
 
         Note: Unlabeled items shown as "(unnamed)"
 
-        Example: list_data_items(0, 3) -> ['00410000: hello_msg = "Hello, World!"', ...] """)
-    public String listDataItems(
+        Example: list_data_items(0, 3) -> ['00410000: hello_msg = "Hello, World!"', ...] """, outputType = ListOutput.class)
+    public ToolOutput listDataItems(
             @Param(value = "Starting index for pagination (0-based)", defaultValue = "0") int offset,
             @Param(value = "Maximum data items to return", defaultValue = "100") int limit) {
         Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
+        if (program == null) return StatusOutput.error("No program loaded");
 
         List<String> lines = new ArrayList<>();
         for (MemoryBlock block : program.getMemory().getBlocks()) {
@@ -115,9 +118,8 @@ public class MemoryService {
                 }
             }
         }
-        
-        PaginationResult result = HttpUtils.paginateListWithHints(lines, offset, limit);
-        return result.getFormattedResult();
+
+        return ListOutput.paginate(lines, offset, limit);
     }
 
     @McpTool(post = true, description = """
@@ -129,23 +131,23 @@ public class MemoryService {
 
         Note: Creates a new label if none exists at the address. Address must point to data, not code.
 
-        Example: rename_data("00402000", "config_table") """)
-    public String renameData(
+        Example: rename_data("00402000", "config_table") """, outputType = StatusOutput.class)
+    public ToolOutput renameData(
             @Param("Data address (e.g., \"00401000\" or \"ram:00401000\")") String address,
             @Param("New name to assign") String newName) {
         Program program = programService.getCurrentProgram();
-        if (program == null) return "Rename failed";
+        if (program == null) return StatusOutput.error("Rename failed");
 
         try (var tx = ProgramTransaction.start(program, "Rename data")) {
             Address addr = program.getAddressFactory().getAddress(address);
             if (addr == null) {
                 Msg.error(this, "Invalid address: " + address);
-                return "Rename failed";
+                return StatusOutput.error("Rename failed");
             }
 
             if (program.getListing().getDefinedDataAt(addr) == null) {
                 Msg.error(this, "No defined data at address: " + address);
-                return "Rename failed";
+                return StatusOutput.error("Rename failed");
             }
 
             SymbolTable symTable = program.getSymbolTable();
@@ -157,10 +159,10 @@ public class MemoryService {
                 symTable.createLabel(addr, newName, SourceType.USER_DEFINED);
             }
             tx.commit();
-            return "Renamed successfully";
+            return StatusOutput.ok("Renamed successfully");
         } catch (DuplicateNameException | InvalidInputException e) {
             Msg.error(this, "Rename data error", e);
-            return "Rename failed";
+            return StatusOutput.error("Rename failed");
         }
     }
     
@@ -175,19 +177,19 @@ public class MemoryService {
         Note: The data type can be a built-in type, structure, enum, or array.
         Array syntax: "type[size]" e.g., "char[256]" for a string buffer.
 
-        Example: set_address_data_type("00402000", "POINT") -> "Data type 'POINT' set at address 00402000" """)
-    public String setAddressDataType(
+        Example: set_address_data_type("00402000", "POINT") -> "Data type 'POINT' set at address 00402000" """, outputType = StatusOutput.class)
+    public ToolOutput setAddressDataType(
             @Param("Memory address (e.g., \"00401000\" or \"ram:00401000\")") String address,
             @Param("Data type name (\"int\", \"char[20]\", \"POINT\", etc.)") String dataType,
             @Param(value = "Whether to clear existing data at the address first", defaultValue = "false") boolean clearExisting) {
         Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
-        if (dataTypeService == null) return "DataTypeService not available";
+        if (program == null) return StatusOutput.error("No program loaded");
+        if (dataTypeService == null) return StatusOutput.error("DataTypeService not available");
 
         try (var tx = ProgramTransaction.start(program, "Set memory data type")) {
             Address addr = program.getAddressFactory().getAddress(address);
             if (addr == null) {
-                return "Invalid address: " + address;
+                return StatusOutput.error("Invalid address: " + address);
             }
 
             DataTypeManager dtm = program.getDataTypeManager();
@@ -195,11 +197,11 @@ public class MemoryService {
 
             if (resolvedDataType == null) {
                 if (dataType.matches(".*\\[\\d+\\]$")) {
-                    return "Failed to create array data type '" + dataType +
-                            "': base type could not be resolved. Check that the base type exists.";
+                    return StatusOutput.error("Failed to create array data type '" + dataType +
+                            "': base type could not be resolved. Check that the base type exists.");
                 } else {
-                    return "Data type '" + dataType + "' not found. " +
-                            "Available types include: int, char, short, long, byte, etc.";
+                    return StatusOutput.error("Data type '" + dataType + "' not found. " +
+                            "Available types include: int, char, short, long, byte, etc.");
                 }
             }
 
@@ -217,36 +219,36 @@ public class MemoryService {
             try {
                 Data newData = listing.createData(addr, resolvedDataType);
                 tx.commit();
-                return String.format("Data type '%s' (%d bytes) set at address %s",
+                return StatusOutput.ok(String.format("Data type '%s' (%d bytes) set at address %s",
                     resolvedDataType.getName(),
                     newData.getLength(),
-                    addr.toString());
+                    addr.toString()));
             } catch (CodeUnitInsertionException e) {
                 String errorMsg = e.getMessage();
                 if (errorMsg.contains("Conflicting")) {
                     CodeUnit cu = listing.getCodeUnitAt(addr);
                     if (cu instanceof Instruction) {
-                        return "Failed to set data type: Instructions exist at address. " +
-                               "Use clear_existing=true to overwrite instructions.";
+                        return StatusOutput.error("Failed to set data type: Instructions exist at address. " +
+                               "Use clear_existing=true to overwrite instructions.");
                     } else if (cu instanceof Data existingData) {
-                        return String.format("Failed to set data type: Existing data '%s' at address. " +
+                        return StatusOutput.error(String.format("Failed to set data type: Existing data '%s' at address. " +
                                "Use clear_existing=true to overwrite.",
-                               existingData.getDataType().getName());
+                               existingData.getDataType().getName()));
                     } else {
-                        return "Failed to set data type: Conflicting code units exist at address. " +
-                               "Try setting clear_existing=true to overwrite.";
+                        return StatusOutput.error("Failed to set data type: Conflicting code units exist at address. " +
+                               "Try setting clear_existing=true to overwrite.");
                     }
                 } else if (errorMsg.contains("Insufficient")) {
-                    return String.format("Failed to set data type: Insufficient space. " +
+                    return StatusOutput.error(String.format("Failed to set data type: Insufficient space. " +
                            "The data type '%s' requires %d bytes but there's not enough space available.",
-                           resolvedDataType.getName(), resolvedDataType.getLength());
+                           resolvedDataType.getName(), resolvedDataType.getLength()));
                 } else {
-                    return "Failed to set data type: " + errorMsg;
+                    return StatusOutput.error("Failed to set data type: " + errorMsg);
                 }
             }
         } catch (RuntimeException e) {
             Msg.error(this, "Error setting memory data type", e);
-            return "Failed to set memory data type: " + e.getMessage();
+            return StatusOutput.error("Failed to set memory data type: " + e.getMessage());
         }
     }
     
@@ -260,41 +262,41 @@ public class MemoryService {
         Note: Shows memory in rows with address, hex bytes, and ASCII representation.
 
         Example: read_memory("00401000", 32, "hex") -> Memory dump with hex values """)
-    public String readMemory(
+    public ToolOutput readMemory(
             @Param("Memory address to read from (e.g., \"00401000\")") String address,
             @Param(value = "Number of bytes to read (1-1024, default: 16)", defaultValue = "16") int size,
             @Param(value = "Output format - \"hex\", \"decimal\", \"binary\", or \"ascii\" (default: \"hex\")", defaultValue = "hex") String format) {
         Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
-        if (address == null || address.isEmpty()) return "Address is required";
-        if (size <= 0 || size > 1024) return "Size must be between 1 and 1024 bytes";
+        if (program == null) return StatusOutput.error("No program loaded");
+        if (address == null || address.isEmpty()) return StatusOutput.error("Address is required");
+        if (size <= 0 || size > 1024) return StatusOutput.error("Size must be between 1 and 1024 bytes");
 
         try {
             Address addr = program.getAddressFactory().getAddress(address);
-            if (addr == null) return "Invalid address: " + address;
+            if (addr == null) return StatusOutput.error("Invalid address: " + address);
 
             Memory memory = program.getMemory();
             MemoryBlock block = memory.getBlock(addr);
-            if (block == null) return "No memory block at address: " + address;
-            
+            if (block == null) return StatusOutput.error("No memory block at address: " + address);
+
             // Check if we can read the requested size
             Address endAddr = addr.add(size - 1);
             if (!block.contains(endAddr)) {
-                return String.format("Requested size %d exceeds memory block boundary", size);
+                return StatusOutput.error(String.format("Requested size %d exceeds memory block boundary", size));
             }
-            
+
             // Read the bytes
             byte[] bytes = new byte[size];
             try {
                 memory.getBytes(addr, bytes);
             } catch (MemoryAccessException e) {
-                return "Failed to read memory: " + e.getMessage();
+                return StatusOutput.error("Failed to read memory: " + e.getMessage());
             }
-            
+
             // Format the output based on requested format
             StringBuilder result = new StringBuilder();
             result.append(String.format("Memory at %s (%d bytes):\n", addr, size));
-            
+
             switch (format.toLowerCase()) {
                 case "hex":
                 default:
@@ -310,10 +312,10 @@ public class MemoryService {
                     result.append(formatBytesAsAscii(bytes, addr));
                     break;
             }
-            
-            return result.toString();
+
+            return new TextOutput(result.toString());
         } catch (Exception e) {
-            return "Error reading memory: " + e.getMessage();
+            return StatusOutput.error("Error reading memory: " + e.getMessage());
         }
     }
     
@@ -327,20 +329,20 @@ public class MemoryService {
         Note: Helps identify code vs data regions and memory protection.
 
         Example: get_memory_permissions("00401000") -> "Block: .text, Permissions: R-X" """)
-    public String getMemoryPermissions(
+    public ToolOutput getMemoryPermissions(
             @Param("Memory address to check (e.g., \"00401000\")") String address) {
         Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
-        if (address == null || address.isEmpty()) return "Address is required";
+        if (program == null) return StatusOutput.error("No program loaded");
+        if (address == null || address.isEmpty()) return StatusOutput.error("Address is required");
 
         try {
             Address addr = program.getAddressFactory().getAddress(address);
-            if (addr == null) return "Invalid address: " + address;
+            if (addr == null) return StatusOutput.error("Invalid address: " + address);
 
             Memory memory = program.getMemory();
             MemoryBlock block = memory.getBlock(addr);
-            if (block == null) return "No memory block at address: " + address;
-            
+            if (block == null) return StatusOutput.error("No memory block at address: " + address);
+
             StringBuilder result = new StringBuilder();
             result.append(String.format("Memory permissions at %s:\n", addr));
             result.append(String.format("  Block: %s\n", block.getName()));
@@ -355,10 +357,10 @@ public class MemoryService {
             result.append(String.format("    Initialized: %s\n", block.isInitialized() ? "Yes" : "No"));
             result.append(String.format("    Volatile: %s\n", block.isVolatile() ? "Yes" : "No"));
             result.append(String.format("    Overlay: %s\n", block.isOverlay() ? "Yes" : "No"));
-            
-            return result.toString();
+
+            return new TextOutput(result.toString());
         } catch (Exception e) {
-            return "Error getting memory permissions: " + e.getMessage();
+            return StatusOutput.error("Error getting memory permissions: " + e.getMessage());
         }
     }
     
@@ -373,20 +375,20 @@ public class MemoryService {
         Note: Useful for checking if memory has been analyzed/typed.
 
         Example: get_address_data_type("00402000") -> "Type: DWORD, Value: 0x12345678" """)
-    public String getAddressDataType(
+    public ToolOutput getAddressDataType(
             @Param("Memory address to check (e.g., \"00401000\")") String address) {
         Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
-        if (address == null || address.isEmpty()) return "Address is required";
+        if (program == null) return StatusOutput.error("No program loaded");
+        if (address == null || address.isEmpty()) return StatusOutput.error("Address is required");
 
         try {
             Address addr = program.getAddressFactory().getAddress(address);
-            if (addr == null) return "Invalid address: " + address;
-            
+            if (addr == null) return StatusOutput.error("Invalid address: " + address);
+
             Listing listing = program.getListing();
             StringBuilder result = new StringBuilder();
             result.append(String.format("Data type at %s:\n", addr));
-            
+
             // Check if there's an instruction at this address
             Instruction instr = listing.getInstructionAt(addr);
             if (instr != null) {
@@ -394,9 +396,9 @@ public class MemoryService {
                 result.append(String.format("  Mnemonic: %s\n", instr.getMnemonicString()));
                 result.append(String.format("  Operands: %s\n", instr.toString()));
                 result.append(String.format("  Length: %d bytes\n", instr.getLength()));
-                return result.toString();
+                return new TextOutput(result.toString());
             }
-            
+
             // Check if there's defined data at this address
             Data data = listing.getDefinedDataAt(addr);
             if (data != null) {
@@ -406,7 +408,7 @@ public class MemoryService {
                 result.append(String.format("  Category: %s\n", dataType.getCategoryPath()));
                 result.append(String.format("  Length: %d bytes\n", data.getLength()));
                 result.append(String.format("  Value: %s\n", data.getDefaultValueRepresentation()));
-                
+
                 // Add label if present
                 Symbol symbol = program.getSymbolTable().getPrimarySymbol(addr);
                 if (symbol != null) {
@@ -418,7 +420,7 @@ public class MemoryService {
                 if (undefinedData != null) {
                     result.append("  Type: Undefined Data\n");
                     result.append(String.format("  Length: %d bytes\n", undefinedData.getLength()));
-                    
+
                     // Try to read the byte value
                     try {
                         byte value = program.getMemory().getByte(addr);
@@ -430,10 +432,10 @@ public class MemoryService {
                     result.append("  Type: No data defined\n");
                 }
             }
-            
-            return result.toString();
+
+            return new TextOutput(result.toString());
         } catch (Exception e) {
-            return "Error getting data type: " + e.getMessage();
+            return StatusOutput.error("Error getting data type: " + e.getMessage());
         }
     }
     

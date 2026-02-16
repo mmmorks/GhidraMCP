@@ -5,6 +5,9 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
+import com.lauriewired.mcp.model.TextOutput;
+import com.lauriewired.mcp.model.ToolOutput;
+
 /**
  * Marks a method as an MCP tool endpoint.
  * Reflection discovers annotated methods at startup, auto-converts camelCase names
@@ -21,4 +24,7 @@ public @interface McpTool {
 
     /** If true, the endpoint accepts POST; otherwise GET. */
     boolean post() default false;
+
+    /** Output type for this tool — determines outputSchema in /mcp/tools. */
+    Class<? extends ToolOutput> outputType() default TextOutput.class;
 }

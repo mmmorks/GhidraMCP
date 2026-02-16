@@ -7,6 +7,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.lauriewired.mcp.model.TextOutput;
+import com.lauriewired.mcp.model.ToolOutput;
 import com.lauriewired.mcp.utils.HttpUtils;
 import com.sun.net.httpserver.HttpExchange;
 
@@ -21,12 +23,15 @@ public class ToolDef {
     private final boolean post;             // true = POST, false = GET
     private final List<ToolParamDef> params;
     private final boolean hasComplexTypes;  // true if any param is a Map or List type
+    private final Class<? extends ToolOutput> outputType;
 
-    private ToolDef(String name, String rawDescription, boolean post, List<ToolParamDef> params) {
+    private ToolDef(String name, String rawDescription, boolean post, List<ToolParamDef> params,
+                    Class<? extends ToolOutput> outputType) {
         this.name = name;
         this.rawDescription = rawDescription;
         this.post = post;
         this.params = params;
+        this.outputType = outputType;
         this.hasComplexTypes = params.stream().anyMatch(p ->
             p.type() == ParamType.STRING_MAP || p.type() == ParamType.LONG_MAP || p.type() == ParamType.STRING_PAIR_LIST);
         this.description = buildFullDescription(rawDescription, params);
@@ -57,7 +62,7 @@ public class ToolDef {
             paramDefs.add(new ToolParamDef(paramName, paramType, required, defaultValue, paramAnn.value()));
         }
 
-        return new ToolDef(toolName, annotation.description(), annotation.post(), paramDefs);
+        return new ToolDef(toolName, annotation.description(), annotation.post(), paramDefs, annotation.outputType());
     }
 
     /**
@@ -152,6 +157,7 @@ public class ToolDef {
         sb.append(", \"description\": \"").append(escapeJson(description)).append("\"");
         sb.append(", \"method\": \"").append(post ? "POST" : "GET").append("\"");
         sb.append(", \"inputSchema\": ").append(toInputSchemaJson());
+        sb.append(", \"outputSchema\": ").append(ToolOutput.schemaFor(outputType));
         sb.append("}");
         return sb.toString();
     }
@@ -197,6 +203,7 @@ public class ToolDef {
     public String getDescription() { return description; }
     public boolean isPost() { return post; }
     public List<ToolParamDef> getParams() { return params; }
+    public Class<? extends ToolOutput> getOutputType() { return outputType; }
 
     private static String buildFullDescription(String rawDescription, List<ToolParamDef> params) {
         if (params.isEmpty()) return rawDescription;

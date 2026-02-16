@@ -17,6 +17,10 @@ import static org.mockito.Mockito.when;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.lauriewired.mcp.McpServerManager;
+import com.lauriewired.mcp.model.JsonOutput;
+import com.lauriewired.mcp.model.ListOutput;
+import com.lauriewired.mcp.model.StatusOutput;
+import com.lauriewired.mcp.model.TextOutput;
 import com.lauriewired.mcp.services.AnalysisService;
 import com.lauriewired.mcp.services.CommentService;
 import com.lauriewired.mcp.services.DataTypeService;
@@ -136,7 +140,7 @@ public class ApiEndpointIntegrationTest {
         
         // Setup mock service response
         when(mockMemoryService.setAddressDataType("0x1000", "int", true))
-            .thenReturn("Data type 'int' (4 bytes) set at address 0x1000");
+            .thenReturn(StatusOutput.ok("Data type 'int' (4 bytes) set at address 0x1000"));
         
         // Invoke the handler
         handler.handle(mockExchange);
@@ -174,7 +178,7 @@ public class ApiEndpointIntegrationTest {
         
         // Setup mock service response
         when(mockMemoryService.setAddressDataType("0x2000", "char[20]", false))
-            .thenReturn("Data type 'char[20]' (20 bytes) set at address 0x2000");
+            .thenReturn(StatusOutput.ok("Data type 'char[20]' (20 bytes) set at address 0x2000"));
         
         // Invoke the handler
         handler.handle(mockExchange);
@@ -212,7 +216,7 @@ public class ApiEndpointIntegrationTest {
         
         // Setup mock service response — default is false (backward compatible)
         when(mockMemoryService.setAddressDataType("0x3000", "POINT", false))
-            .thenReturn("Data type 'POINT' (8 bytes) set at address 0x3000");
+            .thenReturn(StatusOutput.ok("Data type 'POINT' (8 bytes) set at address 0x3000"));
 
         // Invoke the handler
         handler.handle(mockExchange);
@@ -242,7 +246,7 @@ public class ApiEndpointIntegrationTest {
         when(mockExchange.getResponseHeaders()).thenReturn(mockHeaders);
 
         when(mockFunctionService.getFunctionCode("main", "C"))
-            .thenReturn("int main(int argc, char **argv) { ... }");
+            .thenReturn(new TextOutput("int main(int argc, char **argv) { ... }"));
 
         handler.handle(mockExchange);
 
@@ -269,7 +273,7 @@ public class ApiEndpointIntegrationTest {
         when(mockExchange.getResponseHeaders()).thenReturn(mockHeaders);
 
         when(mockFunctionService.getFunctionCode("main", "C"))
-            .thenReturn("int main() { ... }");
+            .thenReturn(new TextOutput("int main() { ... }"));
 
         handler.handle(mockExchange);
 
@@ -295,7 +299,7 @@ public class ApiEndpointIntegrationTest {
         when(mockExchange.getResponseHeaders()).thenReturn(mockHeaders);
 
         when(mockFunctionService.listFunctions(10, 5))
-            .thenReturn("func1\nfunc2\nfunc3");
+            .thenReturn(new ListOutput(java.util.List.of("func1", "func2", "func3"), 3, 10, 5));
 
         handler.handle(mockExchange);
 
@@ -331,7 +335,7 @@ public class ApiEndpointIntegrationTest {
         expectedRenames.put("local_14", "size");
 
         when(mockVariableService.renameVariables("main", expectedRenames))
-            .thenReturn("{\"status\": \"success\", \"renamed\": 2}");
+            .thenReturn(new JsonOutput("{\"status\": \"success\", \"renamed\": 2}"));
 
         handler.handle(mockExchange);
 

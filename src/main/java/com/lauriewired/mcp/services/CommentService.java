@@ -2,6 +2,9 @@ package com.lauriewired.mcp.services;
 
 import com.lauriewired.mcp.api.McpTool;
 import com.lauriewired.mcp.api.Param;
+import com.lauriewired.mcp.model.StatusOutput;
+import com.lauriewired.mcp.model.TextOutput;
+import com.lauriewired.mcp.model.ToolOutput;
 import com.lauriewired.mcp.utils.ProgramTransaction;
 
 import ghidra.program.model.address.Address;
@@ -34,13 +37,14 @@ public class CommentService {
         Examples:
             set_comment("00401010", "Initialize config", "decompiler")
             set_comment("00401010", "Save return address", "eol")
-            set_comment("00401000", "--- Main Entry ---", "plate") """)
-    public String setComment(
+            set_comment("00401000", "--- Main Entry ---", "plate") """,
+        outputType = StatusOutput.class)
+    public ToolOutput setComment(
             @Param("Target address (e.g., \"00401000\" or \"ram:00401000\")") String address,
             @Param("Comment text to set") String comment,
             @Param("Comment type: \"pre\"/\"decompiler\", \"eol\"/\"disassembly\", \"post\", \"plate\", \"repeatable\"") String type) {
         if (type == null || type.isEmpty()) {
-            return "Error: 'type' parameter is required (pre, post, eol, plate, repeatable)";
+            return StatusOutput.error("Error: 'type' parameter is required (pre, post, eol, plate, repeatable)");
         }
         int commentType = switch (type.toLowerCase()) {
             case "pre", "decompiler" -> CodeUnit.PRE_COMMENT;
@@ -51,10 +55,10 @@ public class CommentService {
             default -> -1;
         };
         if (commentType == -1) {
-            return "Failed to set comment. Valid types: pre, post, eol, plate, repeatable";
+            return StatusOutput.error("Failed to set comment. Valid types: pre, post, eol, plate, repeatable");
         }
         boolean success = setCommentAtAddress(address, comment, commentType, "Set " + type + " comment");
-        return success ? "Comment set successfully" : "Failed to set comment. Valid types: pre, post, eol, plate, repeatable";
+        return success ? StatusOutput.ok("Comment set successfully") : StatusOutput.error("Failed to set comment. Valid types: pre, post, eol, plate, repeatable");
     }
 
     /**
@@ -90,18 +94,18 @@ public class CommentService {
         Returns: All comments found at the address, organized by type
 
         Example: get_comment("00401000") -> "Pre Comment (Decompiler): Initialize system..." """)
-    public String getComment(
+    public ToolOutput getComment(
             @Param("Address to get comments from (e.g., \"00401000\")") String address) {
         Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
-        if (address == null || address.isEmpty()) return "Address is required";
+        if (program == null) return StatusOutput.error("No program loaded");
+        if (address == null || address.isEmpty()) return StatusOutput.error("Address is required");
 
         try {
             Address addr = program.getAddressFactory().getAddress(address);
-            if (addr == null) return "Invalid address: " + address;
+            if (addr == null) return StatusOutput.error("Invalid address: " + address);
 
             CodeUnit codeUnit = program.getListing().getCodeUnitAt(addr);
-            if (codeUnit == null) return "No code unit at address: " + address;
+            if (codeUnit == null) return StatusOutput.error("No code unit at address: " + address);
             
             StringBuilder result = new StringBuilder();
             result.append("Comments at ").append(address).append(":\n");
@@ -144,10 +148,10 @@ public class CommentService {
                 result.append("\n(No comments found at this address)\n");
             }
             
-            return result.toString();
+            return new TextOutput(result.toString());
         } catch (Exception e) {
-            return "Error getting comments: " + e.getMessage();
+            return StatusOutput.error("Error getting comments: " + e.getMessage());
         }
     }
-    
+
 }

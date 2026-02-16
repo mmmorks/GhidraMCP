@@ -26,112 +26,112 @@ public class CommentServiceTest {
     @Test
     @DisplayName("setComment returns failure message when no program is loaded")
     void testSetComment_NoProgram() {
-        String result = commentService.setComment("0x1000", "Test comment", "pre");
+        String result = commentService.setComment("0x1000", "Test comment", "pre").toDisplayText();
         assertTrue(result.contains("Failed to set comment"));
     }
 
     @Test
     @DisplayName("setComment returns failure message for null address")
     void testSetComment_NullAddress() {
-        String result = commentService.setComment(null, "Test comment", "pre");
+        String result = commentService.setComment(null, "Test comment", "pre").toDisplayText();
         assertTrue(result.contains("Failed to set comment"));
     }
 
     @Test
     @DisplayName("setComment returns failure message for empty address")
     void testSetComment_EmptyAddress() {
-        String result = commentService.setComment("", "Test comment", "eol");
+        String result = commentService.setComment("", "Test comment", "eol").toDisplayText();
         assertTrue(result.contains("Failed to set comment"));
     }
 
     @Test
     @DisplayName("setComment returns failure message for null comment")
     void testSetComment_NullComment() {
-        String result = commentService.setComment("0x1000", null, "pre");
+        String result = commentService.setComment("0x1000", null, "pre").toDisplayText();
         assertTrue(result.contains("Failed to set comment"));
     }
 
     @Test
     @DisplayName("setComment returns failure message for invalid comment type")
     void testSetComment_InvalidType() {
-        String result = commentService.setComment("0x1000", "Test", "invalid_type");
+        String result = commentService.setComment("0x1000", "Test", "invalid_type").toDisplayText();
         assertTrue(result.contains("Failed to set comment"));
     }
 
     @Test
     @DisplayName("setComment accepts 'pre' type")
     void testSetComment_PreType() {
-        String result = commentService.setComment("0x1000", "Test", "pre");
+        String result = commentService.setComment("0x1000", "Test", "pre").toDisplayText();
         assertTrue(result.contains("Failed to set comment")); // fails because no program loaded
     }
 
     @Test
     @DisplayName("setComment accepts 'decompiler' type alias")
     void testSetComment_DecompilerType() {
-        String result = commentService.setComment("0x1000", "Test", "decompiler");
+        String result = commentService.setComment("0x1000", "Test", "decompiler").toDisplayText();
         assertTrue(result.contains("Failed to set comment"));
     }
 
     @Test
     @DisplayName("setComment accepts 'eol' type")
     void testSetComment_EolType() {
-        String result = commentService.setComment("0x1000", "Test", "eol");
+        String result = commentService.setComment("0x1000", "Test", "eol").toDisplayText();
         assertTrue(result.contains("Failed to set comment"));
     }
 
     @Test
     @DisplayName("setComment accepts 'disassembly' type alias")
     void testSetComment_DisassemblyType() {
-        String result = commentService.setComment("0x1000", "Test", "disassembly");
+        String result = commentService.setComment("0x1000", "Test", "disassembly").toDisplayText();
         assertTrue(result.contains("Failed to set comment"));
     }
 
     @Test
     @DisplayName("setComment accepts 'post' type")
     void testSetComment_PostType() {
-        String result = commentService.setComment("0x1000", "Test", "post");
+        String result = commentService.setComment("0x1000", "Test", "post").toDisplayText();
         assertTrue(result.contains("Failed to set comment"));
     }
 
     @Test
     @DisplayName("setComment accepts 'plate' type")
     void testSetComment_PlateType() {
-        String result = commentService.setComment("0x1000", "Test", "plate");
+        String result = commentService.setComment("0x1000", "Test", "plate").toDisplayText();
         assertTrue(result.contains("Failed to set comment"));
     }
 
     @Test
     @DisplayName("setComment accepts 'repeatable' type")
     void testSetComment_RepeatableType() {
-        String result = commentService.setComment("0x1000", "Test", "repeatable");
+        String result = commentService.setComment("0x1000", "Test", "repeatable").toDisplayText();
         assertTrue(result.contains("Failed to set comment"));
     }
 
     @Test
     @DisplayName("setComment handles multiline comment")
     void testSetComment_MultilineComment() {
-        String result = commentService.setComment("0x1000", "Line 1\nLine 2\nLine 3", "pre");
+        String result = commentService.setComment("0x1000", "Line 1\nLine 2\nLine 3", "pre").toDisplayText();
         assertTrue(result.contains("Failed to set comment"));
     }
 
     @Test
     @DisplayName("setComment handles special characters in comment")
     void testSetComment_SpecialCharacters() {
-        String result = commentService.setComment("0x1000", "Test /* comment */ with // special chars", "eol");
+        String result = commentService.setComment("0x1000", "Test /* comment */ with // special chars", "eol").toDisplayText();
         assertTrue(result.contains("Failed to set comment"));
     }
 
     @Test
     @DisplayName("getComment returns error when no program is loaded")
     void testGetComment_NoProgram() {
-        String result = commentService.getComment("0x1000");
+        String result = commentService.getComment("0x1000").toDisplayText();
         assertEquals("No program loaded", result);
     }
 
     @Test
     @DisplayName("getComment returns error for null address")
     void testGetComment_NullAddress() {
-        String result = commentService.getComment(null);
+        String result = commentService.getComment(null).toDisplayText();
         assertEquals("No program loaded", result);
     }
 

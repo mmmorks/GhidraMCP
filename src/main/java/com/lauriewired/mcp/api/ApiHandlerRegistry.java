@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.lauriewired.mcp.McpServerManager;
+import com.lauriewired.mcp.model.ToolOutput;
 import com.lauriewired.mcp.services.AnalysisService;
 import com.lauriewired.mcp.services.CommentService;
 import com.lauriewired.mcp.services.DataTypeService;
@@ -158,8 +159,12 @@ public class ApiHandlerRegistry {
                         args[i] = params.get(snakeName);
                     }
                 }
-                String result = (String) method.invoke(target, args);
-                HttpUtils.sendResponse(exchange, result);
+                Object rawResult = method.invoke(target, args);
+                if (rawResult instanceof ToolOutput output) {
+                    HttpUtils.sendStructuredResponse(exchange, output);
+                } else {
+                    HttpUtils.sendResponse(exchange, (String) rawResult);
+                }
             } catch (java.lang.reflect.InvocationTargetException e) {
                 Throwable cause = e.getCause();
                 HttpUtils.sendJsonErrorResponse(exchange, 500, "Error: " + (cause != null ? cause.getMessage() : e.getMessage()));

@@ -1,6 +1,9 @@
 package com.lauriewired.mcp.services;
 
 import com.lauriewired.mcp.api.McpTool;
+import com.lauriewired.mcp.model.StatusOutput;
+import com.lauriewired.mcp.model.TextOutput;
+import com.lauriewired.mcp.model.ToolOutput;
 
 import ghidra.app.services.ProgramManager;
 import ghidra.framework.plugintool.PluginTool;
@@ -46,9 +49,9 @@ public class ProgramService {
         Returns: Program metadata including processor, format, addresses, and counts
 
         Example: get_program_info() -> "Program: firmware.bin\\nFormat: ELF\\nProcessor: ARM..." """)
-    public String getProgramInfo() {
+    public ToolOutput getProgramInfo() {
         Program program = getCurrentProgram();
-        if (program == null) return "No program loaded";
+        if (program == null) return StatusOutput.error("No program loaded");
 
         StringBuilder sb = new StringBuilder();
         sb.append("Program: ").append(program.getName()).append("\n");
@@ -70,6 +73,6 @@ public class ProgramService {
         sb.append("Functions: ").append(program.getFunctionManager().getFunctionCount()).append("\n");
         sb.append("Symbols: ").append(program.getSymbolTable().getNumSymbols()).append("\n");
 
-        return sb.toString();
+        return new TextOutput(sb.toString());
     }
 }

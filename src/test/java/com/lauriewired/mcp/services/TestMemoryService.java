@@ -3,6 +3,10 @@ package com.lauriewired.mcp.services;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.lauriewired.mcp.model.ListOutput;
+import com.lauriewired.mcp.model.StatusOutput;
+import com.lauriewired.mcp.model.TextOutput;
+import com.lauriewired.mcp.model.ToolOutput;
 import com.lauriewired.mcp.utils.HttpUtils;
 
 import ghidra.program.model.address.Address;
@@ -58,18 +62,18 @@ public class TestMemoryService extends MemoryService {
      * @return list of memory segments with their address ranges
      */
     @Override
-    public String getMemoryLayout(int offset, int limit) {
+    public ToolOutput getMemoryLayout(int offset, int limit) {
         Program program = testProgramService.getCurrentProgram();
-        if (program == null) return "No program loaded";
+        if (program == null) return StatusOutput.error("No program loaded");
 
         List<String> lines = new ArrayList<>();
         for (MemoryBlock block : program.getMemory().getBlocks()) {
-            lines.add(String.format("%s: %s - %s", 
-                block.getName(), 
-                block.getStart(), 
+            lines.add(String.format("%s: %s - %s",
+                block.getName(),
+                block.getStart(),
                 block.getEnd()));
         }
-        return HttpUtils.paginateList(lines, offset, limit);
+        return ListOutput.paginate(lines, offset, limit);
     }
 
     /**
@@ -80,9 +84,9 @@ public class TestMemoryService extends MemoryService {
      * @return list of data items with their addresses, labels, and values
      */
     @Override
-    public String listDataItems(int offset, int limit) {
+    public ToolOutput listDataItems(int offset, int limit) {
         Program program = testProgramService.getCurrentProgram();
-        if (program == null) return "No program loaded";
+        if (program == null) return StatusOutput.error("No program loaded");
 
         List<String> lines = new ArrayList<>();
         for (MemoryBlock block : program.getMemory().getBlocks()) {
@@ -100,7 +104,7 @@ public class TestMemoryService extends MemoryService {
                 }
             }
         }
-        return HttpUtils.paginateList(lines, offset, limit);
+        return ListOutput.paginate(lines, offset, limit);
     }
 
     /**
@@ -112,9 +116,9 @@ public class TestMemoryService extends MemoryService {
      * @return "Renamed successfully" or "Rename failed"
      */
     @Override
-    public String renameData(String address, String newName) {
+    public ToolOutput renameData(String address, String newName) {
         Program program = testProgramService.getCurrentProgram();
-        if (program == null) return "Rename failed";
+        if (program == null) return StatusOutput.error("Rename failed");
 
         // For testing, we'll run directly without Swing
         int tx = program.startTransaction("Rename data");
@@ -122,7 +126,7 @@ public class TestMemoryService extends MemoryService {
         try {
             Address addr = program.getAddressFactory().getAddress(address);
             if (addr == null) {
-                return "Rename failed";
+                return StatusOutput.error("Rename failed");
             }
 
             // Check if data exists at this address
@@ -149,7 +153,7 @@ public class TestMemoryService extends MemoryService {
         finally {
             program.endTransaction(tx, success);
         }
-        return success ? "Renamed successfully" : "Rename failed";
+        return success ? StatusOutput.ok("Renamed successfully") : StatusOutput.error("Rename failed");
     }
     
     /**
@@ -162,10 +166,10 @@ public class TestMemoryService extends MemoryService {
      * @return status message
      */
     @Override
-    public String setAddressDataType(String address, String dataType, boolean clearExisting) {
+    public ToolOutput setAddressDataType(String address, String dataType, boolean clearExisting) {
         Program program = testProgramService.getCurrentProgram();
-        if (program == null) return "No program loaded";
-        if (testDataTypeService == null) return "DataTypeService not available";
+        if (program == null) return StatusOutput.error("No program loaded");
+        if (testDataTypeService == null) return StatusOutput.error("DataTypeService not available");
 
         // For testing, we'll run directly without Swing
         int tx = program.startTransaction("Set memory data type");
@@ -176,7 +180,7 @@ public class TestMemoryService extends MemoryService {
             Address addr = program.getAddressFactory().getAddress(address);
             if (addr == null) {
                 resultMessage = "Invalid address: " + address;
-                return resultMessage;
+                return StatusOutput.error(resultMessage);
             }
 
             // Get the data type manager and resolve the type
@@ -185,7 +189,7 @@ public class TestMemoryService extends MemoryService {
 
             if (resolvedDataType == null) {
                 resultMessage = "Data type not found: " + dataType;
-                return resultMessage;
+                return StatusOutput.error(resultMessage);
             }
 
             Listing listing = program.getListing();
@@ -226,6 +230,9 @@ public class TestMemoryService extends MemoryService {
             program.endTransaction(tx, success);
         }
 
-        return resultMessage;
+        if (success) {
+            return StatusOutput.ok(resultMessage);
+        }
+        return StatusOutput.error(resultMessage);
     }
 }

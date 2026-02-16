@@ -15,7 +15,11 @@ import java.util.regex.Pattern;
 
 import com.lauriewired.mcp.api.McpTool;
 import com.lauriewired.mcp.api.Param;
+import com.lauriewired.mcp.model.ListOutput;
 import com.lauriewired.mcp.model.PaginationResult;
+import com.lauriewired.mcp.model.StatusOutput;
+import com.lauriewired.mcp.model.TextOutput;
+import com.lauriewired.mcp.model.ToolOutput;
 import com.lauriewired.mcp.utils.HttpUtils;
 import com.lauriewired.mcp.utils.ProgramTransaction;
 
@@ -112,23 +116,23 @@ public class DataTypeService {
 
         Example: update_structure("MyStruct", field_renames={"field0_0x0": "width"},
                                   type_changes={"width": "int"}) """)
-    public String updateStructure(
+    public ToolOutput updateStructure(
             @Param("Current structure name") String name,
             @Param(value = "New name for the structure (optional)", defaultValue = "") String newName,
             @Param(value = "New size in bytes (optional, only grows)", defaultValue = "") Integer size,
             @Param(value = "Map of old field name to new field name", defaultValue = "") Map<String, String> fieldRenames,
             @Param(value = "Map of field name to new data type", defaultValue = "") Map<String, String> typeChanges) {
         if (name == null || name.isEmpty()) {
-            return "Structure name is required";
+            return StatusOutput.error("Structure name is required");
         }
         Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
+        if (program == null) return StatusOutput.error("No program loaded");
 
         try (var tx = ProgramTransaction.start(program, "Update structure")) {
             ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
             DataType dt = findDataTypeByNameInAllCategories(dtm, name);
             if (!(dt instanceof Structure)) {
-                return "Structure '" + name + "' not found";
+                return StatusOutput.error("Structure '" + name + "' not found");
             }
             Structure struct = (Structure) dt;
 
@@ -257,10 +261,10 @@ public class DataTypeService {
             StringBuilder sb = new StringBuilder("Updated structure '" + name + "':\n");
             for (String r : results) sb.append(r).append("\n");
             sb.append("Summary: ").append(succeeded).append(" succeeded, ").append(failed).append(" failed");
-            return sb.toString();
+            return new TextOutput(sb.toString());
         } catch (Exception e) {
             Msg.error(this, "Error updating structure", e);
-            return "Failed to update structure: " + e.getMessage();
+            return StatusOutput.error("Failed to update structure: " + e.getMessage());
         }
     }
 
@@ -277,23 +281,23 @@ public class DataTypeService {
         Example: update_enum("MyFlags", new_name="FilePermissions",
                              value_renames={"OLD_VAL": "NEW_VAL"},
                              value_changes={"NEW_VAL": 42}) """)
-    public String updateEnum(
+    public ToolOutput updateEnum(
             @Param("Current enum name") String name,
             @Param(value = "New name for the enum (optional)", defaultValue = "") String newName,
             @Param(value = "New size in bytes \u2014 must be 1, 2, 4, or 8 (optional)", defaultValue = "") Integer size,
             @Param(value = "Map of old value name to new value name", defaultValue = "") Map<String, String> valueRenames,
             @Param(value = "Map of value name to new numeric value", defaultValue = "") Map<String, Long> valueChanges) {
         if (name == null || name.isEmpty()) {
-            return "Enum name is required";
+            return StatusOutput.error("Enum name is required");
         }
         Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
+        if (program == null) return StatusOutput.error("No program loaded");
 
         try (var tx = ProgramTransaction.start(program, "Update enum")) {
             ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
             DataType dt = findDataTypeByNameInAllCategories(dtm, name);
             if (!(dt instanceof Enum)) {
-                return "Enum '" + name + "' not found";
+                return StatusOutput.error("Enum '" + name + "' not found");
             }
             Enum enumType = (Enum) dt;
 
@@ -407,10 +411,10 @@ public class DataTypeService {
             StringBuilder sb = new StringBuilder("Updated enum '" + name + "':\n");
             for (String r : results) sb.append(r).append("\n");
             sb.append("Summary: ").append(succeeded).append(" succeeded, ").append(failed).append(" failed");
-            return sb.toString();
+            return new TextOutput(sb.toString());
         } catch (Exception e) {
             Msg.error(this, "Error updating enum", e);
-            return "Failed to update enum: " + e.getMessage();
+            return StatusOutput.error("Failed to update enum: " + e.getMessage());
         }
     }
 
@@ -610,10 +614,10 @@ public class DataTypeService {
      * @return status message
      */
     public String createStructure(String structName, int size, String categoryPath) {
-        return createStructure(structName, size, categoryPath, null);
+        return createStructure(structName, size, categoryPath, null).toDisplayText();
     }
 
-    @McpTool(post = true, description = """
+    @McpTool(post = true, outputType = StatusOutput.class, description = """
         Create a new structure data type in Ghidra, optionally with inline fields.
 
         Creates a structure with the specified name, and when fields are provided,
@@ -625,15 +629,15 @@ public class DataTypeService {
         Note: Structure names must be unique. Use add_structure_field to add fields to existing structs.
 
         Example: create_structure("POINT", 0, "", [["x", "int"], ["y", "int"]]) """)
-    public String createStructure(
+    public ToolOutput createStructure(
             @Param("Name of the structure to create") String name,
             @Param(value = "Size in bytes (0 for auto-size based on fields)", defaultValue = "0") int size,
             @Param(value = "Category path like \"/MyStructures\" (empty for root)", defaultValue = "") String categoryPath,
             @Param(value = "Optional list of [field_name, data_type] pairs to add immediately", defaultValue = "") List<String[]> fields) {
         Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
+        if (program == null) return StatusOutput.error("No program loaded");
         if (name == null || name.isEmpty()) {
-            return "Structure name is required";
+            return StatusOutput.error("Structure name is required");
         }
 
         try (var tx = ProgramTransaction.start(program, "Create structure")) {
@@ -641,7 +645,7 @@ public class DataTypeService {
 
             DataType existing = findDataTypeByNameInAllCategories(dtm, name);
             if (existing != null && existing instanceof Structure) {
-                return "Structure '" + name + "' already exists";
+                return StatusOutput.error("Structure '" + name + "' already exists");
             }
 
             CategoryPath catPath = CategoryPath.ROOT;
@@ -659,8 +663,8 @@ public class DataTypeService {
                     String fieldTypeName = field[1];
                     DataType fieldType = resolveDataType(dtm, fieldTypeName);
                     if (fieldType == null) {
-                        return "Failed to resolve field type '" + fieldTypeName +
-                               "' for field '" + fieldName + "'";
+                        return StatusOutput.error("Failed to resolve field type '" + fieldTypeName +
+                               "' for field '" + fieldName + "'");
                     }
                     struct.add(fieldType, -1, fieldName, null);
                 }
@@ -674,14 +678,14 @@ public class DataTypeService {
             if (fields != null && !fields.isEmpty()) {
                 msg += " with " + fields.size() + " fields";
             }
-            return msg;
+            return StatusOutput.ok(msg);
         } catch (Exception e) {
             Msg.error(this, "Error creating structure", e);
-            return "Failed to create structure: " + e.getMessage();
+            return StatusOutput.error("Failed to create structure: " + e.getMessage());
         }
     }
 
-    @McpTool(post = true, description = """
+    @McpTool(post = true, outputType = StatusOutput.class, description = """
         Add a field to an existing structure.
 
         Adds a new field with specified type at given offset or appends to end.
@@ -691,7 +695,7 @@ public class DataTypeService {
         Note: Field types can be built-in types, typedefs, or other structures/enums.
 
         Example: add_structure_field("MY_STRUCT", "count", "int") -> "Field 'count' added to structure 'MY_STRUCT'" """)
-    public String addStructureField(
+    public ToolOutput addStructureField(
             @Param("Name of the structure to modify") String structName,
             @Param("Name for the new field") String fieldName,
             @Param("Data type like \"int\", \"char\", \"DWORD\", or another struct name") String fieldType,
@@ -699,9 +703,9 @@ public class DataTypeService {
             @Param(value = "Offset in structure to insert at (-1 to append)", defaultValue = "-1") int offset,
             @Param(value = "Optional comment for the field", defaultValue = "") String comment) {
         Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
+        if (program == null) return StatusOutput.error("No program loaded");
         if (structName == null || fieldType == null) {
-            return "Structure name and field type are required";
+            return StatusOutput.error("Structure name and field type are required");
         }
 
         try (var tx = ProgramTransaction.start(program, "Add structure field")) {
@@ -709,14 +713,14 @@ public class DataTypeService {
 
             DataType dt = findDataTypeByNameInAllCategories(dtm, structName);
             if (!(dt instanceof Structure)) {
-                return "Structure '" + structName + "' not found";
+                return StatusOutput.error("Structure '" + structName + "' not found");
             }
 
             Structure struct = (Structure) dt;
 
             DataType fieldDataType = resolveDataType(dtm, fieldType);
             if (fieldDataType == null) {
-                return "Failed to resolve data type: " + fieldType;
+                return StatusOutput.error("Failed to resolve data type: " + fieldType);
             }
 
             if (offset >= 0) {
@@ -726,11 +730,11 @@ public class DataTypeService {
             }
 
             tx.commit();
-            return "Field '" + (fieldName != null ? fieldName : "unnamed") +
-                    "' added to structure '" + structName + "'";
+            return StatusOutput.ok("Field '" + (fieldName != null ? fieldName : "unnamed") +
+                    "' added to structure '" + structName + "'");
         } catch (RuntimeException e) {
             Msg.error(this, "Error adding structure field", e);
-            return "Failed to add field: " + e.getMessage();
+            return StatusOutput.error("Failed to add field: " + e.getMessage());
         }
     }
 
@@ -743,10 +747,10 @@ public class DataTypeService {
      * @return status message
      */
     public String createEnum(String enumName, int size, String categoryPath) {
-        return createEnum(enumName, size, categoryPath, null);
+        return createEnum(enumName, size, categoryPath, null).toDisplayText();
     }
 
-    @McpTool(post = true, description = """
+    @McpTool(post = true, outputType = StatusOutput.class, description = """
         Create a new enum data type in Ghidra, optionally with inline values.
 
         Creates an enumeration with the specified name, and when values are provided,
@@ -758,27 +762,27 @@ public class DataTypeService {
         Note: Enum names must be unique. Use add_enum_value to add values to existing enums.
 
         Example: create_enum("FILE_FLAGS", 4, "", {"FLAG_READ": 1, "FLAG_WRITE": 2}) """)
-    public String createEnum(
+    public ToolOutput createEnum(
             @Param("Name of the enum to create") String name,
             @Param(value = "Size in bytes - must be 1, 2, 4, or 8 (default: 4)", defaultValue = "4") int size,
             @Param(value = "Category path like \"/MyEnums\" (empty for root)", defaultValue = "") String categoryPath,
             @Param(value = "Optional dictionary mapping value names to numeric values", defaultValue = "") Map<String, Long> values) {
         if (name == null || name.isEmpty()) {
-            return "Enum name is required";
+            return StatusOutput.error("Enum name is required");
         }
         if (size != 1 && size != 2 && size != 4 && size != 8) {
-            return "Enum size must be 1, 2, 4, or 8 bytes";
+            return StatusOutput.error("Enum size must be 1, 2, 4, or 8 bytes");
         }
 
         Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
+        if (program == null) return StatusOutput.error("No program loaded");
 
         try (var tx = ProgramTransaction.start(program, "Create enum")) {
             ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
 
             DataType existing = findDataTypeByNameInAllCategories(dtm, name);
             if (existing != null && existing instanceof Enum) {
-                return "Enum '" + name + "' already exists";
+                return StatusOutput.error("Enum '" + name + "' already exists");
             }
 
             CategoryPath catPath = CategoryPath.ROOT;
@@ -803,14 +807,14 @@ public class DataTypeService {
             if (values != null && !values.isEmpty()) {
                 msg += " with " + values.size() + " values";
             }
-            return msg;
+            return StatusOutput.ok(msg);
         } catch (Exception e) {
             Msg.error(this, "Error creating enum", e);
-            return "Failed to create enum: " + e.getMessage();
+            return StatusOutput.error("Failed to create enum: " + e.getMessage());
         }
     }
 
-    @McpTool(post = true, description = """
+    @McpTool(post = true, outputType = StatusOutput.class, description = """
         Add a value to an existing enum.
 
         Adds a named constant with numeric value to the enumeration.
@@ -820,14 +824,14 @@ public class DataTypeService {
         Note: Value names must be unique within the enum. Values can be negative.
 
         Example: add_enum_value("MY_FLAGS", "FLAG_ENABLED", 0x01) -> "Value 'FLAG_ENABLED' (1) added to enum 'MY_FLAGS'" """)
-    public String addEnumValue(
+    public ToolOutput addEnumValue(
             @Param("Name of the enum to modify") String enumName,
             @Param("Name for the enum constant") String valueName,
             @Param("Numeric value for the constant") long value) {
         Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
+        if (program == null) return StatusOutput.error("No program loaded");
         if (enumName == null || valueName == null) {
-            return "Enum name and value name are required";
+            return StatusOutput.error("Enum name and value name are required");
         }
 
         try (var tx = ProgramTransaction.start(program, "Add enum value")) {
@@ -837,14 +841,14 @@ public class DataTypeService {
             if (dt instanceof Enum enumType) {
                 enumType.add(valueName, value);
                 tx.commit();
-                return "Value '" + valueName + "' (" + value +
-                        ") added to enum '" + enumName + "'";
+                return StatusOutput.ok("Value '" + valueName + "' (" + value +
+                        ") added to enum '" + enumName + "'");
             } else {
-                return "Enum '" + enumName + "' not found";
+                return StatusOutput.error("Enum '" + enumName + "' not found");
             }
         } catch (Exception e) {
             Msg.error(this, "Error adding enum value", e);
-            return "Failed to add enum value: " + e.getMessage();
+            return StatusOutput.error("Failed to add enum value: " + e.getMessage());
         }
     }
 
@@ -1093,18 +1097,18 @@ public class DataTypeService {
         return String.join("\n", fields);
     }
 
-    @McpTool(description = """
+    @McpTool(outputType = ListOutput.class, description = """
         List data types (structures and/or enums) in the program with pagination.
 
         Returns: Data types with summary info, prefixed with [struct] or [enum]
 
         Example: list_data_types("struct", 0, 5) -> ['[struct] POINT: {int x, int y}', ...] """)
-    public String listDataTypes(
+    public ToolOutput listDataTypes(
             @Param(value = "Filter by type \u2014 \"all\" (default), \"struct\", or \"enum\"", defaultValue = "all") String kind,
             @Param(value = "Starting index for pagination (0-based)", defaultValue = "0") int offset,
             @Param(value = "Maximum data types to return", defaultValue = "100") int limit) {
         Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
+        if (program == null) return StatusOutput.error("No program loaded");
 
         String normalizedKind = (kind == null || kind.isEmpty()) ? "all" : kind.toLowerCase();
 
@@ -1154,8 +1158,7 @@ public class DataTypeService {
             }
         }
 
-        PaginationResult result = HttpUtils.paginateListWithHints(lines, offset, limit);
-        return result.getFormattedResult();
+        return ListOutput.paginate(lines, offset, limit);
     }
 
     @McpTool(description = """
@@ -1167,22 +1170,22 @@ public class DataTypeService {
         Returns: Detailed data type information
 
         Example: get_data_type("POINT") -> "Structure: POINT\\nSize: 8 bytes\\nFields:\\n  [0000] x: int..." """)
-    public String getDataType(
+    public ToolOutput getDataType(
             @Param("Name of the data type to examine (e.g., \"POINT\", \"FILE_FLAGS\")") String name) {
         Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
-        if (name == null || name.isEmpty()) return "Data type name is required";
+        if (program == null) return StatusOutput.error("No program loaded");
+        if (name == null || name.isEmpty()) return StatusOutput.error("Data type name is required");
 
         ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
         DataType dataType = findDataTypeByNameInAllCategories(dtm, name);
         if (dataType == null) {
-            return "Data type not found: " + name;
+            return StatusOutput.error("Data type not found: " + name);
         }
 
         if (dataType instanceof Structure struct) {
-            return formatStructureDetails(struct);
+            return new TextOutput(formatStructureDetails(struct));
         } else if (dataType instanceof Enum enumType) {
-            return formatEnumDetails(enumType);
+            return new TextOutput(formatEnumDetails(enumType));
         } else {
             // Generic type info
             StringBuilder result = new StringBuilder();
@@ -1193,7 +1196,7 @@ public class DataTypeService {
             if (dataType.getDescription() != null) {
                 result.append("Description: ").append(dataType.getDescription()).append("\n");
             }
-            return result.toString();
+            return new TextOutput(result.toString());
         }
     }
 
@@ -1298,7 +1301,7 @@ public class DataTypeService {
         return a.getClass().equals(b.getClass()) && a.getName().equals(b.getName());
     }
 
-    @McpTool(description = """
+    @McpTool(outputType = ListOutput.class, description = """
         Find all locations where a data type is used in the program.
 
         Searches defined data items and function signatures (return types, parameters,
@@ -1312,14 +1315,14 @@ public class DataTypeService {
         Returns: List of usage locations with context (data labels, function signatures)
 
         Example: find_data_type_usage("POINT") -> ['Data: origin @ 00402000 (type: POINT)', ...] """)
-    public String findDataTypeUsage(
+    public ToolOutput findDataTypeUsage(
             @Param("Name of the data type to search for (e.g., \"POINT\", \"MyStruct\")") String typeName,
             @Param(value = "Optional field name to restrict search to", defaultValue = "") String fieldName,
             @Param(value = "Starting index for pagination (0-based)", defaultValue = "0") int offset,
             @Param(value = "Maximum results to return", defaultValue = "100") int limit) {
         Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
-        if (typeName == null || typeName.isEmpty()) return "Type name is required";
+        if (program == null) return StatusOutput.error("No program loaded");
+        if (typeName == null || typeName.isEmpty()) return StatusOutput.error("Type name is required");
 
         // Normalize empty field name to null
         if (fieldName != null && fieldName.isEmpty()) fieldName = null;
@@ -1327,7 +1330,7 @@ public class DataTypeService {
         ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
         DataType targetType = findDataTypeByNameInAllCategories(dtm, typeName);
         if (targetType == null) {
-            return "Data type not found: " + typeName;
+            return StatusOutput.error("Data type not found: " + typeName);
         }
 
         // Unwrap the target so we compare base-to-base
@@ -1337,13 +1340,13 @@ public class DataTypeService {
         int fieldOffset = -1;
         if (fieldName != null && !fieldName.isEmpty()) {
             if (!(targetBase instanceof Composite)) {
-                return "Field search requires a composite (struct/union) type, but " +
-                        typeName + " is " + targetBase.getClass().getSimpleName();
+                return StatusOutput.error("Field search requires a composite (struct/union) type, but " +
+                        typeName + " is " + targetBase.getClass().getSimpleName());
             }
             Composite composite = (Composite) targetBase;
             DataTypeComponent fieldComp = findFieldByName(composite, fieldName);
             if (fieldComp == null) {
-                return "Field '" + fieldName + "' not found in " + typeName;
+                return StatusOutput.error("Field '" + fieldName + "' not found in " + typeName);
             }
             fieldOffset = fieldComp.getOffset();
         }
@@ -1392,11 +1395,10 @@ public class DataTypeService {
             String target = fieldName != null && !fieldName.isEmpty()
                     ? typeName + "." + fieldName
                     : typeName;
-            return "No usages found for data type: " + target;
+            return StatusOutput.error("No usages found for data type: " + target);
         }
 
-        PaginationResult paginationResult = HttpUtils.paginateListWithHints(results, offset, limit);
-        return paginationResult.getFormattedResult();
+        return ListOutput.paginate(results, offset, limit);
     }
 
 

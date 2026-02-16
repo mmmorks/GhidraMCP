@@ -7,6 +7,10 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
+import com.lauriewired.mcp.model.ListOutput;
+import com.lauriewired.mcp.model.StatusOutput;
+import com.lauriewired.mcp.model.TextOutput;
+import com.lauriewired.mcp.model.ToolOutput;
 import com.lauriewired.mcp.utils.HttpUtils;
 
 import ghidra.program.model.data.CategoryPath;
@@ -77,14 +81,14 @@ public class TestDataTypeService extends DataTypeService {
      * Simplified for testing without ProgramTransaction (uses manual transaction)
      */
     @Override
-    public String updateStructure(String name, String newName, Integer size,
+    public ToolOutput updateStructure(String name, String newName, Integer size,
                                    Map<String, String> fieldRenames,
                                    Map<String, String> typeChanges) {
         if (name == null || name.isEmpty()) {
-            return "Structure name is required";
+            return StatusOutput.error("Structure name is required");
         }
         Program program = testProgramService.getCurrentProgram();
-        if (program == null) return "No program loaded";
+        if (program == null) return StatusOutput.error("No program loaded");
 
         int tx = program.startTransaction("Update structure");
         boolean success = false;
@@ -92,7 +96,7 @@ public class TestDataTypeService extends DataTypeService {
             ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
             DataType dt = findDataTypeByNameInAllCategories(dtm, name);
             if (!(dt instanceof Structure)) {
-                return "Structure '" + name + "' not found";
+                return StatusOutput.error("Structure '" + name + "' not found");
             }
             Structure struct = (Structure) dt;
 
@@ -219,9 +223,9 @@ public class TestDataTypeService extends DataTypeService {
             StringBuilder sb = new StringBuilder("Updated structure '" + name + "':\n");
             for (String r : results) sb.append(r).append("\n");
             sb.append("Summary: ").append(succeeded).append(" succeeded, ").append(failed).append(" failed");
-            return sb.toString();
+            return new TextOutput(sb.toString());
         } catch (Exception e) {
-            return "Failed to update structure: " + e.getMessage();
+            return StatusOutput.error("Failed to update structure: " + e.getMessage());
         } finally {
             program.endTransaction(tx, success);
         }
@@ -232,14 +236,14 @@ public class TestDataTypeService extends DataTypeService {
      * Simplified for testing without ProgramTransaction (uses manual transaction)
      */
     @Override
-    public String updateEnum(String name, String newName, Integer size,
+    public ToolOutput updateEnum(String name, String newName, Integer size,
                               Map<String, String> valueRenames,
                               Map<String, Long> valueChanges) {
         if (name == null || name.isEmpty()) {
-            return "Enum name is required";
+            return StatusOutput.error("Enum name is required");
         }
         Program program = testProgramService.getCurrentProgram();
-        if (program == null) return "No program loaded";
+        if (program == null) return StatusOutput.error("No program loaded");
 
         int tx = program.startTransaction("Update enum");
         boolean success = false;
@@ -247,7 +251,7 @@ public class TestDataTypeService extends DataTypeService {
             ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
             DataType dt = findDataTypeByNameInAllCategories(dtm, name);
             if (!(dt instanceof Enum)) {
-                return "Enum '" + name + "' not found";
+                return StatusOutput.error("Enum '" + name + "' not found");
             }
             Enum enumType = (Enum) dt;
 
@@ -332,9 +336,9 @@ public class TestDataTypeService extends DataTypeService {
             StringBuilder sb = new StringBuilder("Updated enum '" + name + "':\n");
             for (String r : results) sb.append(r).append("\n");
             sb.append("Summary: ").append(succeeded).append(" succeeded, ").append(failed).append(" failed");
-            return sb.toString();
+            return new TextOutput(sb.toString());
         } catch (Exception e) {
-            return "Failed to update enum: " + e.getMessage();
+            return StatusOutput.error("Failed to update enum: " + e.getMessage());
         } finally {
             program.endTransaction(tx, success);
         }
@@ -485,12 +489,12 @@ public class TestDataTypeService extends DataTypeService {
      * @return status message
      */
     @Override
-    public String addStructureField(String structName, String fieldName, String fieldType,
+    public ToolOutput addStructureField(String structName, String fieldName, String fieldType,
                                   int fieldSize, int offset, String comment) {
         Program program = testProgramService.getCurrentProgram();
-        if (program == null) return "No program loaded";
+        if (program == null) return StatusOutput.error("No program loaded");
         if (structName == null || fieldType == null) {
-            return "Structure name and field type are required";
+            return StatusOutput.error("Structure name and field type are required");
         }
 
         String resultMessage = null;
@@ -502,7 +506,7 @@ public class TestDataTypeService extends DataTypeService {
             DataType dt = findDataTypeByNameInAllCategories(dtm, structName);
             if (!(dt instanceof Structure)) {
                 resultMessage = "Structure '" + structName + "' not found";
-                return resultMessage;
+                return StatusOutput.error(resultMessage);
             }
             
             Structure struct = (Structure) dt;
@@ -511,7 +515,7 @@ public class TestDataTypeService extends DataTypeService {
             DataType fieldDataType = resolveDataType(dtm, fieldType);
             if (fieldDataType == null) {
                 resultMessage = "Failed to resolve data type: " + fieldType;
-                return resultMessage;
+                return StatusOutput.error(resultMessage);
             }
             
             // Add the field
@@ -534,7 +538,10 @@ public class TestDataTypeService extends DataTypeService {
                                  resultMessage.contains("added"));
         }
 
-        return resultMessage;
+        if (resultMessage != null && resultMessage.contains("added")) {
+            return StatusOutput.ok(resultMessage);
+        }
+        return StatusOutput.error(resultMessage);
     }
 
     /**
@@ -605,11 +612,11 @@ public class TestDataTypeService extends DataTypeService {
      * @return status message
      */
     @Override
-    public String addEnumValue(String enumName, String valueName, long value) {
+    public ToolOutput addEnumValue(String enumName, String valueName, long value) {
         Program program = testProgramService.getCurrentProgram();
-        if (program == null) return "No program loaded";
+        if (program == null) return StatusOutput.error("No program loaded");
         if (enumName == null || valueName == null) {
-            return "Enum name and value name are required";
+            return StatusOutput.error("Enum name and value name are required");
         }
 
         String resultMessage = null;
@@ -621,7 +628,7 @@ public class TestDataTypeService extends DataTypeService {
             DataType dt = findDataTypeByNameInAllCategories(dtm, enumName);
             if (!(dt instanceof EnumDataType)) {
                 resultMessage = "Enum '" + enumName + "' not found";
-                return resultMessage;
+                return StatusOutput.error(resultMessage);
             }
             
             EnumDataType enumType = (EnumDataType) dt;
@@ -640,7 +647,10 @@ public class TestDataTypeService extends DataTypeService {
                                  resultMessage.contains("added"));
         }
 
-        return resultMessage;
+        if (resultMessage != null && resultMessage.contains("added")) {
+            return StatusOutput.ok(resultMessage);
+        }
+        return StatusOutput.error(resultMessage);
     }
 
     /**
