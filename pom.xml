@@ -230,11 +230,11 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-pmd-plugin</artifactId>
-        <version>3.26.0</version>
+        <version>3.28.0</version>
         <configuration>
           <failOnViolation>false</failOnViolation>
           <printFailingErrors>true</printFailingErrors>
-          <targetJdk>21</targetJdk>
+          <targetJdk>24</targetJdk>
           <rulesets>
             <ruleset>${project.basedir}/pmd-rules.xml</ruleset>
           </rulesets>
