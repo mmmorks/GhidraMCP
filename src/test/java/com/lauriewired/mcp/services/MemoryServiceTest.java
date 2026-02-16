@@ -111,23 +111,23 @@ public class MemoryServiceTest {
     }
 
     @Test
-    @DisplayName("listSegments returns error when no program is loaded")
+    @DisplayName("getMemoryLayout returns error when no program is loaded")
     void testListSegments_NoProgram() {
-        String result = memoryService.listSegments(0, 10);
+        String result = memoryService.getMemoryLayout(0, 10);
         assertEquals("No program loaded", result);
     }
 
     @Test
-    @DisplayName("listSegments handles negative offset")
+    @DisplayName("getMemoryLayout handles negative offset")
     void testListSegments_NegativeOffset() {
-        String result = memoryService.listSegments(-1, 10);
+        String result = memoryService.getMemoryLayout(-1, 10);
         assertEquals("No program loaded", result);
     }
 
     @Test
-    @DisplayName("listSegments handles zero limit")
+    @DisplayName("getMemoryLayout handles zero limit")
     void testListSegments_ZeroLimit() {
-        String result = memoryService.listSegments(0, 0);
+        String result = memoryService.getMemoryLayout(0, 0);
         assertEquals("No program loaded", result);
     }
 
@@ -199,7 +199,7 @@ public class MemoryServiceTest {
     // Happy path tests using mocked Ghidra objects
     
     @Test
-    @DisplayName("listSegments returns memory blocks when program is loaded")
+    @DisplayName("getMemoryLayout returns memory blocks when program is loaded")
     void testListSegments_Success() {
         // Setup mocks
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
@@ -223,7 +223,7 @@ public class MemoryServiceTest {
         when(mockMemory.getBlocks()).thenReturn(blocks);
         
         // Execute
-        String result = testMemoryService.listSegments(0, 10);
+        String result = testMemoryService.getMemoryLayout(0, 10);
         
         // Verify
         assertTrue(result.contains(".text: 00400000 - 00401000"));
@@ -231,7 +231,7 @@ public class MemoryServiceTest {
     }
     
     @Test
-    @DisplayName("listSegments respects pagination limits")
+    @DisplayName("getMemoryLayout respects pagination limits")
     void testListSegments_Pagination() {
         // Setup mocks
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
@@ -255,7 +255,7 @@ public class MemoryServiceTest {
         when(mockMemory.getBlocks()).thenReturn(blocks);
         
         // Execute with limit of 1
-        String result = testMemoryService.listSegments(0, 1);
+        String result = testMemoryService.getMemoryLayout(0, 1);
         
         // Verify - should only contain first block
         assertTrue(result.contains(".text: 00400000 - 00401000"));
@@ -438,17 +438,17 @@ public class MemoryServiceTest {
         verify(mockProgram).endTransaction(1, false);
     }
     
-    // Tests for setMemoryDataType
+    // Tests for setAddressDataType
     
     @Test
-    @DisplayName("setMemoryDataType returns error when no program is loaded")
+    @DisplayName("setAddressDataType returns error when no program is loaded")
     void testSetMemoryDataType_NoProgram() {
-        String result = memoryService.setMemoryDataType("0x1000", "int", true);
+        String result = memoryService.setAddressDataType("0x1000", "int", true);
         assertEquals("No program loaded", result);
     }
     
     @Test
-    @DisplayName("setMemoryDataType returns error when DataTypeService is null")
+    @DisplayName("setAddressDataType returns error when DataTypeService is null")
     void testSetMemoryDataType_NoDataTypeService() {
         // Setup mock to return a program
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
@@ -456,13 +456,13 @@ public class MemoryServiceTest {
         
         // Create MemoryService without DataTypeService using TestMemoryService
         TestMemoryService memoryServiceNoDataType = new TestMemoryService(testProgramService);
-        String result = memoryServiceNoDataType.setMemoryDataType("0x1000", "int", true);
+        String result = memoryServiceNoDataType.setAddressDataType("0x1000", "int", true);
         assertEquals("DataTypeService not available", result);
     }
     
     
     @Test
-    @DisplayName("setMemoryDataType returns error for invalid address")
+    @DisplayName("setAddressDataType returns error for invalid address")
     void testSetMemoryDataType_InvalidAddress() {
         // Setup mocks
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
@@ -476,7 +476,7 @@ public class MemoryServiceTest {
         when(mockProgram.startTransaction(anyString())).thenReturn(1);
         
         // Execute
-        String result = testMemoryService.setMemoryDataType("invalid", "int", true);
+        String result = testMemoryService.setAddressDataType("invalid", "int", true);
         
         // Verify
         assertEquals("Invalid address: invalid", result);
@@ -484,7 +484,7 @@ public class MemoryServiceTest {
     }
     
     @Test
-    @DisplayName("setMemoryDataType returns error when data type not found")
+    @DisplayName("setAddressDataType returns error when data type not found")
     void testSetMemoryDataType_DataTypeNotFound() {
         // Setup mocks
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
@@ -508,7 +508,7 @@ public class MemoryServiceTest {
         TestMemoryService testMemoryServiceWithMock = new TestMemoryService(testProgramService, mockTestDataTypeService);
         
         // Execute
-        String result = testMemoryServiceWithMock.setMemoryDataType("0x1000", "unknown_type", true);
+        String result = testMemoryServiceWithMock.setAddressDataType("0x1000", "unknown_type", true);
         
         // Verify
         assertEquals("Data type not found: unknown_type", result);

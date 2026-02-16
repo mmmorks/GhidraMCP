@@ -58,7 +58,7 @@ public class TestMemoryService extends MemoryService {
      * @return list of memory segments with their address ranges
      */
     @Override
-    public String listSegments(int offset, int limit) {
+    public String getMemoryLayout(int offset, int limit) {
         Program program = testProgramService.getCurrentProgram();
         if (program == null) return "No program loaded";
 
@@ -162,7 +162,7 @@ public class TestMemoryService extends MemoryService {
      * @return status message
      */
     @Override
-    public String setMemoryDataType(String addressStr, String dataTypeName, boolean clearExisting) {
+    public String setAddressDataType(String addressStr, String dataTypeName, boolean clearExisting) {
         Program program = testProgramService.getCurrentProgram();
         if (program == null) return "No program loaded";
         if (testDataTypeService == null) return "DataTypeService not available";

@@ -62,7 +62,7 @@ public class MemoryService {
      * @param limit maximum number of segments to return
      * @return list of memory segments with their address ranges
      */
-    public String listSegments(int offset, int limit) {
+    public String getMemoryLayout(int offset, int limit) {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
 
@@ -155,7 +155,7 @@ public class MemoryService {
      * @param clearExisting whether to clear existing data at the address first
      * @return status message
      */
-    public String setMemoryDataType(String addressStr, String dataTypeName, boolean clearExisting) {
+    public String setAddressDataType(String addressStr, String dataTypeName, boolean clearExisting) {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
         if (dataTypeService == null) return "DataTypeService not available";
@@ -334,7 +334,7 @@ public class MemoryService {
      * @param addressStr address to check
      * @return data type information
      */
-    public String getDataTypeAt(String addressStr) {
+    public String getAddressDataType(String addressStr) {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
         if (addressStr == null || addressStr.isEmpty()) return "Address is required";

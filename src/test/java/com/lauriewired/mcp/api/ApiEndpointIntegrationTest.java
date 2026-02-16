@@ -108,7 +108,7 @@ public class ApiEndpointIntegrationTest {
     // Memory Service Endpoints
     
     @Test
-    @DisplayName("set_memory_data_type endpoint parses parameters correctly")
+    @DisplayName("set_address_data_type endpoint parses parameters correctly")
     void testSetMemoryDataTypeEndpoint_ParsesParameters() throws Exception {
         // Setup to capture the handler
         ArgumentCaptor<HttpHandler> handlerCaptor = ArgumentCaptor.forClass(HttpHandler.class);
@@ -116,8 +116,8 @@ public class ApiEndpointIntegrationTest {
         // Register endpoints
         apiHandlerRegistry.registerAllEndpoints();
         
-        // Capture the handler for set_memory_data_type
-        verify(mockServer).createContext(eq("/set_memory_data_type"), handlerCaptor.capture());
+        // Capture the handler for set_address_data_type
+        verify(mockServer).createContext(eq("/set_address_data_type"), handlerCaptor.capture());
         HttpHandler handler = handlerCaptor.getValue();
         
         // Setup request body
@@ -126,7 +126,7 @@ public class ApiEndpointIntegrationTest {
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
         
         // Setup mock exchange
-        when(mockExchange.getRequestURI()).thenReturn(URI.create("/set_memory_data_type"));
+        when(mockExchange.getRequestURI()).thenReturn(URI.create("/set_address_data_type"));
         when(mockExchange.getRequestMethod()).thenReturn("POST");
         when(mockExchange.getRequestBody()).thenReturn(inputStream);
         when(mockExchange.getResponseBody()).thenReturn(outputStream);
@@ -135,18 +135,18 @@ public class ApiEndpointIntegrationTest {
         when(mockHeaders.getFirst("Content-Type")).thenReturn("application/x-www-form-urlencoded");
         
         // Setup mock service response
-        when(mockMemoryService.setMemoryDataType("0x1000", "int", true))
+        when(mockMemoryService.setAddressDataType("0x1000", "int", true))
             .thenReturn("Data type 'int' (4 bytes) set at address 0x1000");
         
         // Invoke the handler
         handler.handle(mockExchange);
         
         // Verify the service was called with correct parameters
-        verify(mockMemoryService).setMemoryDataType("0x1000", "int", true);
+        verify(mockMemoryService).setAddressDataType("0x1000", "int", true);
     }
     
     @Test
-    @DisplayName("set_memory_data_type endpoint handles clear_existing=false")
+    @DisplayName("set_address_data_type endpoint handles clear_existing=false")
     void testSetMemoryDataTypeEndpoint_ClearExistingFalse() throws Exception {
         // Setup to capture the handler
         ArgumentCaptor<HttpHandler> handlerCaptor = ArgumentCaptor.forClass(HttpHandler.class);
@@ -155,7 +155,7 @@ public class ApiEndpointIntegrationTest {
         apiHandlerRegistry.registerAllEndpoints();
         
         // Capture the handler
-        verify(mockServer).createContext(eq("/set_memory_data_type"), handlerCaptor.capture());
+        verify(mockServer).createContext(eq("/set_address_data_type"), handlerCaptor.capture());
         HttpHandler handler = handlerCaptor.getValue();
         
         // Setup request body
@@ -164,7 +164,7 @@ public class ApiEndpointIntegrationTest {
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
         
         // Setup mock exchange
-        when(mockExchange.getRequestURI()).thenReturn(URI.create("/set_memory_data_type"));
+        when(mockExchange.getRequestURI()).thenReturn(URI.create("/set_address_data_type"));
         when(mockExchange.getRequestMethod()).thenReturn("POST");
         when(mockExchange.getRequestBody()).thenReturn(inputStream);
         when(mockExchange.getResponseBody()).thenReturn(outputStream);
@@ -173,18 +173,18 @@ public class ApiEndpointIntegrationTest {
         when(mockHeaders.getFirst("Content-Type")).thenReturn("application/x-www-form-urlencoded");
         
         // Setup mock service response
-        when(mockMemoryService.setMemoryDataType("0x2000", "char[20]", false))
+        when(mockMemoryService.setAddressDataType("0x2000", "char[20]", false))
             .thenReturn("Data type 'char[20]' (20 bytes) set at address 0x2000");
         
         // Invoke the handler
         handler.handle(mockExchange);
         
         // Verify the service was called with correct parameters
-        verify(mockMemoryService).setMemoryDataType("0x2000", "char[20]", false);
+        verify(mockMemoryService).setAddressDataType("0x2000", "char[20]", false);
     }
     
     @Test
-    @DisplayName("set_memory_data_type endpoint handles missing clear_existing parameter")
+    @DisplayName("set_address_data_type endpoint handles missing clear_existing parameter")
     void testSetMemoryDataTypeEndpoint_MissingClearExisting() throws Exception {
         // Setup to capture the handler
         ArgumentCaptor<HttpHandler> handlerCaptor = ArgumentCaptor.forClass(HttpHandler.class);
@@ -193,7 +193,7 @@ public class ApiEndpointIntegrationTest {
         apiHandlerRegistry.registerAllEndpoints();
         
         // Capture the handler
-        verify(mockServer).createContext(eq("/set_memory_data_type"), handlerCaptor.capture());
+        verify(mockServer).createContext(eq("/set_address_data_type"), handlerCaptor.capture());
         HttpHandler handler = handlerCaptor.getValue();
         
         // Setup request body without clear_existing
@@ -202,7 +202,7 @@ public class ApiEndpointIntegrationTest {
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
         
         // Setup mock exchange
-        when(mockExchange.getRequestURI()).thenReturn(URI.create("/set_memory_data_type"));
+        when(mockExchange.getRequestURI()).thenReturn(URI.create("/set_address_data_type"));
         when(mockExchange.getRequestMethod()).thenReturn("POST");
         when(mockExchange.getRequestBody()).thenReturn(inputStream);
         when(mockExchange.getResponseBody()).thenReturn(outputStream);
@@ -211,13 +211,13 @@ public class ApiEndpointIntegrationTest {
         when(mockHeaders.getFirst("Content-Type")).thenReturn("application/x-www-form-urlencoded");
         
         // Setup mock service response
-        when(mockMemoryService.setMemoryDataType("0x3000", "POINT", false))
+        when(mockMemoryService.setAddressDataType("0x3000", "POINT", false))
             .thenReturn("Data type 'POINT' (8 bytes) set at address 0x3000");
         
         // Invoke the handler
         handler.handle(mockExchange);
         
         // Verify the service was called with false as default
-        verify(mockMemoryService).setMemoryDataType("0x3000", "POINT", false);
+        verify(mockMemoryService).setAddressDataType("0x3000", "POINT", false);
     }
 }

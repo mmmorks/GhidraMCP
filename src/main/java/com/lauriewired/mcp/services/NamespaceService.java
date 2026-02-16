@@ -1,17 +1,11 @@
 package com.lauriewired.mcp.services;
 
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
-import com.lauriewired.mcp.model.PaginationResult;
 import com.lauriewired.mcp.utils.HttpUtils;
 
-import ghidra.program.model.address.GlobalNamespace;
 import ghidra.program.model.listing.Program;
-import ghidra.program.model.symbol.Namespace;
 import ghidra.program.model.symbol.Symbol;
 import ghidra.program.model.symbol.SymbolIterator;
 import ghidra.program.model.symbol.SymbolTable;
@@ -32,55 +26,6 @@ public class NamespaceService {
     }
 
     /**
-     * List all namespace/class names in the program with pagination and LLM-friendly hints
-     *
-     * @param offset starting index
-     * @param limit maximum number of names to return
-     * @return paginated list of class names with pagination metadata
-     */
-    public String getAllClassNames(int offset, int limit) {
-        Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
-
-        Set<String> classNames = new HashSet<>();
-        for (Symbol symbol : program.getSymbolTable().getAllSymbols(true)) {
-            Namespace ns = symbol.getParentNamespace();
-            if (ns != null && !ns.isGlobal()) {
-                classNames.add(ns.getName());
-            }
-        }
-        // Convert set to list for pagination
-        List<String> sorted = new ArrayList<>(classNames);
-        Collections.sort(sorted);
-        
-        PaginationResult result = HttpUtils.paginateListWithHints(sorted, offset, limit);
-        return result.getFormattedResult();
-    }
-
-    /**
-     * List all non-global namespaces in the program
-     *
-     * @param offset starting index
-     * @param limit maximum number of namespaces to return
-     * @return list of namespace names
-     */
-    public String listNamespaces(int offset, int limit) {
-        Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
-
-        Set<String> namespaces = new HashSet<>();
-        for (Symbol symbol : program.getSymbolTable().getAllSymbols(true)) {
-            Namespace ns = symbol.getParentNamespace();
-            if (ns != null && !(ns instanceof GlobalNamespace)) {
-                namespaces.add(ns.getName());
-            }
-        }
-        List<String> sorted = new ArrayList<>(namespaces);
-        Collections.sort(sorted);
-        return HttpUtils.paginateList(sorted, offset, limit);
-    }
-
-    /**
      * List all symbols in the program with pagination
      *
      * @param offset starting index
@@ -98,49 +43,6 @@ public class NamespaceService {
         return HttpUtils.paginateList(lines, offset, limit);
     }
     
-    /**
-     * List imported symbols in the program
-     *
-     * @param offset starting index
-     * @param limit maximum number of imported symbols to return
-     * @return list of imported symbol names and addresses
-     */
-    public String listImports(int offset, int limit) {
-        Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
-
-        List<String> lines = new ArrayList<>();
-        for (Symbol symbol : program.getSymbolTable().getExternalSymbols()) {
-            lines.add(symbol.getName() + " -> " + symbol.getAddress());
-        }
-        return HttpUtils.paginateList(lines, offset, limit);
-    }
-
-    /**
-     * List exported functions/symbols
-     *
-     * @param offset starting index
-     * @param limit maximum number of exported symbols to return
-     * @return list of exported symbol names and addresses
-     */
-    public String listExports(int offset, int limit) {
-        Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
-
-        SymbolTable table = program.getSymbolTable();
-        SymbolIterator it = table.getAllSymbols(true);
-
-        List<String> lines = new ArrayList<>();
-        while (it.hasNext()) {
-            Symbol s = it.next();
-            // On older Ghidra, "export" is recognized via isExternalEntryPoint()
-            if (s.isExternalEntryPoint()) {
-                lines.add(s.getName() + " -> " + s.getAddress());
-            }
-        }
-        return HttpUtils.paginateList(lines, offset, limit);
-    }
-
     /**
      * Get the address of a symbol by name
      *

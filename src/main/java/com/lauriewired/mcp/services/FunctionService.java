@@ -66,54 +66,110 @@ public class FunctionService {
     }
 
     /**
-     * Decompile a function by name
+     * Get function code in the specified output mode.
+     * Resolves the function by name or address, then returns C pseudocode, assembly, or PCode.
      *
-     * @param name function name
-     * @return decompiled code or error message
+     * @param identifier function name or address (e.g., "main", "00401000")
+     * @param mode output mode: "C" (default), "assembly"/"asm", or "pcode"
+     * @return the requested code representation or an error message
      */
-    public String decompileFunctionByName(String name) {
+    public String getFunctionCode(String identifier, String mode) {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
-        
+        if (identifier == null || identifier.isEmpty()) return "Function identifier is required";
+
+        Function func = resolveFunction(program, identifier);
+        if (func == null) return "Function not found: " + identifier;
+
+        // Normalize mode
+        String normalizedMode = (mode == null || mode.isEmpty()) ? "c" : mode.toLowerCase().trim();
+
+        return switch (normalizedMode) {
+            case "assembly", "asm", "disassembly" -> getAssembly(program, func);
+            case "pcode" -> getPcode(program, func);
+            default -> getDecompiledC(program, func); // "c", "decompile", or any unrecognized mode
+        };
+    }
+
+    private String getDecompiledC(Program program, Function func) {
         DecompInterface decomp = new DecompInterface();
         decomp.openProgram(program);
-        
-        for (Function func : program.getFunctionManager().getFunctions(true)) {
-            if (func.getName().equals(name)) {
-                DecompileResults result = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
-                if (result != null && result.decompileCompleted()) {
-                    return result.getDecompiledFunction().getC();
-                } else {
-                    return "Decompilation failed";
-                }
-            }
+        DecompileResults result = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
+        if (result != null && result.decompileCompleted()) {
+            return result.getDecompiledFunction().getC();
         }
-        return "Function not found";
+        return "Decompilation failed";
+    }
+
+    private String getAssembly(Program program, Function func) {
+        StringBuilder result = new StringBuilder();
+        Listing listing = program.getListing();
+        Address start = func.getEntryPoint();
+        Address end = func.getBody().getMaxAddress();
+
+        InstructionIterator instructions = listing.getInstructions(start, true);
+        while (instructions.hasNext()) {
+            Instruction instr = instructions.next();
+            if (instr.getAddress().compareTo(end) > 0) break;
+
+            String comment = listing.getComment(
+                ghidra.program.model.listing.CodeUnit.EOL_COMMENT, instr.getAddress());
+            comment = (comment != null) ? "; " + comment : "";
+
+            result.append(String.format("%s: %s %s\n",
+                instr.getAddress(), instr.toString(), comment));
+        }
+        return result.toString();
+    }
+
+    private String getPcode(Program program, Function func) {
+        DecompInterface decomp = new DecompInterface();
+        decomp.openProgram(program);
+        DecompileResults result = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
+        if (result == null || !result.decompileCompleted()) {
+            return "Decompilation failed";
+        }
+
+        var highFunction = result.getHighFunction();
+        if (highFunction == null) return "No high function available";
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("PCode for ").append(func.getName()).append(":\n");
+        var iter = highFunction.getPcodeOps();
+        while (iter.hasNext()) {
+            sb.append(iter.next().toString()).append("\n");
+        }
+        return sb.toString();
     }
 
     /**
-     * Rename a function
+     * Rename a function identified by name or address.
+     * Tries to resolve as an address first, then falls back to name lookup.
      *
-     * @param oldName current function name
+     * @param identifier function name or address (e.g., "main", "00401000", "ram:00401000")
      * @param newName new function name
-     * @return true if successful
+     * @return descriptive result message
      */
-    public boolean renameFunction(String oldName, String newName) {
+    public String renameFunction(String identifier, String newName) {
         Program program = programService.getCurrentProgram();
-        if (program == null) return false;
+        if (program == null) return "No program loaded";
+        if (identifier == null || identifier.isEmpty()) return "Function identifier is required";
+        if (newName == null || newName.isEmpty()) return "New name is required";
 
-        try (var tx = ProgramTransaction.start(program, "Rename function via HTTP")) {
-            for (Function func : program.getFunctionManager().getFunctions(true)) {
-                if (func.getName().equals(oldName)) {
-                    func.setName(newName, SourceType.USER_DEFINED);
-                    tx.commit();
-                    return true;
-                }
-            }
+        Function func = resolveFunction(program, identifier);
+        if (func == null) {
+            return "Function not found: " + identifier;
+        }
+
+        try (var tx = ProgramTransaction.start(program, "Rename function")) {
+            String oldName = func.getName();
+            func.setName(newName, SourceType.USER_DEFINED);
+            tx.commit();
+            return "Renamed '" + oldName + "' to '" + newName + "' at " + func.getEntryPoint();
         } catch (InvalidInputException | DuplicateNameException | RuntimeException e) {
             Msg.error(this, "Error renaming function", e);
+            return "Failed to rename function: " + e.getMessage();
         }
-        return false;
     }
 
     /**
@@ -186,126 +242,39 @@ public class FunctionService {
             func.getSignature());
     }
 
-    /**
-     * List all functions with their addresses
-     *
-     * @return list of functions
-     */
-    public String listFunctions() {
-        Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
-        
-        StringBuilder result = new StringBuilder();
-        for (Function func : program.getFunctionManager().getFunctions(true)) {
-            result.append(String.format("%s at %s\n", 
-                func.getName(), 
-                func.getEntryPoint()));
-        }
-        
-        return result.toString();
-    }
 
     /**
-     * Decompile a function by its address
+     * Resolve a function by identifier — tries address first, then name lookup.
      *
-     * @param addressStr address of the function
-     * @return decompiled code or error message
+     * @param program the current program
+     * @param identifier a function name or address string
+     * @return the resolved Function, or null if not found
      */
-    public String decompileFunctionByAddress(String addressStr) {
-        Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
-        if (addressStr == null || addressStr.isEmpty()) return "Address is required";
-        
-        try {
-            Address addr = program.getAddressFactory().getAddress(addressStr);
-            Function func = GhidraUtils.getFunctionForAddress(program, addr);
-            if (func == null) return "No function found at or containing address " + addressStr;
-            
-            DecompInterface decomp = new DecompInterface();
-            decomp.openProgram(program);
-            DecompileResults result = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
-            
-            return (result != null && result.decompileCompleted()) 
-                ? result.getDecompiledFunction().getC() 
-                : "Decompilation failed";
-        } catch (Exception e) {
-            return "Error decompiling function: " + e.getMessage();
+    public Function resolveFunction(Program program, String identifier) {
+        if (program == null || identifier == null || identifier.isEmpty()) {
+            return null;
         }
-    }
 
-    /**
-     * Get assembly code for a function
-     *
-     * @param addressStr address of the function
-     * @return disassembled code or error message
-     */
-    public String disassembleFunction(String addressStr) {
-        Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
-        if (addressStr == null || addressStr.isEmpty()) return "Address is required";
-        
+        // Try as address first
         try {
-            Address addr = program.getAddressFactory().getAddress(addressStr);
-            Function func = GhidraUtils.getFunctionForAddress(program, addr);
-            if (func == null) return "No function found at or containing address " + addressStr;
-            
-            StringBuilder result = new StringBuilder();
-            Listing listing = program.getListing();
-            Address start = func.getEntryPoint();
-            Address end = func.getBody().getMaxAddress();
-            
-            InstructionIterator instructions = listing.getInstructions(start, true);
-            while (instructions.hasNext()) {
-                Instruction instr = instructions.next();
-                if (instr.getAddress().compareTo(end) > 0) {
-                    break; // Stop if we've gone past the end of the function
+            Address addr = program.getAddressFactory().getAddress(identifier);
+            if (addr != null) {
+                Function func = GhidraUtils.getFunctionForAddress(program, addr);
+                if (func != null) {
+                    return func;
                 }
-                String comment = listing.getComment(ghidra.program.model.listing.CodeUnit.EOL_COMMENT, instr.getAddress());
-                comment = (comment != null) ? "; " + comment : "";
-                
-                result.append(String.format("%s: %s %s\n", 
-                    instr.getAddress(), 
-                    instr.toString(),
-                    comment));
             }
-            
-            return result.toString();
         } catch (Exception e) {
-            return "Error disassembling function: " + e.getMessage();
-        }
-    }
-
-    /**
-     * Rename a function by address
-     * 
-     * @param functionAddrStr function address 
-     * @param newName new function name
-     * @return true if successful
-     */
-    public boolean renameFunctionByAddress(String functionAddrStr, String newName) {
-        Program program = programService.getCurrentProgram();
-        if (program == null) return false;
-        if (functionAddrStr == null || functionAddrStr.isEmpty() ||
-            newName == null || newName.isEmpty()) {
-            return false;
+            // Not a valid address, fall through to name lookup
         }
 
-        try (var tx = ProgramTransaction.start(program, "Rename function by address")) {
-            Address addr = program.getAddressFactory().getAddress(functionAddrStr);
-            Function func = GhidraUtils.getFunctionForAddress(program, addr);
-
-            if (func == null) {
-                Msg.error(this, "Could not find function at address: " + functionAddrStr);
-                return false;
+        // Fall back to name lookup
+        for (Function func : program.getFunctionManager().getFunctions(true)) {
+            if (func.getName().equals(identifier)) {
+                return func;
             }
-
-            func.setName(newName, SourceType.USER_DEFINED);
-            tx.commit();
-            return true;
-        } catch (InvalidInputException | DuplicateNameException | RuntimeException e) {
-            Msg.error(this, "Error renaming function by address", e);
         }
-        return false;
+        return null;
     }
 
     /**

@@ -22,55 +22,6 @@ public class NamespaceServiceTest {
     }
 
     @Test
-    @DisplayName("getAllClassNames returns error when no program is loaded")
-    void testGetAllClassNames_NoProgram() {
-        String result = namespaceService.getAllClassNames(0, 10);
-        assertEquals("No program loaded", result);
-    }
-
-    @Test
-    @DisplayName("getAllClassNames handles negative offset")
-    void testGetAllClassNames_NegativeOffset() {
-        String result = namespaceService.getAllClassNames(-1, 10);
-        assertEquals("No program loaded", result);
-    }
-
-    @Test
-    @DisplayName("getAllClassNames handles zero limit")
-    void testGetAllClassNames_ZeroLimit() {
-        String result = namespaceService.getAllClassNames(0, 0);
-        assertEquals("No program loaded", result);
-    }
-
-    @Test
-    @DisplayName("getAllClassNames handles large offset")
-    void testGetAllClassNames_LargeOffset() {
-        String result = namespaceService.getAllClassNames(1000, 10);
-        assertEquals("No program loaded", result);
-    }
-
-    @Test
-    @DisplayName("listNamespaces returns error when no program is loaded")
-    void testListNamespaces_NoProgram() {
-        String result = namespaceService.listNamespaces(0, 10);
-        assertEquals("No program loaded", result);
-    }
-
-    @Test
-    @DisplayName("listNamespaces handles negative offset")
-    void testListNamespaces_NegativeOffset() {
-        String result = namespaceService.listNamespaces(-1, 10);
-        assertEquals("No program loaded", result);
-    }
-
-    @Test
-    @DisplayName("listNamespaces handles zero limit")
-    void testListNamespaces_ZeroLimit() {
-        String result = namespaceService.listNamespaces(0, 0);
-        assertEquals("No program loaded", result);
-    }
-
-    @Test
     @DisplayName("listSymbols returns error when no program is loaded")
     void testListSymbols_NoProgram() {
         String result = namespaceService.listSymbols(0, 10);
@@ -88,48 +39,6 @@ public class NamespaceServiceTest {
     @DisplayName("listSymbols handles zero limit")
     void testListSymbols_ZeroLimit() {
         String result = namespaceService.listSymbols(0, 0);
-        assertEquals("No program loaded", result);
-    }
-
-    @Test
-    @DisplayName("listImports returns error when no program is loaded")
-    void testListImports_NoProgram() {
-        String result = namespaceService.listImports(0, 10);
-        assertEquals("No program loaded", result);
-    }
-
-    @Test
-    @DisplayName("listImports handles negative offset")
-    void testListImports_NegativeOffset() {
-        String result = namespaceService.listImports(-1, 10);
-        assertEquals("No program loaded", result);
-    }
-
-    @Test
-    @DisplayName("listImports handles zero limit")
-    void testListImports_ZeroLimit() {
-        String result = namespaceService.listImports(0, 0);
-        assertEquals("No program loaded", result);
-    }
-
-    @Test
-    @DisplayName("listExports returns error when no program is loaded")
-    void testListExports_NoProgram() {
-        String result = namespaceService.listExports(0, 10);
-        assertEquals("No program loaded", result);
-    }
-
-    @Test
-    @DisplayName("listExports handles negative offset")
-    void testListExports_NegativeOffset() {
-        String result = namespaceService.listExports(-1, 10);
-        assertEquals("No program loaded", result);
-    }
-
-    @Test
-    @DisplayName("listExports handles zero limit")
-    void testListExports_ZeroLimit() {
-        String result = namespaceService.listExports(0, 0);
         assertEquals("No program loaded", result);
     }
 

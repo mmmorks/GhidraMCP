@@ -28,6 +28,7 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Spliterators;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
@@ -71,6 +72,118 @@ public class VariableService {
         this.programService = programService;
     }
     
+    /**
+     * Batch rename variables in a function. All renames happen in a single transaction
+     * (all-or-nothing). The function is decompiled once, all renames are applied, then committed.
+     *
+     * @param functionName name of the function containing the variables
+     * @param renames map of old variable name to new variable name
+     * @return JSON response with operation results
+     */
+    public String batchRenameVariables(String functionName, java.util.Map<String, String> renames) {
+        Program program = programService.getCurrentProgram();
+        if (program == null) return "No program loaded";
+        if (renames == null || renames.isEmpty()) return "No renames specified";
+
+        var func = StreamSupport
+            .stream(program.getFunctionManager().getFunctions(true).spliterator(), false)
+            .filter(f -> f.getName().equals(functionName))
+            .findFirst()
+            .orElse(null);
+
+        if (func == null) return "Function not found: " + functionName;
+
+        var decomp = new DecompInterface();
+        decomp.openProgram(program);
+        var result = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
+        if (result == null || !result.decompileCompleted()) return "Decompilation failed";
+
+        var highFunction = result.getHighFunction();
+        if (highFunction == null) return "Decompilation failed (no high function)";
+
+        var localSymbolMap = highFunction.getLocalSymbolMap();
+        if (localSymbolMap == null) return "Decompilation failed (no local symbol map)";
+
+        // Pre-validate: find all symbols and check for conflicts
+        java.util.Map<String, HighSymbol> symbolMap = new java.util.LinkedHashMap<>();
+        var existingNames = new java.util.HashSet<String>();
+        var symbolsIterator = localSymbolMap.getSymbols();
+        while (symbolsIterator.hasNext()) {
+            var symbol = symbolsIterator.next();
+            existingNames.add(symbol.getName());
+            if (renames.containsKey(symbol.getName())) {
+                symbolMap.put(symbol.getName(), symbol);
+            }
+        }
+
+        // Validate all renames before starting the transaction
+        for (var entry : renames.entrySet()) {
+            if (!symbolMap.containsKey(entry.getKey())) {
+                return "Variable not found: '" + entry.getKey() + "'";
+            }
+            // Check that the new name doesn't conflict with an existing name
+            // (unless it's one we're also renaming away from)
+            if (existingNames.contains(entry.getValue()) && !renames.containsKey(entry.getValue())) {
+                return "Error: A variable with name '" + entry.getValue() + "' already exists in this function";
+            }
+        }
+
+        boolean commitRequired = false;
+        for (HighSymbol hs : symbolMap.values()) {
+            if (GhidraUtils.checkFullCommit(hs, highFunction)) {
+                commitRequired = true;
+                break;
+            }
+        }
+
+        // Execute all renames in a single transaction
+        try (var tx = ProgramTransaction.start(program, "Batch rename variables")) {
+            if (commitRequired) {
+                HighFunctionDBUtil.commitParamsToDatabase(highFunction, false,
+                    ReturnCommitOption.NO_COMMIT, func.getSignatureSource());
+            }
+
+            for (var entry : renames.entrySet()) {
+                var highSymbol = symbolMap.get(entry.getKey());
+                var highVariable = highSymbol.getHighVariable();
+                var newHighVariable = highFunction.splitOutMergeGroup(highVariable, highVariable.getRepresentative());
+                var finalHighSymbol = newHighVariable.getSymbol();
+
+                var dataType = finalHighSymbol.getDataType();
+                if (Undefined.isUndefined(dataType)) {
+                    dataType = AbstractIntegerDataType.getUnsignedDataType(
+                        dataType.getLength(), program.getDataTypeManager());
+                }
+
+                HighFunctionDBUtil.updateDBVariable(
+                    finalHighSymbol, entry.getValue(), dataType, SourceType.USER_DEFINED);
+            }
+            tx.commit();
+        } catch (Exception e) {
+            Msg.error(this, "Failed to batch rename variables", e);
+            return "Failed to rename variables (transaction rolled back): " + e.getMessage();
+        }
+
+        // Build response
+        var renamed = renames.entrySet().stream()
+            .map(e -> String.format("    \"%s\": \"%s\"",
+                HttpUtils.escapeJson(e.getKey()), HttpUtils.escapeJson(e.getValue())))
+            .collect(Collectors.joining(",\n"));
+
+        return String.format("""
+            {
+              "status": "Variables renamed successfully",
+              "function": "%s",
+              "renamed": {
+            %s
+              },
+              "count": %d
+            }""",
+            HttpUtils.escapeJson(functionName),
+            renamed,
+            renames.size());
+    }
+
     /**
      * Rename or split a variable in a function
      *
@@ -361,6 +474,91 @@ public class VariableService {
         }
     }
     
+    /**
+     * Batch set variable types in a function. All type changes happen in a single transaction
+     * (all-or-nothing). The function is decompiled once, all types are validated, then applied.
+     *
+     * @param functionAddrStr address of the function containing the variables
+     * @param typeMap map of variable name to new data type string
+     * @return JSON response with operation results
+     */
+    public String batchSetVariableTypes(String functionAddrStr, Map<String, String> typeMap) {
+        if (functionAddrStr == null || functionAddrStr.isEmpty()) return "Function address is required";
+        if (typeMap == null || typeMap.isEmpty()) return "No variable types specified";
+        Program program = programService.getCurrentProgram();
+        if (program == null) return "No program loaded";
+
+        try {
+            var addr = program.getAddressFactory().getAddress(functionAddrStr);
+            var func = GhidraUtils.getFunctionForAddress(program, addr);
+            if (func == null) return "Could not find function at address: " + functionAddrStr;
+
+            var results = GhidraUtils.decompileFunction(func, program);
+            if (results == null || !results.decompileCompleted()) return "Decompilation failed";
+
+            var highFunction = results.getHighFunction();
+            if (highFunction == null) return "Decompilation failed (no high function)";
+
+            var dataTypeService = new DataTypeService(programService);
+            var dtm = program.getDataTypeManager();
+
+            // Pre-validate: find all symbols and resolve all types
+            var symbolMap = new java.util.LinkedHashMap<String, HighSymbol>();
+            var resolvedTypes = new java.util.LinkedHashMap<String, DataType>();
+
+            for (var entry : typeMap.entrySet()) {
+                var symbol = GhidraUtils.findVariableByName(highFunction, entry.getKey());
+                if (symbol == null) {
+                    return "Variable not found: '" + entry.getKey() + "'";
+                }
+                symbolMap.put(entry.getKey(), symbol);
+
+                var dataType = dataTypeService.resolveDataType(dtm, entry.getValue());
+                if (dataType == null) {
+                    return "Could not resolve data type: '" + entry.getValue() + "' for variable '" + entry.getKey() + "'";
+                }
+                resolvedTypes.put(entry.getKey(), dataType);
+            }
+
+            // Execute all type changes in a single transaction
+            try (var tx = ProgramTransaction.start(program, "Batch set variable types")) {
+                for (var entry : typeMap.entrySet()) {
+                    var symbol = symbolMap.get(entry.getKey());
+                    var dataType = resolvedTypes.get(entry.getKey());
+
+                    HighFunctionDBUtil.updateDBVariable(
+                        symbol, symbol.getName(), dataType, SourceType.USER_DEFINED);
+                }
+                tx.commit();
+            } catch (Exception e) {
+                Msg.error(this, "Failed to batch set variable types", e);
+                return "Failed to set variable types (transaction rolled back): " + e.getMessage();
+            }
+
+            // Build response
+            var applied = typeMap.entrySet().stream()
+                .map(e -> String.format("    \"%s\": \"%s\"",
+                    HttpUtils.escapeJson(e.getKey()), HttpUtils.escapeJson(e.getValue())))
+                .collect(Collectors.joining(",\n"));
+
+            return String.format("""
+                {
+                  "status": "Variable types set successfully",
+                  "function_address": "%s",
+                  "applied": {
+                %s
+                  },
+                  "count": %d
+                }""",
+                HttpUtils.escapeJson(functionAddrStr),
+                applied,
+                typeMap.size());
+        } catch (Exception e) {
+            Msg.error(this, "Error in batch set variable types", e);
+            return "Error: " + e.getMessage();
+        }
+    }
+
     /**
      * Find an exact match for a varnode at the specified address
      * 

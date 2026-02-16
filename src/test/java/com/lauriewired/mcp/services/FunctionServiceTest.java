@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -86,33 +87,33 @@ public class FunctionServiceTest {
     }
 
     @Test
-    @DisplayName("decompileFunctionByName returns error when no program is loaded")
-    void testDecompileFunctionByName_NoProgram() {
+    @DisplayName("getFunctionCode returns error when no program is loaded")
+    void testGetFunctionCode_NoProgram() {
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
         when(mockProgramManager.getCurrentProgram()).thenReturn(null);
-        
-        String result = functionService.decompileFunctionByName("testFunction");
+
+        String result = functionService.getFunctionCode("testFunction", "C");
         assertEquals("No program loaded", result);
     }
 
     @Test
-    @DisplayName("decompileFunctionByName returns error for null function name")
-    void testDecompileFunctionByName_NullName() {
+    @DisplayName("getFunctionCode returns error for null identifier")
+    void testGetFunctionCode_NullIdentifier() {
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
         when(mockProgramManager.getCurrentProgram()).thenReturn(null);
-        
-        String result = functionService.decompileFunctionByName(null);
+
+        String result = functionService.getFunctionCode(null, "C");
         assertEquals("No program loaded", result);
     }
 
     @Test
-    @DisplayName("decompileFunctionByName returns error for empty function name")
-    void testDecompileFunctionByName_EmptyName() {
+    @DisplayName("getFunctionCode returns error for empty identifier")
+    void testGetFunctionCode_EmptyIdentifier() {
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
-        when(mockProgramManager.getCurrentProgram()).thenReturn(null);
-        
-        String result = functionService.decompileFunctionByName("");
-        assertEquals("No program loaded", result);
+        when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
+
+        String result = functionService.getFunctionCode("", "C");
+        assertEquals("Function identifier is required", result);
     }
 
     // ===== Happy path tests for getAllFunctionNames =====
@@ -192,68 +193,57 @@ public class FunctionServiceTest {
     }
     
     // ===== Happy path tests for renameFunction =====
-    
+
     @Test
-    @DisplayName("renameFunction returns false when no program is loaded")
+    @DisplayName("renameFunction returns error when no program is loaded")
     void testRenameFunction_NoProgram() {
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
         when(mockProgramManager.getCurrentProgram()).thenReturn(null);
-        
-        boolean result = functionService.renameFunction("oldName", "newName");
-        assertFalse(result);
-    }
-    
-    @Test
-    @DisplayName("renameFunction returns false when function not found")
-    void testRenameFunction_FunctionNotFound() {
-        // This test just verifies the setup without actually calling the method
-        // since renameFunction uses SwingUtilities.invokeLater which is hard to test
-        assertNotNull(mockTool);
-        assertNotNull(mockProgramManager);
-    }
-    
-    // ===== Happy path tests for decompileFunctionByAddress =====
-    
-    @Test
-    @DisplayName("decompileFunctionByAddress returns error for invalid address")
-    void testDecompileFunctionByAddress_InvalidAddress() {
-        setupProgramMocks();
-        
-        when(mockProgram.getAddressFactory()).thenReturn(mockAddressFactory);
-        when(mockAddressFactory.getAddress("invalid_address")).thenThrow(new IllegalArgumentException("Invalid address"));
-        
-        String result = functionService.decompileFunctionByAddress("invalid_address");
-        assertTrue(result.contains("Error decompiling function"));
-    }
-    
-    @Test
-    @DisplayName("decompileFunctionByAddress returns error when no program loaded")
-    void testDecompileFunctionByAddress_NoProgram() {
-        when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
-        when(mockProgramManager.getCurrentProgram()).thenReturn(null);
-        
-        String result = functionService.decompileFunctionByAddress("0x401000");
+
+        String result = functionService.renameFunction("oldName", "newName");
         assertEquals("No program loaded", result);
     }
-    
+
     @Test
-    @DisplayName("decompileFunctionByAddress returns error for null address")
-    void testDecompileFunctionByAddress_NullAddress() {
+    @DisplayName("renameFunction returns error for null identifier")
+    void testRenameFunction_NullIdentifier() {
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
         when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
-        
-        String result = functionService.decompileFunctionByAddress(null);
-        assertEquals("Address is required", result);
+
+        String result = functionService.renameFunction(null, "newName");
+        assertEquals("Function identifier is required", result);
+    }
+
+    @Test
+    @DisplayName("renameFunction returns error for null new name")
+    void testRenameFunction_NullNewName() {
+        when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
+        when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
+
+        String result = functionService.renameFunction("oldName", null);
+        assertEquals("New name is required", result);
     }
     
+    // ===== Tests for getFunctionCode modes =====
+
     @Test
-    @DisplayName("decompileFunctionByAddress returns error for empty address")
-    void testDecompileFunctionByAddress_EmptyAddress() {
+    @DisplayName("getFunctionCode defaults to C mode for null mode")
+    void testGetFunctionCode_NullMode() {
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
-        when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
-        
-        String result = functionService.decompileFunctionByAddress("");
-        assertEquals("Address is required", result);
+        when(mockProgramManager.getCurrentProgram()).thenReturn(null);
+
+        String result = functionService.getFunctionCode("main", null);
+        assertEquals("No program loaded", result);
+    }
+
+    @Test
+    @DisplayName("getFunctionCode accepts assembly mode alias 'asm'")
+    void testGetFunctionCode_AsmAlias() {
+        when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
+        when(mockProgramManager.getCurrentProgram()).thenReturn(null);
+
+        String result = functionService.getFunctionCode("main", "asm");
+        assertEquals("No program loaded", result);
     }
     
     // ===== Happy path tests for getFunctionByAddress =====
@@ -347,47 +337,27 @@ public class FunctionServiceTest {
         assertEquals("Function prototype is required", result.getErrorMessage());
     }
     
-    // ===== Happy path tests for listFunctions =====
-    
+    // ===== Tests for resolveFunction =====
+
     @Test
-    @DisplayName("listFunctions returns list of functions with addresses")
-    void testListFunctions_Success() {
-        setupDefaultMocks();
-        
-        // Setup mock functions
-        Function func1 = mock(Function.class);
-        Function func2 = mock(Function.class);
-        Address addr1 = mock(Address.class);
-        Address addr2 = mock(Address.class);
-        
-        when(func1.getName()).thenReturn("main");
-        when(func1.getEntryPoint()).thenReturn(addr1);
-        when(addr1.toString()).thenReturn("0x401000");
-        
-        when(func2.getName()).thenReturn("helper");
-        when(func2.getEntryPoint()).thenReturn(addr2);
-        when(addr2.toString()).thenReturn("0x401100");
-        
-        // Mock the iterator method to return a new iterator for the for-each loop
-        when(mockFunctionIterator.iterator()).thenReturn(mockFunctionIterator);
-        when(mockFunctionIterator.hasNext()).thenReturn(true, true, false);
-        when(mockFunctionIterator.next()).thenReturn(func1, func2);
-        when(mockFunctionManager.getFunctions(true)).thenReturn(mockFunctionIterator);
-        
-        String result = functionService.listFunctions();
-        
-        assertTrue(result.contains("main at 0x401000"));
-        assertTrue(result.contains("helper at 0x401100"));
+    @DisplayName("resolveFunction returns null for null program")
+    void testResolveFunction_NullProgram() {
+        var result = functionService.resolveFunction(null, "main");
+        assertNull(result);
     }
-    
+
     @Test
-    @DisplayName("listFunctions returns error when no program loaded")
-    void testListFunctions_NoProgram() {
-        when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
-        when(mockProgramManager.getCurrentProgram()).thenReturn(null);
-        
-        String result = functionService.listFunctions();
-        assertEquals("No program loaded", result);
+    @DisplayName("resolveFunction returns null for null identifier")
+    void testResolveFunction_NullIdentifier() {
+        var result = functionService.resolveFunction(mockProgram, null);
+        assertNull(result);
+    }
+
+    @Test
+    @DisplayName("resolveFunction returns null for empty identifier")
+    void testResolveFunction_EmptyIdentifier() {
+        var result = functionService.resolveFunction(mockProgram, "");
+        assertNull(result);
     }
     
     // ===== Test with null tool =====

@@ -158,10 +158,74 @@ public class VariableServiceTest {
         assertEquals("No program loaded", result);
     }
 
+    // ===== Tests for batchRenameVariables =====
+
+    @Test
+    @DisplayName("batchRenameVariables returns error when no program is loaded")
+    void testBatchRenameVariables_NoProgram() {
+        String result = variableService.batchRenameVariables("main",
+            java.util.Map.of("local_10", "buffer_size"));
+        assertEquals("No program loaded", result);
+    }
+
+    @Test
+    @DisplayName("batchRenameVariables returns error for null renames")
+    void testBatchRenameVariables_NullRenames() {
+        String result = variableService.batchRenameVariables("main", null);
+        assertEquals("No program loaded", result);
+    }
+
+    @Test
+    @DisplayName("batchRenameVariables returns error for empty renames")
+    void testBatchRenameVariables_EmptyRenames() {
+        String result = variableService.batchRenameVariables("main", java.util.Map.of());
+        assertEquals("No program loaded", result);
+    }
+
     @Test
     @DisplayName("Constructor accepts null program service without throwing")
     void testConstructor_NullProgramService() {
         assertDoesNotThrow(() -> new VariableService(null));
+    }
+
+    // ===== Tests for batchSetVariableTypes =====
+
+    @Test
+    @DisplayName("batchSetVariableTypes returns error when no program is loaded")
+    void testBatchSetVariableTypes_NoProgram() {
+        String result = variableService.batchSetVariableTypes("0x1000",
+            java.util.Map.of("local_10", "int"));
+        assertEquals("No program loaded", result);
+    }
+
+    @Test
+    @DisplayName("batchSetVariableTypes returns error for null function address")
+    void testBatchSetVariableTypes_NullAddress() {
+        String result = variableService.batchSetVariableTypes(null,
+            java.util.Map.of("local_10", "int"));
+        assertEquals("Function address is required", result);
+    }
+
+    @Test
+    @DisplayName("batchSetVariableTypes returns error for empty function address")
+    void testBatchSetVariableTypes_EmptyAddress() {
+        String result = variableService.batchSetVariableTypes("",
+            java.util.Map.of("local_10", "int"));
+        assertEquals("Function address is required", result);
+    }
+
+    @Test
+    @DisplayName("batchSetVariableTypes returns error for null types map")
+    void testBatchSetVariableTypes_NullTypes() {
+        String result = variableService.batchSetVariableTypes("0x1000", null);
+        assertEquals("No variable types specified", result);
+    }
+
+    @Test
+    @DisplayName("batchSetVariableTypes returns error for empty types map")
+    void testBatchSetVariableTypes_EmptyTypes() {
+        String result = variableService.batchSetVariableTypes("0x1000", java.util.Map.of());
+        assertEquals("No variable types specified", result);
     }
 
     // Note: Testing with actual Program would require a full Ghidra environment
