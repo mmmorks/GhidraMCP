@@ -48,8 +48,8 @@ def _fetch_tool_definitions() -> list[dict]:
 def _handle_response(response: requests.Response) -> tuple[str, dict | None]:
     """Process HTTP response into (display_text, structured_data) tuple.
 
-    Parses the JSON envelope and extracts both the 'text' field (display) and
-    'data' field (structured).  Falls back gracefully for old-format responses.
+    Parses the JSON envelope and extracts the 'data' field.
+    Falls back gracefully for old-format responses.
     """
     text = response.content.decode("utf-8").strip()
     try:
@@ -57,13 +57,10 @@ def _handle_response(response: requests.Response) -> tuple[str, dict | None]:
         if isinstance(envelope, dict) and "status" in envelope:
             if envelope["status"] == "success":
                 data = envelope.get("data")
-                display = envelope.get("text")
-                # Prefer the explicit 'text' field; fall back to stringified data
-                if display is None:
-                    if isinstance(data, (dict, list)):
-                        display = json.dumps(data, indent=2)
-                    else:
-                        display = str(data) if data is not None else ""
+                if isinstance(data, (dict, list)):
+                    display = json.dumps(data, indent=2)
+                else:
+                    display = str(data) if data is not None else ""
                 return display, data if isinstance(data, (dict, list)) else None
             else:
                 msg = f"Error: {envelope.get('error', 'Unknown error')}"

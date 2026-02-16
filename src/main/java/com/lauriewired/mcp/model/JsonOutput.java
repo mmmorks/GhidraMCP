@@ -10,8 +10,4 @@ public record JsonOutput(String rawJson) implements ToolOutput {
         return rawJson;
     }
 
-    @Override
-    public String toDisplayText() {
-        return rawJson;
-    }
 }

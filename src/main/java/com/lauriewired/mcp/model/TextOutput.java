@@ -12,8 +12,4 @@ public record TextOutput(String text) implements ToolOutput {
         return "{\"text\": \"" + HttpUtils.escapeJson(text) + "\"}";
     }
 
-    @Override
-    public String toDisplayText() {
-        return text;
-    }
 }

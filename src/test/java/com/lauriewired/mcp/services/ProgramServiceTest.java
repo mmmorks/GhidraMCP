@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -193,7 +194,7 @@ public class ProgramServiceTest {
     @DisplayName("getProgramInfo returns error when no program loaded")
     void testGetProgramInfo_NoProgram() {
         programService = new TestProgramService((MockablePluginTool) null);
-        String result = programService.getProgramInfo().toDisplayText();
-        assertEquals("No program loaded", result);
+        String result = programService.getProgramInfo().toStructuredJson();
+        assertTrue(result.contains("\"message\": \"No program loaded\""));
     }
 }

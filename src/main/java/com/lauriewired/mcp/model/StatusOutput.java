@@ -22,8 +22,4 @@ public record StatusOutput(boolean success, String message) implements ToolOutpu
         return "{\"success\": " + success + ", \"message\": \"" + HttpUtils.escapeJson(message) + "\"}";
     }
 
-    @Override
-    public String toDisplayText() {
-        return message;
-    }
 }

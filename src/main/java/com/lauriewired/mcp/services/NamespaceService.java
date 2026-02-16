@@ -5,10 +5,11 @@ import java.util.List;
 
 import com.lauriewired.mcp.api.McpTool;
 import com.lauriewired.mcp.api.Param;
+import com.lauriewired.mcp.model.JsonOutput;
 import com.lauriewired.mcp.model.ListOutput;
 import com.lauriewired.mcp.model.StatusOutput;
-import com.lauriewired.mcp.model.TextOutput;
 import com.lauriewired.mcp.model.ToolOutput;
+import com.lauriewired.mcp.utils.JsonBuilder;
 
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.symbol.Symbol;
@@ -45,14 +46,17 @@ public class NamespaceService {
         Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
 
-        List<String> lines = new ArrayList<>();
+        List<String> items = new ArrayList<>();
         for (Symbol symbol : program.getSymbolTable().getAllSymbols(false)) {
-            lines.add(symbol.getName() + " -> " + symbol.getAddress());
+            items.add(JsonBuilder.object()
+                    .put("name", symbol.getName())
+                    .put("address", symbol.getAddress().toString())
+                    .build());
         }
-        return ListOutput.paginate(lines, offset, limit);
+        return ListOutput.paginate(items, offset, limit);
     }
     
-    @McpTool(description = """
+    @McpTool(outputType = JsonOutput.class, description = """
         Get the memory address of a named symbol in the program.
 
         Looks up symbols (functions, variables, labels) by name in the symbol table.
@@ -72,9 +76,12 @@ public class NamespaceService {
         SymbolIterator symbolIterator = symbolTable.getSymbols(symbolName);
 
         if (symbolIterator.hasNext()) {
-            // Use the first matching symbol's address
             Symbol symbol = symbolIterator.next();
-            return new TextOutput("Symbol '" + symbolName + "' found at address: " + symbol.getAddress().toString());
+            String json = JsonBuilder.object()
+                    .put("symbol", symbolName)
+                    .put("address", symbol.getAddress().toString())
+                    .build();
+            return new JsonOutput(json);
         } else {
             return StatusOutput.error("Symbol not found");
         }

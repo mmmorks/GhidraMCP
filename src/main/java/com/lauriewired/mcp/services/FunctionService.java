@@ -6,6 +6,7 @@ import java.util.List;
 
 import com.lauriewired.mcp.api.McpTool;
 import com.lauriewired.mcp.api.Param;
+import com.lauriewired.mcp.model.JsonOutput;
 import com.lauriewired.mcp.model.ListOutput;
 import com.lauriewired.mcp.model.PrototypeResult;
 import com.lauriewired.mcp.model.StatusOutput;
@@ -13,6 +14,7 @@ import com.lauriewired.mcp.model.TextOutput;
 import com.lauriewired.mcp.model.ToolOutput;
 import com.lauriewired.mcp.utils.GhidraUtils;
 import com.lauriewired.mcp.utils.HttpUtils;
+import com.lauriewired.mcp.utils.JsonBuilder;
 import com.lauriewired.mcp.utils.ProgramTransaction;
 
 import ghidra.app.decompiler.ClangLine;
@@ -70,12 +72,12 @@ public class FunctionService {
         Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
 
-        List<String> names = new ArrayList<>();
+        List<String> items = new ArrayList<>();
         for (Function f : program.getFunctionManager().getFunctions(true)) {
-            names.add(f.getName());
+            items.add(JsonBuilder.object().put("name", f.getName()).build());
         }
 
-        return ListOutput.paginate(names, offset, limit);
+        return ListOutput.paginate(items, offset, limit);
     }
 
     @McpTool(description = """
@@ -235,7 +237,7 @@ public class FunctionService {
         }
     }
 
-    @McpTool(description = """
+    @McpTool(outputType = JsonOutput.class, description = """
         Get detailed information about a function at the specified address.
 
         Retrieves name, signature, entry point and body range for the function.
@@ -255,19 +257,20 @@ public class FunctionService {
 
             if (func == null) return StatusOutput.error("No function found at address " + address);
 
-            return new TextOutput(String.format("Function: %s at %s\nSignature: %s\nEntry: %s\nBody: %s - %s",
-                func.getName(),
-                func.getEntryPoint(),
-                func.getSignature(),
-                func.getEntryPoint(),
-                func.getBody().getMinAddress(),
-                func.getBody().getMaxAddress()));
+            String json = JsonBuilder.object()
+                    .put("name", func.getName())
+                    .put("signature", func.getSignature().toString())
+                    .put("entryPoint", func.getEntryPoint().toString())
+                    .put("bodyStart", func.getBody().getMinAddress().toString())
+                    .put("bodyEnd", func.getBody().getMaxAddress().toString())
+                    .build();
+            return new JsonOutput(json);
         } catch (Exception e) {
             return StatusOutput.error("Error getting function: " + e.getMessage());
         }
     }
 
-    @McpTool(description = """
+    @McpTool(outputType = JsonOutput.class, description = """
         Get the address currently selected by the user in the Ghidra GUI.
 
         Retrieves cursor location in Code Browser or Decompiler view.
@@ -285,10 +288,12 @@ public class FunctionService {
 
         ProgramLocation location = service.getCurrentLocation();
         if (location == null) return StatusOutput.error("No current location");
-        return new TextOutput(location.getAddress().toString());
+        return new JsonOutput(JsonBuilder.object()
+                .put("address", location.getAddress().toString())
+                .build());
     }
 
-    @McpTool(description = """
+    @McpTool(outputType = JsonOutput.class, description = """
         Get information about the function currently selected in the Ghidra GUI.
 
         Returns details about function containing the selected address.
@@ -313,10 +318,12 @@ public class FunctionService {
         Function func = program.getFunctionManager().getFunctionContaining(location.getAddress());
         if (func == null) return StatusOutput.error("No function at current location: " + location.getAddress());
 
-        return new TextOutput(String.format("Function: %s at %s\nSignature: %s",
-            func.getName(),
-            func.getEntryPoint(),
-            func.getSignature()));
+        String json = JsonBuilder.object()
+                .put("name", func.getName())
+                .put("entryPoint", func.getEntryPoint().toString())
+                .put("signature", func.getSignature().toString())
+                .build();
+        return new JsonOutput(json);
     }
 
 
@@ -376,7 +383,10 @@ public class FunctionService {
             String name = func.getName();
             // simple substring match
             if (name.toLowerCase().contains(query.toLowerCase())) {
-                matches.add(String.format("%s @ %s", name, func.getEntryPoint()));
+                matches.add(JsonBuilder.object()
+                        .put("name", name)
+                        .put("address", func.getEntryPoint().toString())
+                        .build());
             }
         }
 

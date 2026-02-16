@@ -12,11 +12,13 @@ import java.util.Set;
 
 import com.lauriewired.mcp.api.McpTool;
 import com.lauriewired.mcp.api.Param;
+import com.lauriewired.mcp.model.JsonOutput;
 import com.lauriewired.mcp.model.ListOutput;
 import com.lauriewired.mcp.model.StatusOutput;
 import com.lauriewired.mcp.model.TextOutput;
 import com.lauriewired.mcp.model.ToolOutput;
 import com.lauriewired.mcp.utils.GhidraUtils;
+import com.lauriewired.mcp.utils.JsonBuilder;
 
 import ghidra.app.decompiler.DecompileResults;
 import ghidra.program.model.address.Address;
@@ -59,7 +61,7 @@ public class AnalysisService {
         this.functionService = functionService;
     }
 
-    @McpTool(description = """
+    @McpTool(outputType = JsonOutput.class, description = """
         Analyze the control flow of a function.
 
         Creates a textual control flow graph (CFG) showing how basic blocks connect.
@@ -80,57 +82,27 @@ public class AnalysisService {
             Function func = functionService.resolveFunction(program, functionIdentifier);
             if (func == null) return StatusOutput.error("Function not found: " + functionIdentifier);
 
-            StringBuilder result = new StringBuilder();
-            result.append("Control Flow Analysis for function: ").append(func.getName())
-                  .append(" at ").append(func.getEntryPoint()).append("\n\n");
-            
-            // Use BasicBlockModel to get the control flow graph
             BasicBlockModel bbModel = new BasicBlockModel(program);
-            
-            // Get the function's body
             AddressSet functionBody = new AddressSet(func.getBody());
-            
-            // Get the code blocks (basic blocks) for the function
             CodeBlockIterator blockIterator = bbModel.getCodeBlocksContaining(functionBody, new ConsoleTaskMonitor());
-            
-            // Map to store blocks by address for easier reference
-            Map<Address, CodeBlock> blockMap = new HashMap<>();
+
             List<CodeBlock> blocks = new ArrayList<>();
-            
-            // First pass: collect all blocks
             while (blockIterator.hasNext()) {
-                CodeBlock block = blockIterator.next();
-                blocks.add(block);
-                blockMap.put(block.getFirstStartAddress(), block);
+                blocks.add(blockIterator.next());
             }
-            
-            // Sort blocks by address for consistent output
             blocks.sort(Comparator.comparing(CodeBlock::getFirstStartAddress));
-            
-            // Second pass: print blocks and their destinations
+
+            JsonBuilder.JsonArrayBuilder blocksArray = JsonBuilder.array();
+
             for (CodeBlock block : blocks) {
-                result.append("Block at ").append(block.getFirstStartAddress())
-                      .append(" (").append(block.getMinAddress()).append(" - ")
-                      .append(block.getMaxAddress()).append(")\n");
-                
-                // Get the destinations (successors) of this block
+                // Build successors array
+                JsonBuilder.JsonArrayBuilder successors = JsonBuilder.array();
                 CodeBlockReferenceIterator destIter = block.getDestinations(new ConsoleTaskMonitor());
-                if (!destIter.hasNext()) {
-                    result.append("  - Terminal block (no successors)\n");
-                }
-                
                 while (destIter.hasNext()) {
                     CodeBlockReference ref = destIter.next();
-                    CodeBlock destBlock = ref.getDestinationBlock();
-                    
-                    // Determine the type of flow
                     String flowType = "Unknown";
                     if (ref.getFlowType().isJump()) {
-                        if (ref.getFlowType().isConditional()) {
-                            flowType = "Conditional Jump";
-                        } else {
-                            flowType = "Unconditional Jump";
-                        }
+                        flowType = ref.getFlowType().isConditional() ? "Conditional Jump" : "Unconditional Jump";
                     } else if (ref.getFlowType().isFallthrough()) {
                         flowType = "Fallthrough";
                     } else if (ref.getFlowType().isCall()) {
@@ -138,31 +110,46 @@ public class AnalysisService {
                     } else if (ref.getFlowType().isTerminal()) {
                         flowType = "Return";
                     }
-                    
-                    result.append("  - ").append(flowType).append(" to ")
-                          .append(destBlock.getFirstStartAddress()).append("\n");
+                    successors.addRaw(JsonBuilder.object()
+                            .put("type", flowType)
+                            .put("target", ref.getDestinationBlock().getFirstStartAddress().toString())
+                            .build());
                 }
-                
-                // Add the instructions in this block
-                result.append("  Instructions:\n");
+
+                // Build instructions array
+                JsonBuilder.JsonArrayBuilder instrArray = JsonBuilder.array();
                 Listing listing = program.getListing();
                 InstructionIterator instructions = listing.getInstructions(block, true);
                 while (instructions.hasNext()) {
                     Instruction instr = instructions.next();
-                    result.append("    ").append(instr.getAddress()).append(": ")
-                          .append(instr.toString()).append("\n");
+                    instrArray.addRaw(JsonBuilder.object()
+                            .put("address", instr.getAddress().toString())
+                            .put("text", instr.toString())
+                            .build());
                 }
-                
-                result.append("\n");
+
+                blocksArray.addRaw(JsonBuilder.object()
+                        .put("address", block.getFirstStartAddress().toString())
+                        .putObject("range", JsonBuilder.object()
+                                .put("start", block.getMinAddress().toString())
+                                .put("end", block.getMaxAddress().toString()))
+                        .putArray("successors", successors)
+                        .putArray("instructions", instrArray)
+                        .build());
             }
-            
-            return new TextOutput(result.toString());
+
+            String json = JsonBuilder.object()
+                    .put("function", func.getName())
+                    .put("entryPoint", func.getEntryPoint().toString())
+                    .putArray("blocks", blocksArray)
+                    .build();
+            return new JsonOutput(json);
         } catch (Exception e) {
             return StatusOutput.error("Error analyzing control flow: " + e.getMessage());
         }
     }
 
-    @McpTool(description = """
+    @McpTool(outputType = JsonOutput.class, description = """
         Analyze the data flow for a variable in a function.
 
         Tracks where a variable is defined (written) and used (read) throughout execution paths.
@@ -184,12 +171,6 @@ public class AnalysisService {
             Function func = functionService.resolveFunction(program, functionIdentifier);
             if (func == null) return StatusOutput.error("Function not found: " + functionIdentifier);
 
-            StringBuilder result = new StringBuilder();
-            result.append("Data Flow Analysis for variable '").append(variable)
-                  .append("' in function ").append(func.getName())
-                  .append(" at ").append(func.getEntryPoint()).append("\n\n");
-
-            // Decompile the function to get high-level variable information
             DecompileResults decompResults = GhidraUtils.decompileFunction(func, program);
             if (decompResults == null) {
                 return StatusOutput.error("Could not decompile function for data flow analysis");
@@ -200,85 +181,75 @@ public class AnalysisService {
                 return StatusOutput.error("No high function available for data flow analysis");
             }
 
-            // Find the variable by name
             ghidra.program.model.pcode.HighSymbol targetSymbol =
                 GhidraUtils.findVariableByName(highFunc, variable);
 
             if (targetSymbol == null) {
                 return StatusOutput.error("Variable '" + variable + "' not found in function");
             }
-            
+
             HighVariable highVar = targetSymbol.getHighVariable();
             if (highVar == null) {
                 return StatusOutput.error("No high variable found for '" + variable + "'");
             }
-            
-            // Get information about the variable
-            result.append("Variable information:\n");
-            result.append("  Name: ").append(highVar.getName()).append("\n");
-            result.append("  Type: ").append(highVar.getDataType().getName()).append("\n");
-            result.append("  Storage: ");
-            
+
+            // Build storage info
             Varnode[] instances = highVar.getInstances();
-            if (instances.length > 0) {
-                for (int i = 0; i < instances.length; i++) {
-                    if (i > 0) result.append(", ");
-                    result.append(instances[i].getAddress());
-                }
-            } else {
-                result.append("No storage information available");
+            StringBuilder storage = new StringBuilder();
+            for (int i = 0; i < instances.length; i++) {
+                if (i > 0) storage.append(", ");
+                storage.append(instances[i].getAddress());
             }
-            result.append("\n\n");
-            
-            // Track definitions and uses of the variable
-            result.append("Variable definitions and uses:\n");
-            
-            // Get all PcodeOps that define or use this variable
-            Map<Address, String> defUseMap = new HashMap<>();
-            
+
+            // Track definitions and uses
+            Map<Address, String[]> defUseMap = new HashMap<>();
             for (Varnode instance : instances) {
-                // Get the PcodeOp that defines this instance
                 PcodeOp defOp = instance.getDef();
                 if (defOp != null) {
                     Address defAddr = defOp.getSeqnum().getTarget();
-                    String opType = defOp.getMnemonic();
-                    defUseMap.put(defAddr, "DEFINE: " + opType);
+                    defUseMap.put(defAddr, new String[]{"DEFINE", defOp.getMnemonic()});
                 }
-                
-                // Get all PcodeOps that use this instance
                 Iterator<PcodeOp> descendants = instance.getDescendants();
                 while (descendants.hasNext()) {
                     PcodeOp useOp = descendants.next();
                     Address useAddr = useOp.getSeqnum().getTarget();
-                    String opType = useOp.getMnemonic();
-                    defUseMap.put(useAddr, "USE: " + opType);
+                    defUseMap.put(useAddr, new String[]{"USE", useOp.getMnemonic()});
                 }
             }
-            
-            // Sort the addresses for consistent output
+
             List<Address> sortedAddrs = new ArrayList<>(defUseMap.keySet());
             sortedAddrs.sort(Comparator.naturalOrder());
-            
-            // Get the listing for instruction information
+
             Listing listing = program.getListing();
-            
-            // Print the definitions and uses
+            JsonBuilder.JsonArrayBuilder refsArray = JsonBuilder.array();
             for (Address opAddr : sortedAddrs) {
                 Instruction instr = listing.getInstructionAt(opAddr);
                 if (instr != null) {
-                    result.append("  ").append(opAddr).append(": ")
-                          .append(defUseMap.get(opAddr)).append(" - ")
-                          .append(instr.toString()).append("\n");
+                    String[] entry = defUseMap.get(opAddr);
+                    refsArray.addRaw(JsonBuilder.object()
+                            .put("address", opAddr.toString())
+                            .put("kind", entry[0])
+                            .put("operation", entry[1])
+                            .put("instruction", instr.toString())
+                            .build());
                 }
             }
-            
-            return new TextOutput(result.toString());
+
+            String json = JsonBuilder.object()
+                    .put("function", func.getName())
+                    .putObject("variable", JsonBuilder.object()
+                            .put("name", highVar.getName())
+                            .put("type", highVar.getDataType().getName())
+                            .put("storage", storage.toString()))
+                    .putArray("references", refsArray)
+                    .build();
+            return new JsonOutput(json);
         } catch (Exception e) {
             return StatusOutput.error("Error analyzing data flow: " + e.getMessage());
         }
     }
 
-    @McpTool(description = """
+    @McpTool(outputType = JsonOutput.class, description = """
         Get the call graph for a function.
 
         Shows callers (functions that call this one), callees (functions this one calls), or both.
@@ -305,27 +276,27 @@ public class AnalysisService {
 
         String dir = (direction == null || direction.isEmpty()) ? "both" : direction.toLowerCase();
 
-        StringBuilder result = new StringBuilder();
-        result.append("Call Graph for ").append(targetFunc.getName())
-              .append(" at ").append(targetFunc.getEntryPoint())
-              .append(" (direction: ").append(dir)
-              .append(", depth: ").append(depth).append(")\n\n");
+        JsonBuilder builder = JsonBuilder.object()
+                .put("function", targetFunc.getName())
+                .put("entryPoint", targetFunc.getEntryPoint().toString())
+                .put("depth", depth)
+                .put("direction", dir);
 
         if ("callers".equals(dir) || "both".equals(dir)) {
-            result.append("CALLERS (functions that call ").append(targetFunc.getName()).append("):\n");
             Set<Function> visited = new HashSet<>();
-            buildCallerHierarchy(targetFunc, result, visited, 0, depth);
-            result.append("\n");
+            JsonBuilder.JsonArrayBuilder callersArray = JsonBuilder.array();
+            buildCallerHierarchyJson(targetFunc, callersArray, visited, 0, depth);
+            builder.putArray("callers", callersArray);
         }
 
         if ("callees".equals(dir) || "both".equals(dir)) {
-            result.append("CALLEES (functions called by ").append(targetFunc.getName()).append("):\n");
             Set<Function> visited = new HashSet<>();
-            buildCallGraph(targetFunc, result, visited, 0, depth);
-            result.append("\n");
+            JsonBuilder.JsonArrayBuilder calleesArray = JsonBuilder.array();
+            buildCallGraphJson(targetFunc, calleesArray, visited, 0, depth);
+            builder.putArray("callees", calleesArray);
         }
 
-        return new TextOutput(result.toString());
+        return new JsonOutput(builder.build());
     }
 
     /**
@@ -391,6 +362,68 @@ public class AnalysisService {
         }
     }
     
+    /** JSON version: build callees hierarchy into a JsonArrayBuilder. */
+    private void buildCallGraphJson(Function func, JsonBuilder.JsonArrayBuilder array,
+                                     Set<Function> visited, int currentDepth, int maxDepth) {
+        if (visited.contains(func) || currentDepth >= maxDepth) return;
+        visited.add(func);
+
+        Set<Function> calledFunctions = new HashSet<>();
+        ReferenceManager refMgr = func.getProgram().getReferenceManager();
+        AddressIterator addrIter = func.getBody().getAddresses(true);
+        while (addrIter.hasNext()) {
+            Address fromAddr = addrIter.next();
+            for (Reference ref : refMgr.getReferencesFrom(fromAddr)) {
+                if (ref.getReferenceType().isCall()) {
+                    Function calledFunc = func.getProgram().getFunctionManager().getFunctionAt(ref.getToAddress());
+                    if (calledFunc != null) calledFunctions.add(calledFunc);
+                }
+            }
+        }
+
+        List<Function> sorted = new ArrayList<>(calledFunctions);
+        sorted.sort(Comparator.comparing(Function::getName));
+
+        for (Function calledFunc : sorted) {
+            JsonBuilder.JsonArrayBuilder childCallees = JsonBuilder.array();
+            buildCallGraphJson(calledFunc, childCallees, visited, currentDepth + 1, maxDepth);
+            array.addRaw(JsonBuilder.object()
+                    .put("name", calledFunc.getName())
+                    .put("address", calledFunc.getEntryPoint().toString())
+                    .putArray("callees", childCallees)
+                    .build());
+        }
+    }
+
+    /** JSON version: build callers hierarchy into a JsonArrayBuilder. */
+    private void buildCallerHierarchyJson(Function func, JsonBuilder.JsonArrayBuilder array,
+                                           Set<Function> visited, int currentDepth, int maxDepth) {
+        if (visited.contains(func) || currentDepth >= maxDepth) return;
+        visited.add(func);
+
+        Set<Function> callers = new HashSet<>();
+        ReferenceManager refMgr = func.getProgram().getReferenceManager();
+        for (Reference ref : refMgr.getReferencesTo(func.getEntryPoint())) {
+            if (ref.getReferenceType().isCall()) {
+                Function callerFunc = func.getProgram().getFunctionManager().getFunctionContaining(ref.getFromAddress());
+                if (callerFunc != null && !callerFunc.equals(func)) callers.add(callerFunc);
+            }
+        }
+
+        List<Function> sorted = new ArrayList<>(callers);
+        sorted.sort(Comparator.comparing(Function::getName));
+
+        for (Function caller : sorted) {
+            JsonBuilder.JsonArrayBuilder childCallers = JsonBuilder.array();
+            buildCallerHierarchyJson(caller, childCallers, visited, currentDepth + 1, maxDepth);
+            array.addRaw(JsonBuilder.object()
+                    .put("name", caller.getName())
+                    .put("address", caller.getEntryPoint().toString())
+                    .putArray("callers", childCallers)
+                    .build());
+        }
+    }
+
     @McpTool(description = """
         List cross-references (xrefs) to the specified address.
 
@@ -429,16 +462,19 @@ public class AnalysisService {
                 Address fromAddr = ref.getFromAddress();
                 ghidra.program.model.symbol.RefType refType = ref.getReferenceType();
 
-                // Get function containing the reference if it exists
                 Function func = program.getFunctionManager().getFunctionContaining(fromAddr);
                 String funcName = func != null ? func.getName() : "not in function";
 
-                refs.add(String.format("%s -> %s (from %s in %s)",
-                    fromAddr, addr, refType.getName(), funcName));
+                refs.add(JsonBuilder.object()
+                        .put("from", fromAddr.toString())
+                        .put("to", addr.toString())
+                        .put("type", refType.getName())
+                        .put("function", funcName)
+                        .build());
             }
 
             if (refs.isEmpty()) {
-                return new TextOutput("No references found to " + address + " (address: " + addr + ")");
+                return StatusOutput.error("No references found to " + address);
             }
 
             Collections.sort(refs);
@@ -488,20 +524,23 @@ public class AnalysisService {
                 Address toAddr = ref.getToAddress();
                 ghidra.program.model.symbol.RefType refType = ref.getReferenceType();
 
-                // Get symbol at destination if it exists
                 Symbol destSymbol = program.getSymbolTable().getPrimarySymbol(toAddr);
                 String destName = destSymbol != null ? destSymbol.getName() : "unnamed";
 
-                // Get function containing the destination if it exists
                 Function func = program.getFunctionManager().getFunctionContaining(toAddr);
                 String funcName = func != null ? func.getName() : "not in function";
 
-                refs.add(String.format("%s -> %s (%s) [%s in %s]",
-                    addr, toAddr, destName, refType.getName(), funcName));
+                refs.add(JsonBuilder.object()
+                        .put("from", addr.toString())
+                        .put("to", toAddr.toString())
+                        .put("destination", destName)
+                        .put("type", refType.getName())
+                        .put("function", funcName)
+                        .build());
             }
 
             if (refs.isEmpty()) {
-                return new TextOutput("No references found from " + address + " (address: " + addr + ")");
+                return StatusOutput.error("No references found from " + address);
             }
 
             Collections.sort(refs);

@@ -3,11 +3,13 @@ package com.lauriewired.mcp.services;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.lauriewired.mcp.model.JsonOutput;
 import com.lauriewired.mcp.model.ListOutput;
 import com.lauriewired.mcp.model.StatusOutput;
 import com.lauriewired.mcp.model.TextOutput;
 import com.lauriewired.mcp.model.ToolOutput;
 import com.lauriewired.mcp.utils.HttpUtils;
+import com.lauriewired.mcp.utils.JsonBuilder;
 import com.lauriewired.mcp.utils.ProgramTransaction;
 
 import ghidra.program.model.address.Address;
@@ -76,14 +78,15 @@ public class MemoryService {
         Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
 
-        List<String> lines = new ArrayList<>();
+        List<String> items = new ArrayList<>();
         for (MemoryBlock block : program.getMemory().getBlocks()) {
-            lines.add(String.format("%s: %s - %s",
-                block.getName(),
-                block.getStart(),
-                block.getEnd()));
+            items.add(JsonBuilder.object()
+                    .put("name", block.getName())
+                    .put("start", block.getStart().toString())
+                    .put("end", block.getEnd().toString())
+                    .build());
         }
-        return ListOutput.paginate(lines, offset, limit);
+        return ListOutput.paginate(items, offset, limit);
     }
 
     @McpTool(description = """
@@ -102,7 +105,7 @@ public class MemoryService {
         Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
 
-        List<String> lines = new ArrayList<>();
+        List<String> items = new ArrayList<>();
         for (MemoryBlock block : program.getMemory().getBlocks()) {
             DataIterator it = program.getListing().getDefinedData(block.getStart(), true);
             while (it.hasNext()) {
@@ -110,16 +113,16 @@ public class MemoryService {
                 if (block.contains(data.getAddress())) {
                     String label = data.getLabel() != null ? data.getLabel() : "(unnamed)";
                     String valRepr = data.getDefaultValueRepresentation();
-                    lines.add(String.format("%s: %s = %s",
-                        data.getAddress(),
-                        HttpUtils.escapeNonAscii(label),
-                        HttpUtils.escapeNonAscii(valRepr)
-                    ));
+                    items.add(JsonBuilder.object()
+                            .put("address", data.getAddress().toString())
+                            .put("label", HttpUtils.escapeNonAscii(label))
+                            .put("value", HttpUtils.escapeNonAscii(valRepr))
+                            .build());
                 }
             }
         }
 
-        return ListOutput.paginate(lines, offset, limit);
+        return ListOutput.paginate(items, offset, limit);
     }
 
     @McpTool(post = true, description = """
@@ -294,32 +297,20 @@ public class MemoryService {
             }
 
             // Format the output based on requested format
-            StringBuilder result = new StringBuilder();
-            result.append(String.format("Memory at %s (%d bytes):\n", addr, size));
+            String content = switch (format.toLowerCase()) {
+                case "decimal" -> formatBytesAsDecimal(bytes, addr);
+                case "binary" -> formatBytesAsBinary(bytes, addr);
+                case "ascii" -> formatBytesAsAscii(bytes, addr);
+                default -> formatBytesAsHex(bytes, addr);
+            };
 
-            switch (format.toLowerCase()) {
-                case "hex":
-                default:
-                    result.append(formatBytesAsHex(bytes, addr));
-                    break;
-                case "decimal":
-                    result.append(formatBytesAsDecimal(bytes, addr));
-                    break;
-                case "binary":
-                    result.append(formatBytesAsBinary(bytes, addr));
-                    break;
-                case "ascii":
-                    result.append(formatBytesAsAscii(bytes, addr));
-                    break;
-            }
-
-            return new TextOutput(result.toString());
+            return new TextOutput(String.format("Memory at %s (%d bytes):\n%s", addr, size, content));
         } catch (Exception e) {
             return StatusOutput.error("Error reading memory: " + e.getMessage());
         }
     }
     
-    @McpTool(description = """
+    @McpTool(outputType = JsonOutput.class, description = """
         Get memory permissions and block information at an address.
 
         Shows memory block properties including read/write/execute permissions.
@@ -343,28 +334,26 @@ public class MemoryService {
             MemoryBlock block = memory.getBlock(addr);
             if (block == null) return StatusOutput.error("No memory block at address: " + address);
 
-            StringBuilder result = new StringBuilder();
-            result.append(String.format("Memory permissions at %s:\n", addr));
-            result.append(String.format("  Block: %s\n", block.getName()));
-            result.append(String.format("  Start: %s\n", block.getStart()));
-            result.append(String.format("  End: %s\n", block.getEnd()));
-            result.append(String.format("  Size: 0x%X bytes\n", block.getSize()));
-            result.append(String.format("  Permissions:\n"));
-            result.append(String.format("    Read: %s\n", block.isRead() ? "Yes" : "No"));
-            result.append(String.format("    Write: %s\n", block.isWrite() ? "Yes" : "No"));
-            result.append(String.format("    Execute: %s\n", block.isExecute() ? "Yes" : "No"));
-            result.append(String.format("  Type:\n"));
-            result.append(String.format("    Initialized: %s\n", block.isInitialized() ? "Yes" : "No"));
-            result.append(String.format("    Volatile: %s\n", block.isVolatile() ? "Yes" : "No"));
-            result.append(String.format("    Overlay: %s\n", block.isOverlay() ? "Yes" : "No"));
-
-            return new TextOutput(result.toString());
+            String json = JsonBuilder.object()
+                    .put("block", block.getName())
+                    .put("start", block.getStart().toString())
+                    .put("end", block.getEnd().toString())
+                    .put("size", block.getSize())
+                    .putObject("permissions", JsonBuilder.object()
+                            .put("read", block.isRead())
+                            .put("write", block.isWrite())
+                            .put("execute", block.isExecute()))
+                    .put("initialized", block.isInitialized())
+                    .put("volatile", block.isVolatile())
+                    .put("overlay", block.isOverlay())
+                    .build();
+            return new JsonOutput(json);
         } catch (Exception e) {
             return StatusOutput.error("Error getting memory permissions: " + e.getMessage());
         }
     }
     
-    @McpTool(description = """
+    @McpTool(outputType = JsonOutput.class, description = """
         Get the data type currently defined at a memory address.
 
         Shows whether address contains instruction, defined data, or is undefined.
@@ -386,54 +375,59 @@ public class MemoryService {
             if (addr == null) return StatusOutput.error("Invalid address: " + address);
 
             Listing listing = program.getListing();
-            StringBuilder result = new StringBuilder();
-            result.append(String.format("Data type at %s:\n", addr));
 
             // Check if there's an instruction at this address
             Instruction instr = listing.getInstructionAt(addr);
             if (instr != null) {
-                result.append("  Type: Instruction\n");
-                result.append(String.format("  Mnemonic: %s\n", instr.getMnemonicString()));
-                result.append(String.format("  Operands: %s\n", instr.toString()));
-                result.append(String.format("  Length: %d bytes\n", instr.getLength()));
-                return new TextOutput(result.toString());
+                String json = JsonBuilder.object()
+                        .put("address", addr.toString())
+                        .put("category", "Instruction")
+                        .put("mnemonic", instr.getMnemonicString())
+                        .put("operands", instr.toString())
+                        .put("length", instr.getLength())
+                        .build();
+                return new JsonOutput(json);
             }
 
             // Check if there's defined data at this address
             Data data = listing.getDefinedDataAt(addr);
             if (data != null) {
                 DataType dataType = data.getDataType();
-                result.append("  Type: Defined Data\n");
-                result.append(String.format("  Data Type: %s\n", dataType.getName()));
-                result.append(String.format("  Category: %s\n", dataType.getCategoryPath()));
-                result.append(String.format("  Length: %d bytes\n", data.getLength()));
-                result.append(String.format("  Value: %s\n", data.getDefaultValueRepresentation()));
-
-                // Add label if present
                 Symbol symbol = program.getSymbolTable().getPrimarySymbol(addr);
-                if (symbol != null) {
-                    result.append(String.format("  Label: %s\n", symbol.getName()));
-                }
-            } else {
-                // Check if it's undefined data
-                Data undefinedData = listing.getDataAt(addr);
-                if (undefinedData != null) {
-                    result.append("  Type: Undefined Data\n");
-                    result.append(String.format("  Length: %d bytes\n", undefinedData.getLength()));
-
-                    // Try to read the byte value
-                    try {
-                        byte value = program.getMemory().getByte(addr);
-                        result.append(String.format("  Value: 0x%02X (%d)\n", value & 0xFF, value & 0xFF));
-                    } catch (MemoryAccessException e) {
-                        result.append("  Value: <unreadable>\n");
-                    }
-                } else {
-                    result.append("  Type: No data defined\n");
-                }
+                String json = JsonBuilder.object()
+                        .put("address", addr.toString())
+                        .put("category", "Defined Data")
+                        .put("dataType", dataType.getName())
+                        .put("length", data.getLength())
+                        .put("value", data.getDefaultValueRepresentation())
+                        .putIfNotNull("label", symbol != null ? symbol.getName() : null)
+                        .build();
+                return new JsonOutput(json);
             }
 
-            return new TextOutput(result.toString());
+            // Check if it's undefined data
+            Data undefinedData = listing.getDataAt(addr);
+            if (undefinedData != null) {
+                String value;
+                try {
+                    byte b = program.getMemory().getByte(addr);
+                    value = String.format("0x%02X", b & 0xFF);
+                } catch (MemoryAccessException e) {
+                    value = null;
+                }
+                String json = JsonBuilder.object()
+                        .put("address", addr.toString())
+                        .put("category", "Undefined Data")
+                        .put("length", undefinedData.getLength())
+                        .putIfNotNull("value", value)
+                        .build();
+                return new JsonOutput(json);
+            }
+
+            return new JsonOutput(JsonBuilder.object()
+                    .put("address", addr.toString())
+                    .put("category", "No data defined")
+                    .build());
         } catch (Exception e) {
             return StatusOutput.error("Error getting data type: " + e.getMessage());
         }

@@ -1,9 +1,10 @@
 package com.lauriewired.mcp.services;
 
 import com.lauriewired.mcp.api.McpTool;
+import com.lauriewired.mcp.model.JsonOutput;
 import com.lauriewired.mcp.model.StatusOutput;
-import com.lauriewired.mcp.model.TextOutput;
 import com.lauriewired.mcp.model.ToolOutput;
+import com.lauriewired.mcp.utils.JsonBuilder;
 
 import ghidra.app.services.ProgramManager;
 import ghidra.framework.plugintool.PluginTool;
@@ -39,7 +40,7 @@ public class ProgramService {
         return pm != null ? pm.getCurrentProgram() : null;
     }
 
-    @McpTool(description = """
+    @McpTool(outputType = JsonOutput.class, description = """
         Get metadata about the currently loaded binary.
 
         Returns architecture, endianness, file format, base address, entry point,
@@ -53,26 +54,26 @@ public class ProgramService {
         Program program = getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("Program: ").append(program.getName()).append("\n");
-        sb.append("Format: ").append(program.getExecutableFormat()).append("\n");
-        sb.append("Processor: ").append(program.getLanguage().getProcessor().toString()).append("\n");
-        sb.append("Architecture: ").append(program.getLanguageID()).append("\n");
-        sb.append("Endian: ").append(program.getLanguage().getLanguageDescription().getEndian().toString()).append("\n");
-        sb.append("Address Size: ").append(program.getLanguage().getLanguageDescription().getSize()).append("\n");
-        sb.append("Compiler: ").append(program.getCompilerSpec().getCompilerSpecID()).append("\n");
-        sb.append("Image Base: ").append(program.getImageBase()).append("\n");
-        sb.append("Address Range: ").append(program.getMinAddress()).append(" - ").append(program.getMaxAddress()).append("\n");
-
         // Entry point
         AddressIterator entryPoints = program.getSymbolTable().getExternalEntryPointIterator();
-        if (entryPoints.hasNext()) {
-            sb.append("Entry Point: ").append(entryPoints.next()).append("\n");
-        }
+        String entryPoint = entryPoints.hasNext() ? entryPoints.next().toString() : null;
 
-        sb.append("Functions: ").append(program.getFunctionManager().getFunctionCount()).append("\n");
-        sb.append("Symbols: ").append(program.getSymbolTable().getNumSymbols()).append("\n");
+        String json = JsonBuilder.object()
+                .put("name", program.getName())
+                .put("format", program.getExecutableFormat())
+                .put("processor", program.getLanguage().getProcessor().toString())
+                .put("architecture", program.getLanguageID().toString())
+                .put("endian", program.getLanguage().getLanguageDescription().getEndian().toString())
+                .put("addressSize", program.getLanguage().getLanguageDescription().getSize())
+                .put("compiler", program.getCompilerSpec().getCompilerSpecID().toString())
+                .put("imageBase", program.getImageBase().toString())
+                .put("minAddress", program.getMinAddress().toString())
+                .put("maxAddress", program.getMaxAddress().toString())
+                .putIfNotNull("entryPoint", entryPoint)
+                .put("functionCount", program.getFunctionManager().getFunctionCount())
+                .put("symbolCount", program.getSymbolTable().getNumSymbols())
+                .build();
 
-        return new TextOutput(sb.toString());
+        return new JsonOutput(json);
     }
 }

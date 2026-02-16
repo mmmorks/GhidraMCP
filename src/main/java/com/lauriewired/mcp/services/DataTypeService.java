@@ -15,12 +15,14 @@ import java.util.regex.Pattern;
 
 import com.lauriewired.mcp.api.McpTool;
 import com.lauriewired.mcp.api.Param;
+import com.lauriewired.mcp.model.JsonOutput;
 import com.lauriewired.mcp.model.ListOutput;
 import com.lauriewired.mcp.model.PaginationResult;
 import com.lauriewired.mcp.model.StatusOutput;
 import com.lauriewired.mcp.model.TextOutput;
 import com.lauriewired.mcp.model.ToolOutput;
 import com.lauriewired.mcp.utils.HttpUtils;
+import com.lauriewired.mcp.utils.JsonBuilder;
 import com.lauriewired.mcp.utils.ProgramTransaction;
 
 import ghidra.program.model.data.Array;
@@ -103,7 +105,7 @@ public class DataTypeService {
         return result.getFormattedResult();
     }
 
-    @McpTool(post = true, description = """
+    @McpTool(post = true, outputType = JsonOutput.class, description = """
         Bulk update a structure: rename fields, change field types, resize, and/or rename.
 
         All changes are applied in a single transaction with per-field error reporting.
@@ -258,17 +260,26 @@ public class DataTypeService {
 
             tx.commit();
 
-            StringBuilder sb = new StringBuilder("Updated structure '" + name + "':\n");
-            for (String r : results) sb.append(r).append("\n");
-            sb.append("Summary: ").append(succeeded).append(" succeeded, ").append(failed).append(" failed");
-            return new TextOutput(sb.toString());
+            JsonBuilder.JsonArrayBuilder resultsArray = JsonBuilder.array();
+            for (String r : results) {
+                resultsArray.addString(r);
+            }
+
+            String json = JsonBuilder.object()
+                    .put("name", name)
+                    .putArray("results", resultsArray)
+                    .putObject("summary", JsonBuilder.object()
+                            .put("succeeded", succeeded)
+                            .put("failed", failed))
+                    .build();
+            return new JsonOutput(json);
         } catch (Exception e) {
             Msg.error(this, "Error updating structure", e);
             return StatusOutput.error("Failed to update structure: " + e.getMessage());
         }
     }
 
-    @McpTool(post = true, description = """
+    @McpTool(post = true, outputType = JsonOutput.class, description = """
         Bulk update an enum: rename values, change numeric values, resize, and/or rename.
 
         All changes are applied in a single transaction with per-entry error reporting.
@@ -408,10 +419,19 @@ public class DataTypeService {
 
             tx.commit();
 
-            StringBuilder sb = new StringBuilder("Updated enum '" + name + "':\n");
-            for (String r : results) sb.append(r).append("\n");
-            sb.append("Summary: ").append(succeeded).append(" succeeded, ").append(failed).append(" failed");
-            return new TextOutput(sb.toString());
+            JsonBuilder.JsonArrayBuilder resultsArray = JsonBuilder.array();
+            for (String r : results) {
+                resultsArray.addString(r);
+            }
+
+            String json = JsonBuilder.object()
+                    .put("name", name)
+                    .putArray("results", resultsArray)
+                    .putObject("summary", JsonBuilder.object()
+                            .put("succeeded", succeeded)
+                            .put("failed", failed))
+                    .build();
+            return new JsonOutput(json);
         } catch (Exception e) {
             Msg.error(this, "Error updating enum", e);
             return StatusOutput.error("Failed to update enum: " + e.getMessage());
@@ -614,7 +634,8 @@ public class DataTypeService {
      * @return status message
      */
     public String createStructure(String structName, int size, String categoryPath) {
-        return createStructure(structName, size, categoryPath, null).toDisplayText();
+        ToolOutput result = createStructure(structName, size, categoryPath, null);
+        return (result instanceof StatusOutput s) ? s.message() : result.toStructuredJson();
     }
 
     @McpTool(post = true, outputType = StatusOutput.class, description = """
@@ -747,7 +768,8 @@ public class DataTypeService {
      * @return status message
      */
     public String createEnum(String enumName, int size, String categoryPath) {
-        return createEnum(enumName, size, categoryPath, null).toDisplayText();
+        ToolOutput result = createEnum(enumName, size, categoryPath, null);
+        return (result instanceof StatusOutput s) ? s.message() : result.toStructuredJson();
     }
 
     @McpTool(post = true, outputType = StatusOutput.class, description = """
@@ -1113,24 +1135,27 @@ public class DataTypeService {
         String normalizedKind = (kind == null || kind.isEmpty()) ? "all" : kind.toLowerCase();
 
         ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
-        List<String> lines = new ArrayList<>();
+        List<String> items = new ArrayList<>();
 
         if ("all".equals(normalizedKind) || "struct".equals(normalizedKind)) {
             List<Structure> structs = new ArrayList<>();
             dtm.getAllStructures().forEachRemaining(structs::add);
             Collections.sort(structs, Comparator.comparing(Structure::getName));
             for (Structure struct : structs) {
-                StringBuilder sb = new StringBuilder();
-                sb.append("[struct] ").append(struct.getName()).append(": {");
+                StringBuilder summary = new StringBuilder("{");
                 for (int i = 0; i < struct.getNumComponents(); i++) {
                     DataTypeComponent comp = struct.getComponent(i);
-                    if (i > 0) sb.append(", ");
-                    sb.append(comp.getDataType().getName())
-                      .append(" ")
-                      .append(comp.getFieldName());
+                    if (i > 0) summary.append(", ");
+                    summary.append(comp.getDataType().getName())
+                           .append(" ")
+                           .append(comp.getFieldName());
                 }
-                sb.append("}");
-                lines.add(sb.toString());
+                summary.append("}");
+                items.add(JsonBuilder.object()
+                        .put("kind", "struct")
+                        .put("name", struct.getName())
+                        .put("summary", summary.toString())
+                        .build());
             }
         }
 
@@ -1145,23 +1170,26 @@ public class DataTypeService {
             }
             Collections.sort(enums, Comparator.comparing(Enum::getName));
             for (Enum enumType : enums) {
-                StringBuilder sb = new StringBuilder();
-                sb.append("[enum] ").append(enumType.getName())
-                  .append(" (").append(enumType.getLength()).append(" bytes): {");
+                StringBuilder summary = new StringBuilder("{");
                 String[] names = enumType.getNames();
                 for (int i = 0; i < names.length; i++) {
-                    if (i > 0) sb.append(", ");
-                    sb.append(names[i]).append("=").append(enumType.getValue(names[i]));
+                    if (i > 0) summary.append(", ");
+                    summary.append(names[i]).append("=").append(enumType.getValue(names[i]));
                 }
-                sb.append("}");
-                lines.add(sb.toString());
+                summary.append("}");
+                items.add(JsonBuilder.object()
+                        .put("kind", "enum")
+                        .put("name", enumType.getName())
+                        .put("size", enumType.getLength())
+                        .put("summary", summary.toString())
+                        .build());
             }
         }
 
-        return ListOutput.paginate(lines, offset, limit);
+        return ListOutput.paginate(items, offset, limit);
     }
 
-    @McpTool(description = """
+    @McpTool(outputType = JsonOutput.class, description = """
         Get detailed information about a named data type (auto-detects struct vs enum).
 
         For structures: returns full field layout with offsets, types, sizes, and comments.
@@ -1183,60 +1211,43 @@ public class DataTypeService {
         }
 
         if (dataType instanceof Structure struct) {
-            return new TextOutput(formatStructureDetails(struct));
+            return new JsonOutput(formatStructureJson(struct));
         } else if (dataType instanceof Enum enumType) {
-            return new TextOutput(formatEnumDetails(enumType));
+            return new JsonOutput(formatEnumJson(enumType));
         } else {
-            // Generic type info
-            StringBuilder result = new StringBuilder();
-            result.append("Data Type: ").append(dataType.getName()).append("\n");
-            result.append("Category: ").append(dataType.getCategoryPath()).append("\n");
-            result.append("Size: ").append(dataType.getLength()).append(" bytes\n");
-            result.append("Kind: ").append(dataType.getClass().getSimpleName()).append("\n");
-            if (dataType.getDescription() != null) {
-                result.append("Description: ").append(dataType.getDescription()).append("\n");
-            }
-            return new TextOutput(result.toString());
+            String json = JsonBuilder.object()
+                    .put("kind", dataType.getClass().getSimpleName())
+                    .put("name", dataType.getName())
+                    .put("size", dataType.getLength())
+                    .putIfNotNull("description", dataType.getDescription())
+                    .build();
+            return new JsonOutput(json);
         }
     }
 
-    private String formatStructureDetails(Structure struct) {
-        StringBuilder result = new StringBuilder();
-        result.append("Structure: ").append(struct.getName()).append("\n");
-        result.append("Category: ").append(struct.getCategoryPath()).append("\n");
-        result.append("Size: ").append(struct.getLength()).append(" bytes\n");
-        result.append("Alignment: ").append(struct.getAlignment()).append("\n");
-        result.append("Packed: ").append(struct.isPackingEnabled() ? "Yes" : "No").append("\n");
-        result.append("Description: ").append(struct.getDescription() != null ? struct.getDescription() : "None").append("\n");
-        result.append("\nFields:\n");
-
-        DataTypeComponent[] components = struct.getComponents();
-        if (components.length == 0) {
-            result.append("  (no fields defined)\n");
-        } else {
-            for (DataTypeComponent comp : components) {
-                result.append(String.format("  [%04X] %s: %s (%d bytes)",
-                    comp.getOffset(),
-                    comp.getFieldName() != null ? comp.getFieldName() : "(unnamed)",
-                    comp.getDataType().getName(),
-                    comp.getLength()));
-                if (comp.getComment() != null) {
-                    result.append(" // ").append(comp.getComment());
-                }
-                result.append("\n");
+    private String formatStructureJson(Structure struct) {
+        JsonBuilder.JsonArrayBuilder fieldsArray = JsonBuilder.array();
+        for (DataTypeComponent comp : struct.getComponents()) {
+            JsonBuilder field = JsonBuilder.object()
+                    .put("offset", comp.getOffset())
+                    .put("name", comp.getFieldName() != null ? comp.getFieldName() : "(unnamed)")
+                    .put("type", comp.getDataType().getName())
+                    .put("size", comp.getLength());
+            if (comp.getComment() != null) {
+                field.put("comment", comp.getComment());
             }
+            fieldsArray.addRaw(field.build());
         }
-        return result.toString();
+
+        return JsonBuilder.object()
+                .put("kind", "struct")
+                .put("name", struct.getName())
+                .put("size", struct.getLength())
+                .putArray("fields", fieldsArray)
+                .build();
     }
 
-    private String formatEnumDetails(Enum enumType) {
-        StringBuilder result = new StringBuilder();
-        result.append("Enum: ").append(enumType.getName()).append("\n");
-        result.append("Category: ").append(enumType.getCategoryPath()).append("\n");
-        result.append("Size: ").append(enumType.getLength()).append(" bytes\n");
-        result.append("Description: ").append(enumType.getDescription() != null ? enumType.getDescription() : "None").append("\n");
-        result.append("\nValues:\n");
-
+    private String formatEnumJson(Enum enumType) {
         String[] names = enumType.getNames();
         List<Map.Entry<String, Long>> entries = new ArrayList<>();
         for (String n : names) {
@@ -1244,15 +1255,20 @@ public class DataTypeService {
         }
         entries.sort(Map.Entry.comparingByValue());
 
-        if (entries.isEmpty()) {
-            result.append("  (no values defined)\n");
-        } else {
-            for (Map.Entry<String, Long> entry : entries) {
-                result.append(String.format("  %s = 0x%X (%d)\n",
-                    entry.getKey(), entry.getValue(), entry.getValue()));
-            }
+        JsonBuilder.JsonArrayBuilder valuesArray = JsonBuilder.array();
+        for (Map.Entry<String, Long> entry : entries) {
+            valuesArray.addRaw(JsonBuilder.object()
+                    .put("name", entry.getKey())
+                    .put("value", entry.getValue())
+                    .build());
         }
-        return result.toString();
+
+        return JsonBuilder.object()
+                .put("kind", "enum")
+                .put("name", enumType.getName())
+                .put("size", enumType.getLength())
+                .putArray("values", valuesArray)
+                .build();
     }
 
     /**
@@ -1369,13 +1385,16 @@ public class DataTypeService {
             FunctionIterator funcIter = listing.getFunctions(true);
             while (funcIter.hasNext()) {
                 Function func = funcIter.next();
-                String funcDesc = func.getName() + " @ " + func.getEntryPoint();
 
                 // Check return type
                 DataType retBase = getBaseDataType(func.getReturnType());
                 if (dataTypesMatch(retBase, targetBase)) {
-                    results.add("Return type: " + funcDesc +
-                            " (returns " + func.getReturnType().getName() + ")");
+                    results.add(JsonBuilder.object()
+                            .put("category", "Return type")
+                            .put("function", func.getName())
+                            .put("address", func.getEntryPoint().toString())
+                            .put("type", func.getReturnType().getName())
+                            .build());
                 }
 
                 // Check all variables (parameters + locals)
@@ -1383,9 +1402,13 @@ public class DataTypeService {
                     DataType varBase = getBaseDataType(var.getDataType());
                     if (dataTypesMatch(varBase, targetBase)) {
                         String kind = (var instanceof Parameter) ? "Param" : "Local";
-                        results.add(kind + " variable: " + var.getName() +
-                                " in " + funcDesc +
-                                " (type: " + var.getDataType().getName() + ")");
+                        results.add(JsonBuilder.object()
+                                .put("category", kind + " variable")
+                                .put("name", var.getName())
+                                .put("function", func.getName())
+                                .put("address", func.getEntryPoint().toString())
+                                .put("type", var.getDataType().getName())
+                                .build());
                     }
                 }
             }
@@ -1438,10 +1461,12 @@ public class DataTypeService {
         // Direct match at top level (only when not filtering by field)
         if (fieldOffset < 0 && dataTypesMatch(base, targetBase)) {
             String label = data.getLabel();
-            String addr = data.getMinAddress().toString();
-            String dtName = data.getDataType().getName();
-            results.add("Data: " + (label != null ? label : "(unnamed)") +
-                    " @ " + addr + " (type: " + dtName + ")");
+            results.add(JsonBuilder.object()
+                    .put("category", "Data")
+                    .put("name", label != null ? label : "(unnamed)")
+                    .put("address", data.getMinAddress().toString())
+                    .put("type", data.getDataType().getName())
+                    .build());
             return;
         }
 
@@ -1469,15 +1494,17 @@ public class DataTypeService {
 
             DataType childBase = getBaseDataType(child.getDataType());
             if (dataTypesMatch(childBase, targetBase) || fieldOffset >= 0) {
-                // Report the specific sub-component address
                 String label = data.getLabel();
                 String parentName = label != null ? label : "(unnamed)";
-                String addr = child.getMinAddress().toString();
                 String childField = child.getFieldName();
                 String fieldDesc = childField != null ? childField : ("offset_0x" +
                         Integer.toHexString(child.getParentOffset()));
-                results.add("Data: " + parentName + "." + fieldDesc +
-                        " @ " + addr + " (type: " + child.getDataType().getName() + ")");
+                results.add(JsonBuilder.object()
+                        .put("category", "Data")
+                        .put("name", parentName + "." + fieldDesc)
+                        .put("address", child.getMinAddress().toString())
+                        .put("type", child.getDataType().getName())
+                        .build());
             } else {
                 // Recurse deeper for nested composites
                 collectDataTypeMatches(results, child, targetBase, fieldName, fieldOffset);

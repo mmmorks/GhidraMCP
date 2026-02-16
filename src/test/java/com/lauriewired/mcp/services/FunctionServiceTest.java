@@ -1,7 +1,6 @@
 package com.lauriewired.mcp.services;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -80,8 +79,8 @@ public class FunctionServiceTest {
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
         when(mockProgramManager.getCurrentProgram()).thenReturn(null);
         
-        String result = functionService.listFunctions(0, 10).toDisplayText();
-        assertEquals("No program loaded", result);
+        String result = functionService.listFunctions(0, 10).toStructuredJson();
+        assertTrue(result.contains("\"message\": \"No program loaded\""));
     }
 
     @Test
@@ -90,8 +89,8 @@ public class FunctionServiceTest {
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
         when(mockProgramManager.getCurrentProgram()).thenReturn(null);
 
-        String result = functionService.getFunctionCode("testFunction", "C").toDisplayText();
-        assertEquals("No program loaded", result);
+        String result = functionService.getFunctionCode("testFunction", "C").toStructuredJson();
+        assertTrue(result.contains("\"message\": \"No program loaded\""));
     }
 
     @Test
@@ -100,8 +99,8 @@ public class FunctionServiceTest {
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
         when(mockProgramManager.getCurrentProgram()).thenReturn(null);
 
-        String result = functionService.getFunctionCode(null, "C").toDisplayText();
-        assertEquals("No program loaded", result);
+        String result = functionService.getFunctionCode(null, "C").toStructuredJson();
+        assertTrue(result.contains("\"message\": \"No program loaded\""));
     }
 
     @Test
@@ -110,8 +109,8 @@ public class FunctionServiceTest {
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
         when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
 
-        String result = functionService.getFunctionCode("", "C").toDisplayText();
-        assertEquals("Function identifier is required", result);
+        String result = functionService.getFunctionCode("", "C").toStructuredJson();
+        assertTrue(result.contains("\"message\": \"Function identifier is required\""));
     }
 
     // ===== Happy path tests for listFunctions =====
@@ -137,7 +136,7 @@ public class FunctionServiceTest {
         
         when(mockFunctionManager.getFunctions(true)).thenReturn(mockFunctionIterator);
         
-        String result = functionService.listFunctions(0, 10).toDisplayText();
+        String result = functionService.listFunctions(0, 10).toStructuredJson();
 
         assertTrue(result.contains("main"));
         assertTrue(result.contains("helper_function"));
@@ -164,7 +163,7 @@ public class FunctionServiceTest {
         when(mockFunctionManager.getFunctions(true)).thenReturn(mockFunctionIterator);
         
         // Test with offset=2, limit=2 (should get function_2 and function_3)
-        String result = functionService.listFunctions(2, 2).toDisplayText();
+        String result = functionService.listFunctions(2, 2).toStructuredJson();
 
         assertFalse(result.contains("function_0"));
         assertFalse(result.contains("function_1"));
@@ -184,9 +183,9 @@ public class FunctionServiceTest {
         when(emptyIterator.hasNext()).thenReturn(false);
         when(mockFunctionManager.getFunctions(true)).thenReturn(emptyIterator);
         
-        String result = functionService.listFunctions(0, 10).toDisplayText();
+        String result = functionService.listFunctions(0, 10).toStructuredJson();
 
-        assertEquals("No results found.", result);
+        assertTrue(result.contains("\"totalItems\": 0"));
         verify(mockFunctionManager).getFunctions(true);
     }
     
@@ -198,8 +197,8 @@ public class FunctionServiceTest {
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
         when(mockProgramManager.getCurrentProgram()).thenReturn(null);
 
-        String result = functionService.renameFunction("oldName", "newName").toDisplayText();
-        assertEquals("No program loaded", result);
+        String result = functionService.renameFunction("oldName", "newName").toStructuredJson();
+        assertTrue(result.contains("\"message\": \"No program loaded\""));
     }
 
     @Test
@@ -208,8 +207,8 @@ public class FunctionServiceTest {
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
         when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
 
-        String result = functionService.renameFunction(null, "newName").toDisplayText();
-        assertEquals("Function identifier is required", result);
+        String result = functionService.renameFunction(null, "newName").toStructuredJson();
+        assertTrue(result.contains("\"message\": \"Function identifier is required\""));
     }
 
     @Test
@@ -218,8 +217,8 @@ public class FunctionServiceTest {
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
         when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
 
-        String result = functionService.renameFunction("oldName", null).toDisplayText();
-        assertEquals("New name is required", result);
+        String result = functionService.renameFunction("oldName", null).toStructuredJson();
+        assertTrue(result.contains("\"message\": \"New name is required\""));
     }
     
     // ===== Tests for getFunctionCode modes =====
@@ -230,8 +229,8 @@ public class FunctionServiceTest {
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
         when(mockProgramManager.getCurrentProgram()).thenReturn(null);
 
-        String result = functionService.getFunctionCode("main", null).toDisplayText();
-        assertEquals("No program loaded", result);
+        String result = functionService.getFunctionCode("main", null).toStructuredJson();
+        assertTrue(result.contains("\"message\": \"No program loaded\""));
     }
 
     @Test
@@ -240,8 +239,8 @@ public class FunctionServiceTest {
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
         when(mockProgramManager.getCurrentProgram()).thenReturn(null);
 
-        String result = functionService.getFunctionCode("main", "asm").toDisplayText();
-        assertEquals("No program loaded", result);
+        String result = functionService.getFunctionCode("main", "asm").toStructuredJson();
+        assertTrue(result.contains("\"message\": \"No program loaded\""));
     }
 
     @Test
@@ -258,8 +257,8 @@ public class FunctionServiceTest {
         when(emptyIterator.hasNext()).thenReturn(false);
         when(mockFunctionManager.getFunctions(true)).thenReturn(emptyIterator);
 
-        String result = functionService.getFunctionCode("nonexistent", "C").toDisplayText();
-        assertEquals("Function not found: nonexistent", result);
+        String result = functionService.getFunctionCode("nonexistent", "C").toStructuredJson();
+        assertTrue(result.contains("\"message\": \"Function not found: nonexistent\""));
     }
     
     // ===== Happy path tests for getFunctionByAddress =====
@@ -282,8 +281,8 @@ public class FunctionServiceTest {
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
         when(mockProgramManager.getCurrentProgram()).thenReturn(null);
         
-        String result = functionService.getFunctionByAddress("0x401000").toDisplayText();
-        assertEquals("No program loaded", result);
+        String result = functionService.getFunctionByAddress("0x401000").toStructuredJson();
+        assertTrue(result.contains("\"message\": \"No program loaded\""));
     }
 
     @Test
@@ -292,8 +291,8 @@ public class FunctionServiceTest {
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
         when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
 
-        String result = functionService.getFunctionByAddress(null).toDisplayText();
-        assertEquals("Address is required", result);
+        String result = functionService.getFunctionByAddress(null).toStructuredJson();
+        assertTrue(result.contains("\"message\": \"Address is required\""));
     }
     
     // ===== Happy path tests for setFunctionPrototype =====
@@ -304,8 +303,8 @@ public class FunctionServiceTest {
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
         when(mockProgramManager.getCurrentProgram()).thenReturn(null);
 
-        String result = functionService.setFunctionPrototype("0x401000", "int test(void)").toDisplayText();
-        assertEquals("No program loaded", result);
+        String result = functionService.setFunctionPrototype("0x401000", "int test(void)").toStructuredJson();
+        assertTrue(result.contains("\"message\": \"No program loaded\""));
     }
 
     @Test
@@ -314,8 +313,8 @@ public class FunctionServiceTest {
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
         when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
 
-        String result = functionService.setFunctionPrototype(null, "int test(void)").toDisplayText();
-        assertEquals("Function identifier is required", result);
+        String result = functionService.setFunctionPrototype(null, "int test(void)").toStructuredJson();
+        assertTrue(result.contains("\"message\": \"Function identifier is required\""));
     }
 
     @Test
@@ -324,8 +323,8 @@ public class FunctionServiceTest {
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
         when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
 
-        String result = functionService.setFunctionPrototype("", "int test(void)").toDisplayText();
-        assertEquals("Function identifier is required", result);
+        String result = functionService.setFunctionPrototype("", "int test(void)").toStructuredJson();
+        assertTrue(result.contains("\"message\": \"Function identifier is required\""));
     }
 
     @Test
@@ -334,8 +333,8 @@ public class FunctionServiceTest {
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
         when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
 
-        String result = functionService.setFunctionPrototype("0x401000", null).toDisplayText();
-        assertEquals("Function prototype is required", result);
+        String result = functionService.setFunctionPrototype("0x401000", null).toStructuredJson();
+        assertTrue(result.contains("\"message\": \"Function prototype is required\""));
     }
 
     @Test
@@ -344,8 +343,8 @@ public class FunctionServiceTest {
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
         when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
 
-        String result = functionService.setFunctionPrototype("0x401000", "").toDisplayText();
-        assertEquals("Function prototype is required", result);
+        String result = functionService.setFunctionPrototype("0x401000", "").toStructuredJson();
+        assertTrue(result.contains("\"message\": \"Function prototype is required\""));
     }
     
     // ===== Tests for resolveFunction =====
@@ -383,7 +382,7 @@ public class FunctionServiceTest {
     @DisplayName("listFunctions handles null tool gracefully")
     void testGetAllFunctionNames_NullTool() {
         TestFunctionService serviceWithNullTool = new TestFunctionService((MockablePluginTool) null, new TestProgramService((MockablePluginTool) null));
-        String result = serviceWithNullTool.listFunctions(0, 10).toDisplayText();
-        assertEquals("No program loaded", result);
+        String result = serviceWithNullTool.listFunctions(0, 10).toStructuredJson();
+        assertTrue(result.contains("\"message\": \"No program loaded\""));
     }
 }

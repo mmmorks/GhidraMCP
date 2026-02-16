@@ -2,15 +2,12 @@ package com.lauriewired.mcp.model;
 
 /**
  * Sealed interface for typed MCP tool outputs.
- * Each subtype defines its own structured JSON shape and display text format.
+ * Each subtype defines its own structured JSON shape.
  */
 public sealed interface ToolOutput permits TextOutput, ListOutput, StatusOutput, JsonOutput {
 
     /** Return the structured JSON representation of this output. */
     String toStructuredJson();
-
-    /** Return the human-readable display text (backward-compatible with old String returns). */
-    String toDisplayText();
 
     /**
      * Return the JSON Schema for the given ToolOutput subtype.
@@ -21,7 +18,7 @@ public sealed interface ToolOutput permits TextOutput, ListOutput, StatusOutput,
             return "{\"type\": \"object\", \"properties\": {\"text\": {\"type\": \"string\"}}, \"required\": [\"text\"]}";
         } else if (type == ListOutput.class) {
             return "{\"type\": \"object\", \"properties\": {"
-                + "\"items\": {\"type\": \"array\", \"items\": {\"type\": \"string\"}}, "
+                + "\"items\": {\"type\": \"array\", \"items\": {\"type\": \"object\"}}, "
                 + "\"totalItems\": {\"type\": \"integer\"}, "
                 + "\"offset\": {\"type\": \"integer\"}, "
                 + "\"limit\": {\"type\": \"integer\"}, "

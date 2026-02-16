@@ -2,9 +2,10 @@ package com.lauriewired.mcp.services;
 
 import com.lauriewired.mcp.api.McpTool;
 import com.lauriewired.mcp.api.Param;
+import com.lauriewired.mcp.model.JsonOutput;
 import com.lauriewired.mcp.model.StatusOutput;
-import com.lauriewired.mcp.model.TextOutput;
 import com.lauriewired.mcp.model.ToolOutput;
+import com.lauriewired.mcp.utils.JsonBuilder;
 import com.lauriewired.mcp.utils.ProgramTransaction;
 
 import ghidra.program.model.address.Address;
@@ -86,7 +87,7 @@ public class CommentService {
         }
     }
     
-    @McpTool(description = """
+    @McpTool(outputType = JsonOutput.class, description = """
         Get all comments at a specific address.
 
         Retrieves all comment types (pre/decompiler, post, eol/disassembly, plate, repeatable).
@@ -106,49 +107,17 @@ public class CommentService {
 
             CodeUnit codeUnit = program.getListing().getCodeUnitAt(addr);
             if (codeUnit == null) return StatusOutput.error("No code unit at address: " + address);
-            
-            StringBuilder result = new StringBuilder();
-            result.append("Comments at ").append(address).append(":\n");
-            
-            // Get all comment types
-            String preComment = codeUnit.getComment(CodeUnit.PRE_COMMENT);
-            String postComment = codeUnit.getComment(CodeUnit.POST_COMMENT);
-            String eolComment = codeUnit.getComment(CodeUnit.EOL_COMMENT);
-            String plateComment = codeUnit.getComment(CodeUnit.PLATE_COMMENT);
-            String repeatableComment = codeUnit.getComment(CodeUnit.REPEATABLE_COMMENT);
-            
-            boolean hasComments = false;
-            
-            if (preComment != null) {
-                result.append("\nPre Comment (Decompiler):\n").append(preComment).append("\n");
-                hasComments = true;
-            }
-            
-            if (postComment != null) {
-                result.append("\nPost Comment:\n").append(postComment).append("\n");
-                hasComments = true;
-            }
-            
-            if (eolComment != null) {
-                result.append("\nEnd-of-Line Comment (Disassembly):\n").append(eolComment).append("\n");
-                hasComments = true;
-            }
-            
-            if (plateComment != null) {
-                result.append("\nPlate Comment:\n").append(plateComment).append("\n");
-                hasComments = true;
-            }
-            
-            if (repeatableComment != null) {
-                result.append("\nRepeatable Comment:\n").append(repeatableComment).append("\n");
-                hasComments = true;
-            }
-            
-            if (!hasComments) {
-                result.append("\n(No comments found at this address)\n");
-            }
-            
-            return new TextOutput(result.toString());
+
+            String json = JsonBuilder.object()
+                    .put("address", address)
+                    .putObject("comments", JsonBuilder.object()
+                            .put("pre", codeUnit.getComment(CodeUnit.PRE_COMMENT))
+                            .put("post", codeUnit.getComment(CodeUnit.POST_COMMENT))
+                            .put("eol", codeUnit.getComment(CodeUnit.EOL_COMMENT))
+                            .put("plate", codeUnit.getComment(CodeUnit.PLATE_COMMENT))
+                            .put("repeatable", codeUnit.getComment(CodeUnit.REPEATABLE_COMMENT)))
+                    .build();
+            return new JsonOutput(json);
         } catch (Exception e) {
             return StatusOutput.error("Error getting comments: " + e.getMessage());
         }
