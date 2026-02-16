@@ -10,7 +10,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
-import com.lauriewired.mcp.model.PaginationResult;
 import com.lauriewired.mcp.model.StatusOutput;
 import com.lauriewired.mcp.model.ToolOutput;
 import com.sun.net.httpserver.HttpExchange;
@@ -233,37 +232,6 @@ public class HttpUtils {
             .skip(start)
             .limit(limit)
             .collect(Collectors.joining("\n"));
-    }
-
-    /**
-     * Create a paginated result with LLM-friendly hints about pagination status
-     * This method provides clear indicators to LLM agents about whether more results are available
-     *
-     * @param items the complete list of items
-     * @param offset starting index
-     * @param limit maximum number of items to return
-     * @return PaginationResult with content and pagination metadata
-     */
-    public static PaginationResult paginateListWithHints(List<String> items, int offset, int limit) {
-        if (items == null || items.isEmpty()) {
-            return new PaginationResult("", 0, offset, limit);
-        }
-        
-        if (limit <= 0) {
-            return new PaginationResult("", items.size(), offset, limit);
-        }
-        
-        int start = Math.max(0, offset);
-        if (start >= items.size()) {
-            return new PaginationResult("", items.size(), offset, limit);
-        }
-        
-        String content = items.stream()
-            .skip(start)
-            .limit(limit)
-            .collect(Collectors.joining("\n"));
-            
-        return new PaginationResult(content, items.size(), offset, limit);
     }
 
     /**

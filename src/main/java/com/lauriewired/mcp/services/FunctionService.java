@@ -8,12 +8,10 @@ import com.lauriewired.mcp.api.McpTool;
 import com.lauriewired.mcp.api.Param;
 import com.lauriewired.mcp.model.JsonOutput;
 import com.lauriewired.mcp.model.ListOutput;
-import com.lauriewired.mcp.model.PrototypeResult;
 import com.lauriewired.mcp.model.StatusOutput;
 import com.lauriewired.mcp.model.TextOutput;
 import com.lauriewired.mcp.model.ToolOutput;
 import com.lauriewired.mcp.utils.GhidraUtils;
-import com.lauriewired.mcp.utils.HttpUtils;
 import com.lauriewired.mcp.utils.JsonBuilder;
 import com.lauriewired.mcp.utils.ProgramTransaction;
 
@@ -348,7 +346,7 @@ public class FunctionService {
                     return func;
                 }
             }
-        } catch (Exception e) {
+        } catch (Exception ignored) {
             // Not a valid address, fall through to name lookup
         }
 
@@ -429,16 +427,7 @@ public class FunctionService {
 
             Address addr = func.getEntryPoint();
             Msg.info(this, "Setting prototype for function " + func.getName() + ": " + prototype);
-            PrototypeResult result = parseFunctionSignatureAndApply(program, addr, prototype);
-            if (result.isSuccess()) {
-                String response = "Function prototype set successfully";
-                if (!result.getErrorMessage().isEmpty()) {
-                    response += "\n\nWarnings/Debug Info:\n" + result.getErrorMessage();
-                }
-                return StatusOutput.ok(response);
-            } else {
-                return StatusOutput.error("Failed to set function prototype: " + result.getErrorMessage());
-            }
+            return parseFunctionSignatureAndApply(program, addr, prototype);
 
         } catch (Exception e) {
             String msg = "Error setting function prototype: " + e.getMessage();
@@ -451,7 +440,7 @@ public class FunctionService {
      * Parse and apply the function signature with error handling
      */
     @SuppressWarnings("UseSpecificCatch")
-    private PrototypeResult parseFunctionSignatureAndApply(Program program, Address addr, String prototype) {
+    private StatusOutput parseFunctionSignatureAndApply(Program program, Address addr, String prototype) {
         try (var tx = ProgramTransaction.start(program, "Set function prototype")) {
             ghidra.program.model.data.DataTypeManager dtm = program.getDataTypeManager();
 
@@ -466,7 +455,7 @@ public class FunctionService {
             if (sig == null) {
                 String msg = "Failed to parse function prototype";
                 Msg.error(this, msg);
-                return new PrototypeResult(false, msg);
+                return StatusOutput.error("Failed to set function prototype: " + msg);
             }
 
             ghidra.app.cmd.function.ApplyFunctionSignatureCmd cmd =
@@ -478,16 +467,16 @@ public class FunctionService {
             if (cmdResult) {
                 tx.commit();
                 Msg.info(this, "Successfully applied function signature");
-                return new PrototypeResult(true, "");
+                return StatusOutput.ok("Function prototype set successfully");
             } else {
                 String msg = "Command failed: " + cmd.getStatusMsg();
                 Msg.error(this, msg);
-                return new PrototypeResult(false, msg);
+                return StatusOutput.error("Failed to set function prototype: " + msg);
             }
         } catch (Exception e) {
             String msg = "Error applying function signature: " + e.getMessage();
             Msg.error(this, msg, e);
-            return new PrototypeResult(false, msg);
+            return StatusOutput.error("Failed to set function prototype: " + msg);
         }
     }
 }

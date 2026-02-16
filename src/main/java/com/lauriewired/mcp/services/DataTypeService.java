@@ -17,9 +17,7 @@ import com.lauriewired.mcp.api.McpTool;
 import com.lauriewired.mcp.api.Param;
 import com.lauriewired.mcp.model.JsonOutput;
 import com.lauriewired.mcp.model.ListOutput;
-import com.lauriewired.mcp.model.PaginationResult;
 import com.lauriewired.mcp.model.StatusOutput;
-import com.lauriewired.mcp.model.TextOutput;
 import com.lauriewired.mcp.model.ToolOutput;
 import com.lauriewired.mcp.utils.HttpUtils;
 import com.lauriewired.mcp.utils.JsonBuilder;
@@ -46,7 +44,6 @@ import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Parameter;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.listing.Variable;
-import ghidra.util.InvalidNameException;
 import ghidra.util.Msg;
 import ghidra.util.UniversalID;
 
@@ -101,8 +98,7 @@ public class DataTypeService {
             lines.add(sb.toString());
         }
         
-        PaginationResult result = HttpUtils.paginateListWithHints(lines, offset, limit);
-        return result.getFormattedResult();
+        return HttpUtils.paginateList(lines, offset, limit);
     }
 
     @McpTool(post = true, outputType = JsonOutput.class, description = """
@@ -556,8 +552,8 @@ public class DataTypeService {
                         return arrayType;
                     }
                 }
-            } catch (NumberFormatException e) {
-                // Invalid array size format, will fall through to other type resolution
+            } catch (NumberFormatException ignored) {
+                // Invalid array size format, fall through to other type resolution
             }
         }
         
@@ -913,10 +909,9 @@ public class DataTypeService {
             lines.add(sb.toString());
         }
         
-        PaginationResult result = HttpUtils.paginateListWithHints(lines, offset, limit);
-        return result.getFormattedResult();
+        return HttpUtils.paginateList(lines, offset, limit);
     }
-    
+
     /**
      * Get detailed information about a structure including all fields
      *
@@ -1103,17 +1098,17 @@ public class DataTypeService {
         
         List<String> fields = new ArrayList<>();
         for (DataTypeComponent comp : components) {
-            String fieldInfo = String.format("Offset: 0x%04X, Name: %s, Type: %s, Size: %d bytes",
+            StringBuilder fieldInfo = new StringBuilder(String.format("Offset: 0x%04X, Name: %s, Type: %s, Size: %d bytes",
                 comp.getOffset(),
                 comp.getFieldName() != null ? comp.getFieldName() : "(unnamed)",
                 comp.getDataType().getName(),
-                comp.getLength());
-            
+                comp.getLength()));
+
             if (comp.getComment() != null) {
-                fieldInfo += ", Comment: " + comp.getComment();
+                fieldInfo.append(", Comment: ").append(comp.getComment());
             }
-            
-            fields.add(fieldInfo);
+
+            fields.add(fieldInfo.toString());
         }
         
         return String.join("\n", fields);

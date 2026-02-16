@@ -7,6 +7,11 @@ import java.util.List;
  */
 public record ListOutput(List<String> items, int totalItems, int offset, int limit) implements ToolOutput {
 
+    /** Defensive copy: ensure the list is unmodifiable. */
+    public ListOutput {
+        items = List.copyOf(items);
+    }
+
     /** Whether more results are available beyond the current page. */
     public boolean hasMore() {
         return (offset + limit) < totalItems;
@@ -14,7 +19,6 @@ public record ListOutput(List<String> items, int totalItems, int offset, int lim
 
     /**
      * Factory method that slices a full list into a paginated ListOutput.
-     * Replaces the HttpUtils.paginateListWithHints() + PaginationResult.getFormattedResult() pattern.
      */
     public static ListOutput paginate(List<String> allItems, int offset, int limit) {
         if (allItems == null || allItems.isEmpty()) {
