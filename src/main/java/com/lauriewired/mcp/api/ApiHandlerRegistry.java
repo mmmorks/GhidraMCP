@@ -8,6 +8,7 @@ import java.util.Map;
 
 import com.lauriewired.mcp.McpServerManager;
 import com.lauriewired.mcp.model.ToolOutput;
+import com.lauriewired.mcp.utils.Json;
 import com.lauriewired.mcp.services.AnalysisService;
 import com.lauriewired.mcp.services.CommentService;
 import com.lauriewired.mcp.services.DataTypeService;
@@ -155,7 +156,7 @@ public class ApiHandlerRegistry {
                 for (int i = 0; i < methodParams.length; i++) {
                     Param paramAnn = methodParams[i].getAnnotation(Param.class);
                     if (paramAnn != null) {
-                        String snakeName = ToolDef.camelToSnake(methodParams[i].getName());
+                        String snakeName = Json.toSnakeCase(methodParams[i].getName());
                         args[i] = params.get(snakeName);
                     }
                 }

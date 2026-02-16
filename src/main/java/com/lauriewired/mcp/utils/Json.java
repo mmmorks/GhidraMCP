@@ -10,11 +10,22 @@ import com.fasterxml.jackson.databind.PropertyNamingStrategies;
  * Configured with NON_NULL inclusion and snake_case naming to match MCP conventions.
  */
 public final class Json {
+    private static final PropertyNamingStrategies.SnakeCaseStrategy SNAKE_CASE =
+        (PropertyNamingStrategies.SnakeCaseStrategy) PropertyNamingStrategies.SNAKE_CASE;
+
     private static final ObjectMapper MAPPER = new ObjectMapper()
         .setSerializationInclusion(JsonInclude.Include.NON_NULL)
-        .setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
+        .setPropertyNamingStrategy(SNAKE_CASE);
 
     private Json() {}
+
+    /**
+     * Convert a camelCase string to snake_case.
+     * Single source of truth for naming conversion across the codebase.
+     */
+    public static String toSnakeCase(String camel) {
+        return SNAKE_CASE.translate(camel);
+    }
 
     /**
      * Serialize an object to a JSON string.

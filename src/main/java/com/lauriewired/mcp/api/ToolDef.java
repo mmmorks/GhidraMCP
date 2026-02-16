@@ -42,7 +42,7 @@ public class ToolDef {
      */
     public static ToolDef fromMethod(Method method, McpTool annotation) {
         String toolName = annotation.name().isEmpty()
-            ? camelToSnake(method.getName())
+            ? Json.toSnakeCase(method.getName())
             : annotation.name();
 
         Parameter[] javaParams = method.getParameters();
@@ -54,7 +54,7 @@ public class ToolDef {
             Param paramAnn = findParamAnnotation(paramAnnotations[i]);
             if (paramAnn == null) continue;
 
-            String paramName = camelToSnake(javaParams[i].getName());
+            String paramName = Json.toSnakeCase(javaParams[i].getName());
             ParamType paramType = ParamType.inferFrom(genericTypes[i]);
             boolean required = paramAnn.defaultValue().equals(Param.REQUIRED);
             Object defaultValue = required ? null : parseDefault(paramAnn.defaultValue(), paramType);
@@ -64,13 +64,6 @@ public class ToolDef {
 
         return new ToolDef(toolName, annotation.description(), annotation.post(), paramDefs,
             annotation.outputType(), annotation.responseType());
-    }
-
-    /**
-     * Convert a camelCase string to snake_case.
-     */
-    public static String camelToSnake(String camel) {
-        return camel.replaceAll("([a-z0-9])([A-Z])", "$1_$2").toLowerCase();
     }
 
     /**

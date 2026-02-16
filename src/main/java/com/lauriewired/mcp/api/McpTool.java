@@ -16,7 +16,7 @@ import com.lauriewired.mcp.model.ToolOutput;
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.METHOD)
 public @interface McpTool {
-    /** Override tool name (empty = derive from method name via camelToSnake). */
+    /** Override tool name (empty = derive from method name via Json.toSnakeCase). */
     String name() default "";
 
     /** Tool description text. A Parameters: section is auto-appended from @Param annotations. */

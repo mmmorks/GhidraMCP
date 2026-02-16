@@ -15,6 +15,7 @@ import java.util.Map;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.lauriewired.mcp.utils.Json;
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
 
@@ -23,47 +24,47 @@ import org.junit.jupiter.api.Test;
 class ToolDefTest {
 
     // =========================================================================
-    // camelToSnake tests
+    // Json.toSnakeCase tests
     // =========================================================================
 
     @Test
-    void testCamelToSnake_SimpleMethod() {
-        assertEquals("get_function_code", ToolDef.camelToSnake("getFunctionCode"));
+    void testToSnakeCase_SimpleMethod() {
+        assertEquals("get_function_code", Json.toSnakeCase("getFunctionCode"));
     }
 
     @Test
-    void testCamelToSnake_MultipleWords() {
-        assertEquals("list_references_from", ToolDef.camelToSnake("listReferencesFrom"));
+    void testToSnakeCase_MultipleWords() {
+        assertEquals("list_references_from", Json.toSnakeCase("listReferencesFrom"));
     }
 
     @Test
-    void testCamelToSnake_SearchFunctions() {
-        assertEquals("search_functions_by_name", ToolDef.camelToSnake("searchFunctionsByName"));
+    void testToSnakeCase_SearchFunctions() {
+        assertEquals("search_functions_by_name", Json.toSnakeCase("searchFunctionsByName"));
     }
 
     @Test
-    void testCamelToSnake_ParamName() {
-        assertEquals("function_identifier", ToolDef.camelToSnake("functionIdentifier"));
+    void testToSnakeCase_ParamName() {
+        assertEquals("function_identifier", Json.toSnakeCase("functionIdentifier"));
     }
 
     @Test
-    void testCamelToSnake_BooleanParam() {
-        assertEquals("as_string", ToolDef.camelToSnake("asString"));
+    void testToSnakeCase_BooleanParam() {
+        assertEquals("as_string", Json.toSnakeCase("asString"));
     }
 
     @Test
-    void testCamelToSnake_SingleWord() {
-        assertEquals("mode", ToolDef.camelToSnake("mode"));
+    void testToSnakeCase_SingleWord() {
+        assertEquals("mode", Json.toSnakeCase("mode"));
     }
 
     @Test
-    void testCamelToSnake_AllLowercase() {
-        assertEquals("query", ToolDef.camelToSnake("query"));
+    void testToSnakeCase_AllLowercase() {
+        assertEquals("query", Json.toSnakeCase("query"));
     }
 
     @Test
-    void testCamelToSnake_WithNumbers() {
-        assertEquals("field0_0x0", ToolDef.camelToSnake("field0_0x0"));
+    void testToSnakeCase_WithNumbers() {
+        assertEquals("field0_0x0", Json.toSnakeCase("field0_0x0"));
     }
 
     // =========================================================================

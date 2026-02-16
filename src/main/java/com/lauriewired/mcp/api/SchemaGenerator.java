@@ -5,7 +5,6 @@ import java.util.List;
 import java.util.Map;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.github.victools.jsonschema.generator.Option;
 import com.github.victools.jsonschema.generator.OptionPreset;
@@ -23,8 +22,6 @@ import com.lauriewired.mcp.utils.Json;
  */
 public final class SchemaGenerator {
     private static final com.github.victools.jsonschema.generator.SchemaGenerator GENERATOR;
-    private static final PropertyNamingStrategies.SnakeCaseStrategy SNAKE_CASE =
-        new PropertyNamingStrategies.SnakeCaseStrategy();
 
     static {
         JacksonModule jacksonModule = new JacksonModule(JacksonOption.RESPECT_JSONPROPERTY_REQUIRED);
@@ -35,10 +32,10 @@ public final class SchemaGenerator {
         // Apply snake_case naming to schema properties to match Jackson serialization
         configBuilder.forFields()
             .withPropertyNameOverrideResolver(field ->
-                SNAKE_CASE.translate(field.getDeclaredName()));
+                Json.toSnakeCase(field.getDeclaredName()));
         configBuilder.forMethods()
             .withPropertyNameOverrideResolver(method ->
-                SNAKE_CASE.translate(method.getName()));
+                Json.toSnakeCase(method.getName()));
         SchemaGeneratorConfig config = configBuilder.build();
         GENERATOR = new com.github.victools.jsonschema.generator.SchemaGenerator(config);
     }
