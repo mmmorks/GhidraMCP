@@ -7,7 +7,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import com.lauriewired.mcp.model.TextOutput;
 import com.lauriewired.mcp.model.ToolOutput;
 import com.lauriewired.mcp.utils.HttpUtils;
 import com.sun.net.httpserver.HttpExchange;
@@ -19,7 +18,6 @@ import com.sun.net.httpserver.HttpExchange;
 public class ToolDef {
     private final String name;              // snake_case tool name
     private final String description;       // full description including auto-generated Parameters section
-    private final String rawDescription;    // original description from annotation
     private final boolean post;             // true = POST, false = GET
     private final List<ToolParamDef> params;
     private final boolean hasComplexTypes;  // true if any param is a Map or List type
@@ -28,7 +26,6 @@ public class ToolDef {
     private ToolDef(String name, String rawDescription, boolean post, List<ToolParamDef> params,
                     Class<? extends ToolOutput> outputType) {
         this.name = name;
-        this.rawDescription = rawDescription;
         this.post = post;
         this.params = params;
         this.outputType = outputType;
@@ -202,7 +199,7 @@ public class ToolDef {
     public String getName() { return name; }
     public String getDescription() { return description; }
     public boolean isPost() { return post; }
-    public List<ToolParamDef> getParams() { return params; }
+    public List<ToolParamDef> getParams() { return List.copyOf(params); }
     public Class<? extends ToolOutput> getOutputType() { return outputType; }
 
     private static String buildFullDescription(String rawDescription, List<ToolParamDef> params) {

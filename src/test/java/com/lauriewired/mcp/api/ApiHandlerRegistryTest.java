@@ -353,7 +353,7 @@ class ApiHandlerRegistryTest {
         String json = """
             {"name": "MY_FLAGS"}""";
         var result = ApiHandlerRegistry.extractJsonLongObject(json, "values");
-        assertNull(result);
+        assertTrue(result.isEmpty());
     }
 
     @Test

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter>
+  <!-- Exclude test classes from analysis -->
+  <Match>
+    <Source name="~.*Test\.java"/>
+  </Match>
+
+  <!-- Ghidra plugin lifecycle: GhidraMCPPlugin fields are managed by Ghidra framework -->
+  <Match>
+    <Class name="com.lauriewired.GhidraMCPPlugin"/>
+    <Bug pattern="URF_UNREAD_FIELD"/>
+  </Match>
+
+  <!-- Manual JSON string building is intentional (no Gson in Ghidra classpath) -->
+  <Match>
+    <Bug pattern="VA_FORMAT_STRING_USES_NEWLINE"/>
+  </Match>
+
+  <!-- Services store collaborator references via constructor injection — not a security concern -->
+  <Match>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+  </Match>
+
+  <!-- McpServerManager.getServer() must return the live HttpServer for endpoint registration -->
+  <Match>
+    <Class name="com.lauriewired.mcp.McpServerManager"/>
+    <Method name="getServer"/>
+    <Bug pattern="EI_EXPOSE_REP"/>
+  </Match>
+
+  <!-- TimeoutHandler.shutdown() intentionally uses notify to wake the monitor thread
+       after setting the shutdown flag -->
+  <Match>
+    <Class name="com.lauriewired.mcp.utils.TimeoutHandler"/>
+    <Bug pattern="NN_NAKED_NOTIFY"/>
+  </Match>
+</FindBugsFilter>

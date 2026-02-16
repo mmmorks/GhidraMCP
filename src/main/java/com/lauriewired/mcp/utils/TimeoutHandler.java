@@ -1,6 +1,8 @@
 package com.lauriewired.mcp.utils;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.Objects;
 import java.util.PriorityQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -44,6 +46,18 @@ public class TimeoutHandler {
         public int compareTo(RequestContext other) {
             // Earlier timeouts come first
             return Long.compare(this.timeoutAt, other.timeoutAt);
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof RequestContext other)) return false;
+            return this.timeoutAt == other.timeoutAt && Objects.equals(this.path, other.path);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(timeoutAt, path);
         }
     }
     
@@ -152,8 +166,8 @@ public class TimeoutHandler {
                         // Try to close the exchange to interrupt I/O
                         try {
                             nextTimeout.exchange.close();
-                        } catch (Exception e) {
-                            // Ignore errors when closing
+                        } catch (Exception ignored) {
+                            // Closing a timed-out exchange may fail; safe to ignore
                         }
                         
                         // Interrupt the handler thread
@@ -247,7 +261,7 @@ public class TimeoutHandler {
         String errorMsg = String.format("Request timeout - operation took longer than %.1f seconds",
             timeoutNanos / 1_000_000_000.0);
         String jsonBody = "{\"status\":\"error\",\"error\":\"" + HttpUtils.escapeJson(errorMsg) + "\"}";
-        byte[] bytes = jsonBody.getBytes("UTF-8");
+        byte[] bytes = jsonBody.getBytes(StandardCharsets.UTF_8);
 
         exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
         exchange.sendResponseHeaders(408, bytes.length); // 408 Request Timeout
@@ -262,7 +276,7 @@ public class TimeoutHandler {
      */
     private void sendErrorResponse(HttpExchange exchange, String message) throws IOException {
         String jsonBody = "{\"status\":\"error\",\"error\":\"" + HttpUtils.escapeJson(message) + "\"}";
-        byte[] bytes = jsonBody.getBytes("UTF-8");
+        byte[] bytes = jsonBody.getBytes(StandardCharsets.UTF_8);
 
         exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
         exchange.sendResponseHeaders(500, bytes.length); // 500 Internal Server Error

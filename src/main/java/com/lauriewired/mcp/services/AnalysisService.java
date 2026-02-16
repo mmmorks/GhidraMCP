@@ -15,7 +15,6 @@ import com.lauriewired.mcp.api.Param;
 import com.lauriewired.mcp.model.JsonOutput;
 import com.lauriewired.mcp.model.ListOutput;
 import com.lauriewired.mcp.model.StatusOutput;
-import com.lauriewired.mcp.model.TextOutput;
 import com.lauriewired.mcp.model.ToolOutput;
 import com.lauriewired.mcp.utils.GhidraUtils;
 import com.lauriewired.mcp.utils.JsonBuilder;
@@ -299,70 +298,7 @@ public class AnalysisService {
         return new JsonOutput(builder.build());
     }
 
-    /**
-     * Recursive helper method to build the call graph
-     */
-    private void buildCallGraph(Function func, StringBuilder result, Set<Function> visited, 
-                               int currentDepth, int maxDepth) {
-        // Add indentation based on depth
-        String indent = "  ".repeat(currentDepth);
-        
-        // Print the current function
-        result.append(indent).append("- ").append(func.getName())
-              .append(" at ").append(func.getEntryPoint());
-        
-        // Check if we've already visited this function or reached max depth
-        if (visited.contains(func)) {
-            result.append(" (already visited)\n");
-            return;
-        }
-        
-        result.append("\n");
-        
-        // Mark as visited
-        visited.add(func);
-        
-        // Stop if we've reached the maximum depth
-        if (currentDepth >= maxDepth) {
-            return;
-        }
-        
-        // Get all functions called by this function
-        Set<Function> calledFunctions = new HashSet<>();
-        
-        // Get references from this function
-        ReferenceManager refMgr = func.getProgram().getReferenceManager();
-        AddressIterator addrIter = func.getBody().getAddresses(true);
-        
-        while (addrIter.hasNext()) {
-            Address fromAddr = addrIter.next();
-            
-            // Get all references from this address
-            for (Reference ref : refMgr.getReferencesFrom(fromAddr)) {
-                // Check if it's a call reference
-                if (ref.getReferenceType().isCall()) {
-                    Address toAddr = ref.getToAddress();
-                    
-                    // Get the function at the destination address
-                    Function calledFunc = func.getProgram().getFunctionManager().getFunctionAt(toAddr);
-                    if (calledFunc != null) {
-                        calledFunctions.add(calledFunc);
-                    }
-                }
-            }
-        }
-        
-        // Sort called functions by name for consistent output
-        List<Function> sortedCalled = new ArrayList<>(calledFunctions);
-        sortedCalled.sort(Comparator.comparing(Function::getName));
-        
-        // Recursively process called functions
-        for (Function calledFunc : sortedCalled) {
-            buildCallGraph(calledFunc, result, visited, currentDepth + 1, maxDepth);
-        }
-    }
-    
-    /** JSON version: build callees hierarchy into a JsonArrayBuilder. */
+    /** Build callees hierarchy into a JsonArrayBuilder. */
     private void buildCallGraphJson(Function func, JsonBuilder.JsonArrayBuilder array,
                                      Set<Function> visited, int currentDepth, int maxDepth) {
         if (visited.contains(func) || currentDepth >= maxDepth) return;
@@ -395,7 +331,7 @@ public class AnalysisService {
         }
     }
 
-    /** JSON version: build callers hierarchy into a JsonArrayBuilder. */
+    /** Build callers hierarchy into a JsonArrayBuilder. */
     private void buildCallerHierarchyJson(Function func, JsonBuilder.JsonArrayBuilder array,
                                            Set<Function> visited, int currentDepth, int maxDepth) {
         if (visited.contains(func) || currentDepth >= maxDepth) return;
@@ -547,58 +483,6 @@ public class AnalysisService {
             return ListOutput.paginate(refs, offset, limit);
         } catch (Exception e) {
             return StatusOutput.error("Error getting references from: " + e.getMessage());
-        }
-    }
-    
-    /**
-     * Recursive helper method to build the caller hierarchy
-     */
-    private void buildCallerHierarchy(Function func, StringBuilder result, Set<Function> visited,
-                                    int currentDepth, int maxDepth) {
-        // Add indentation based on depth
-        String indent = "  ".repeat(currentDepth);
-        
-        // Print the current function
-        result.append(indent).append("- ").append(func.getName())
-              .append(" at ").append(func.getEntryPoint());
-        
-        // Check if we've already visited this function or reached max depth
-        if (visited.contains(func)) {
-            result.append(" (already visited)\n");
-            return;
-        }
-        
-        result.append("\n");
-        
-        // Mark as visited
-        visited.add(func);
-        
-        // Stop if we've reached the maximum depth
-        if (currentDepth >= maxDepth) {
-            return;
-        }
-        
-        // Get all functions that call this function
-        Set<Function> callers = new HashSet<>();
-        ReferenceManager refMgr = func.getProgram().getReferenceManager();
-        
-        for (Reference ref : refMgr.getReferencesTo(func.getEntryPoint())) {
-            if (ref.getReferenceType().isCall()) {
-                Address fromAddr = ref.getFromAddress();
-                Function callerFunc = func.getProgram().getFunctionManager().getFunctionContaining(fromAddr);
-                if (callerFunc != null && !callerFunc.equals(func)) {
-                    callers.add(callerFunc);
-                }
-            }
-        }
-        
-        // Sort callers by name for consistent output
-        List<Function> sortedCallers = new ArrayList<>(callers);
-        sortedCallers.sort(Comparator.comparing(Function::getName));
-        
-        // Recursively process callers
-        for (Function caller : sortedCallers) {
-            buildCallerHierarchy(caller, result, visited, currentDepth + 1, maxDepth);
         }
     }
 }

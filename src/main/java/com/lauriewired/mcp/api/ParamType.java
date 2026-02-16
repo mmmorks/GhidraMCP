@@ -40,11 +40,9 @@ public enum ParamType {
                 if (args[1] == Long.class) return LONG_MAP;
                 return STRING_MAP;
             }
-            if (raw == List.class && args.length == 1) {
-                // List<String[]> → STRING_PAIR_LIST
-                if (args[0] instanceof Class<?> c && c.isArray() && c.getComponentType() == String.class) {
-                    return STRING_PAIR_LIST;
-                }
+            if (raw == List.class && args.length == 1
+                    && args[0] instanceof Class<?> c && c.isArray() && c.getComponentType() == String.class) {
+                return STRING_PAIR_LIST;
             }
         }
 

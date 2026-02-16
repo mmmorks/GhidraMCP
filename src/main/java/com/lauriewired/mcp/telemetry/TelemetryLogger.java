@@ -1,6 +1,7 @@
 package com.lauriewired.mcp.telemetry;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -11,6 +12,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicLong;
 
 import ghidra.util.Msg;
@@ -298,7 +300,7 @@ public class TelemetryLogger {
         Path summaryFile = telemetryDir.resolve("summary_" + DATE_FORMAT.format(LocalDateTime.now()) + ".json");
         try {
             String json = toJsonPretty(summary);
-            Files.write(summaryFile.toFile().toPath(), (json + "\n").getBytes(),
+            Files.write(summaryFile.toFile().toPath(), (json + "\n").getBytes(StandardCharsets.UTF_8),
                        StandardOpenOption.CREATE, StandardOpenOption.APPEND);
             Msg.info(TelemetryLogger.class, "Daily summary written to: " + summaryFile);
         } catch (IOException e) {
@@ -322,7 +324,7 @@ public class TelemetryLogger {
 
         try {
             String jsonLine = eventToJson(event) + "\n";
-            Files.write(logFile, jsonLine.getBytes(),
+            Files.write(logFile, jsonLine.getBytes(StandardCharsets.UTF_8),
                        StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         } catch (IOException e) {
             Msg.error(TelemetryLogger.class, "Failed to write telemetry event: " + e.getMessage());
@@ -430,7 +432,7 @@ public class TelemetryLogger {
     private String generateSessionId() {
         // Use a combination of timestamp and random value instead of object identity
         return "session_" + Instant.now().toEpochMilli() + "_" +
-               Integer.toHexString((int)(Math.random() * Integer.MAX_VALUE));
+               Integer.toHexString(ThreadLocalRandom.current().nextInt());
     }
 
     private void updateMinMax(ToolMetrics metrics, long duration) {

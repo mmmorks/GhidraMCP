@@ -5,6 +5,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -106,7 +107,7 @@ public class TelemetryInterceptor implements HttpHandler {
         Map<String, Object> params = new HashMap<>();
         if (bodyBytes == null) return params;
 
-        String body = new String(bodyBytes).trim();
+        String body = new String(bodyBytes, StandardCharsets.UTF_8).trim();
 
         // Handle JSON content type or auto-detect JSON body
         if ((contentType != null && contentType.contains("application/json")) || body.startsWith("{")) {
@@ -159,7 +160,7 @@ public class TelemetryInterceptor implements HttpHandler {
         }
         
         public String getCapturedResponseBody() {
-            return responseCapture.toString();
+            return responseCapture.toString(StandardCharsets.UTF_8);
         }
         
         public int getCapturedResponseCode() {

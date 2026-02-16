@@ -32,7 +32,6 @@ import com.lauriewired.mcp.api.McpTool;
 import com.lauriewired.mcp.api.Param;
 import com.lauriewired.mcp.model.JsonOutput;
 import com.lauriewired.mcp.model.StatusOutput;
-import com.lauriewired.mcp.model.TextOutput;
 import com.lauriewired.mcp.model.ToolOutput;
 import com.lauriewired.mcp.utils.JsonBuilder;
 
@@ -78,8 +77,8 @@ public class SearchService {
             
             if (asString) {
                 final byte[] searchPattern = query.getBytes(StandardCharsets.UTF_8);
-                SearchSettings settings = new SearchSettings();
-                settings.withSearchFormat(SearchFormat.STRING);
+                SearchSettings settings = new SearchSettings()
+                    .withSearchFormat(SearchFormat.STRING);
                 matcher = new ByteMatcher(query, settings) {
                     @Override
                     public Iterable<ByteMatcher.ByteMatch> match(ExtendedByteSequence ebs) {
@@ -139,9 +138,8 @@ public class SearchService {
                 // Create a byte matcher for hex pattern
                 final byte[] pattern = bytePattern;
                 final boolean[] mask = wildcardMask;
-                SearchSettings settings = new SearchSettings();
-                settings.withSearchFormat(SearchFormat.HEX);
-                
+                SearchSettings settings = new SearchSettings()
+                    .withSearchFormat(SearchFormat.HEX);
                 matcher = new ByteMatcher(query, settings) {
                     @Override
                     public Iterable<ByteMatcher.ByteMatch> match(ExtendedByteSequence ebs) {

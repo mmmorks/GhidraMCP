@@ -118,7 +118,7 @@ public class ApiHandlerRegistry {
      * Get the list of registered tool definitions (for testing).
      */
     public List<ToolDef> getToolDefs() {
-        return toolDefs;
+        return List.copyOf(toolDefs);
     }
 
     public void shutdown() {
@@ -417,10 +417,10 @@ public class ApiHandlerRegistry {
     static java.util.Map<String, Long> extractJsonLongObject(String json, String key) {
         String searchKey = "\"" + key + "\"";
         int keyIndex = json.indexOf(searchKey);
-        if (keyIndex < 0) return null;
+        if (keyIndex < 0) return Map.of();
 
         int braceStart = json.indexOf('{', keyIndex + searchKey.length());
-        if (braceStart < 0) return null;
+        if (braceStart < 0) return Map.of();
 
         int depth = 1;
         int braceEnd = braceStart + 1;
@@ -467,8 +467,8 @@ public class ApiHandlerRegistry {
                     value = Long.parseLong(numStr);
                 }
                 result.put(k, value);
-            } catch (NumberFormatException e) {
-                // skip invalid values
+            } catch (NumberFormatException ignored) {
+                // skip entries with non-numeric values
             }
             i = numEnd;
         }
