@@ -157,26 +157,28 @@ public class ApiHandlerRegistry {
      */
     private void registerFunctionEndpoints(HttpServer server) {
         // List functions with pagination
-        registerEndpoint(server, "list_methods", exchange -> {
+        registerEndpoint(server, "list_functions", exchange -> {
             Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
             int offset = HttpUtils.parseIntOrDefault(qparams.get("offset"), 0);
             int limit = HttpUtils.parseIntOrDefault(qparams.get("limit"), 100);
-            
+
             HttpUtils.sendResponse(exchange, functionService.getAllFunctionNames(offset, limit));
         });
         
-        // Decompile function by name
-        registerEndpoint(server, "decompile_function", exchange -> {
-            String name = new String(exchange.getRequestBody().readAllBytes());
-            HttpUtils.sendResponse(exchange, functionService.decompileFunctionByName(name));
+        // Get function code (C pseudocode, assembly, or pcode)
+        registerEndpoint(server, "get_function_code", exchange -> {
+            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
+            String identifier = qparams.get("function_identifier");
+            String mode = qparams.getOrDefault("mode", "C");
+            HttpUtils.sendResponse(exchange, functionService.getFunctionCode(identifier, mode));
         });
         
-        // Rename function
+        // Rename function (accepts name or address as identifier)
         registerEndpoint(server, "rename_function", exchange -> {
             Map<String, String> params = HttpUtils.parsePostParams(exchange);
-            String response = functionService.renameFunction(params.get("old_name"), params.get("new_name"))
-                    ? "Renamed successfully" : "Rename failed";
-            HttpUtils.sendResponse(exchange, response);
+            String identifier = params.get("function_identifier");
+            String newName = params.get("new_name");
+            HttpUtils.sendResponse(exchange, functionService.renameFunction(identifier, newName));
         });
         
         // Get function by address
@@ -194,34 +196,6 @@ public class ApiHandlerRegistry {
         // Get current function
         registerEndpoint(server, "get_current_function", exchange -> {
             HttpUtils.sendResponse(exchange, functionService.getCurrentFunction());
-        });
-        
-        // List all functions
-        registerEndpoint(server, "list_functions", exchange -> {
-            HttpUtils.sendResponse(exchange, functionService.listFunctions());
-        });
-        
-        // Decompile function by address
-        registerEndpoint(server, "decompile_function_by_address", exchange -> {
-            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-            String address = qparams.get("address");
-            HttpUtils.sendResponse(exchange, functionService.decompileFunctionByAddress(address));
-        });
-        
-        // Disassemble function
-        registerEndpoint(server, "disassemble_function", exchange -> {
-            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-            String address = qparams.get("address");
-            HttpUtils.sendResponse(exchange, functionService.disassembleFunction(address));
-        });
-        
-        // Rename function by address
-        registerEndpoint(server, "rename_function_by_address", exchange -> {
-            Map<String, String> params = HttpUtils.parsePostParams(exchange);
-            String functionAddress = params.get("function_address");
-            String newName = params.get("new_name");
-            boolean success = functionService.renameFunctionByAddress(functionAddress, newName);
-            HttpUtils.sendResponse(exchange, success ? "Function renamed successfully" : "Failed to rename function");
         });
         
         // Search functions by name
@@ -265,25 +239,9 @@ public class ApiHandlerRegistry {
      * Register namespace and class endpoints
      */
     private void registerNamespaceEndpoints(HttpServer server) {
-        // Register classes endpoint
-        registerEndpoint(server, "list_classes",
-            createPaginatedHandler(namespaceService::getAllClassNames));
-        
-        // Register namespaces endpoint
-        registerEndpoint(server, "list_namespaces",
-            createPaginatedHandler(namespaceService::listNamespaces));
-        
         // Register symbols endpoint
         registerEndpoint(server, "list_symbols",
             createPaginatedHandler(namespaceService::listSymbols));
-        
-        // Register imports endpoint
-        registerEndpoint(server, "list_imports",
-            createPaginatedHandler(namespaceService::listImports));
-        
-        // Register exports endpoint
-        registerEndpoint(server, "list_exports",
-            createPaginatedHandler(namespaceService::listExports));
         
         // Get symbol address
         registerEndpoint(server, "get_symbol_address", exchange -> {
@@ -297,55 +255,70 @@ public class ApiHandlerRegistry {
      * Register structure and data type endpoints
      */
     private void registerDataTypeEndpoints(HttpServer server) {
-        // List structures
-        registerEndpoint(server, "list_structures", exchange -> {
+        // List data types (structs and/or enums)
+        registerEndpoint(server, "list_data_types", exchange -> {
             Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
+            String kind = qparams.getOrDefault("kind", "all");
             int offset = HttpUtils.parseIntOrDefault(qparams.get("offset"), 0);
             int limit = HttpUtils.parseIntOrDefault(qparams.get("limit"), 100);
-            HttpUtils.sendResponse(exchange, dataTypeService.listStructures(offset, limit));
+            HttpUtils.sendResponse(exchange, dataTypeService.listDataTypes(kind, offset, limit));
         });
         
-        // Rename structure
-        registerEndpoint(server, "rename_structure", exchange -> {
+        // Bulk update structure (JSON body)
+        registerEndpoint(server, "update_structure", exchange -> {
             try {
-                Map<String, String> params = HttpUtils.parsePostParams(exchange);
-                String result = dataTypeService.renameStructure(
-                        params.get("old_name"),
-                        params.get("new_name")
-                );
+                var body = new String(exchange.getRequestBody().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                var structName = extractJsonString(body, "name");
+                var newName = extractJsonString(body, "new_name");
+                var sizeVal = extractJsonInt(body, "size");
+                var fieldRenames = extractJsonObject(body, "field_renames");
+                var typeChanges = extractJsonObject(body, "type_changes");
+
+                String result = dataTypeService.updateStructure(structName, newName, sizeVal,
+                        fieldRenames.isEmpty() ? null : fieldRenames,
+                        typeChanges.isEmpty() ? null : typeChanges);
                 HttpUtils.sendResponse(exchange, result);
-            } catch (IOException e) {
-                HttpUtils.sendResponse(exchange, "Error parsing parameters: " + e.getMessage());
+            } catch (Exception e) {
+                HttpUtils.sendResponse(exchange, "Error: " + e.getMessage());
             }
         });
 
-        // Rename struct field
-        registerEndpoint(server, "rename_struct_field", exchange -> {
+        // Bulk update enum (JSON body)
+        registerEndpoint(server, "update_enum", exchange -> {
             try {
-                Map<String, String> params = HttpUtils.parsePostParams(exchange);
-                String result = dataTypeService.renameStructField(
-                        params.get("struct_name"),
-                        params.get("old_field_name"),
-                        params.get("new_field_name")
-                );
+                var body = new String(exchange.getRequestBody().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                var enumName = extractJsonString(body, "name");
+                var newName = extractJsonString(body, "new_name");
+                var sizeVal = extractJsonInt(body, "size");
+                var valueRenames = extractJsonObject(body, "value_renames");
+                var valueChanges = extractJsonLongObject(body, "value_changes");
+
+                String result = dataTypeService.updateEnum(enumName, newName, sizeVal,
+                        valueRenames.isEmpty() ? null : valueRenames,
+                        valueChanges == null || valueChanges.isEmpty() ? null : valueChanges);
                 HttpUtils.sendResponse(exchange, result);
-            } catch (IOException e) {
-                HttpUtils.sendResponse(exchange, "Error parsing parameters: " + e.getMessage());
+            } catch (Exception e) {
+                HttpUtils.sendResponse(exchange, "Error: " + e.getMessage());
             }
         });
         
-        // Create structure
+        // Create structure (JSON body with optional inline fields)
         registerEndpoint(server, "create_structure", exchange -> {
             try {
-                Map<String, String> params = HttpUtils.parsePostParams(exchange);
-                String structName = params.get("name");
-                int size = HttpUtils.parseIntOrDefault(params.get("size"), 0);
-                String categoryPath = params.get("category_path");
-                
-                String result = dataTypeService.createStructure(structName, size, categoryPath);
+                var body = new String(exchange.getRequestBody().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                var structName = extractJsonString(body, "name");
+                var sizeStr = extractJsonString(body, "size");
+                int size = 0;
+                if (sizeStr != null) {
+                    try { size = Integer.parseInt(sizeStr); } catch (NumberFormatException ignored) {}
+                }
+                var categoryPath = extractJsonString(body, "category_path");
+                var fields = extractJsonArrayOfPairs(body, "fields");
+
+                String result = dataTypeService.createStructure(structName, size, categoryPath, fields);
                 HttpUtils.sendResponse(exchange, result);
-            } catch (IOException e) {
-                HttpUtils.sendResponse(exchange, "Error parsing parameters: " + e.getMessage());
+            } catch (Exception e) {
+                HttpUtils.sendResponse(exchange, "Error: " + e.getMessage());
             }
         });
         
@@ -368,18 +341,30 @@ public class ApiHandlerRegistry {
             }
         });
         
-        // Create enum
+        // Get data type details (auto-detects struct vs enum)
+        registerEndpoint(server, "get_data_type", exchange -> {
+            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
+            String name = qparams.get("name");
+            HttpUtils.sendResponse(exchange, dataTypeService.getDataType(name));
+        });
+
+        // Create enum (JSON body with optional inline values)
         registerEndpoint(server, "create_enum", exchange -> {
             try {
-                Map<String, String> params = HttpUtils.parsePostParams(exchange);
-                String enumName = params.get("name");
-                int size = HttpUtils.parseIntOrDefault(params.get("size"), 4);
-                String categoryPath = params.get("category_path");
-                
-                String result = dataTypeService.createEnum(enumName, size, categoryPath);
+                var body = new String(exchange.getRequestBody().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                var enumName = extractJsonString(body, "name");
+                var sizeStr = extractJsonString(body, "size");
+                int size = 4;
+                if (sizeStr != null) {
+                    try { size = Integer.parseInt(sizeStr); } catch (NumberFormatException ignored) {}
+                }
+                var categoryPath = extractJsonString(body, "category_path");
+                var values = extractJsonLongObject(body, "values");
+
+                String result = dataTypeService.createEnum(enumName, size, categoryPath, values);
                 HttpUtils.sendResponse(exchange, result);
-            } catch (IOException e) {
-                HttpUtils.sendResponse(exchange, "Error parsing parameters: " + e.getMessage());
+            } catch (Exception e) {
+                HttpUtils.sendResponse(exchange, "Error: " + e.getMessage());
             }
         });
         
@@ -400,35 +385,6 @@ public class ApiHandlerRegistry {
             }
         });
         
-        // List enums
-        registerEndpoint(server, "list_enums", exchange -> {
-            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-            int offset = HttpUtils.parseIntOrDefault(qparams.get("offset"), 0);
-            int limit = HttpUtils.parseIntOrDefault(qparams.get("limit"), 100);
-            HttpUtils.sendResponse(exchange, dataTypeService.listEnums(offset, limit));
-        });
-        
-        // Get structure details
-        registerEndpoint(server, "get_structure_details", exchange -> {
-            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-            String structureName = qparams.get("structure_name");
-            HttpUtils.sendResponse(exchange, dataTypeService.getStructureDetails(structureName));
-        });
-        
-        // Get enum details
-        registerEndpoint(server, "get_enum_details", exchange -> {
-            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-            String enumName = qparams.get("enum_name");
-            HttpUtils.sendResponse(exchange, dataTypeService.getEnumDetails(enumName));
-        });
-        
-        // List structure fields
-        registerEndpoint(server, "list_structure_fields", exchange -> {
-            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-            String structureName = qparams.get("structure_name");
-            HttpUtils.sendResponse(exchange, dataTypeService.listStructureFields(structureName));
-        });
-
         // Find data type usage
         registerEndpoint(server, "find_data_type_usage", exchange -> {
             Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
@@ -505,12 +461,12 @@ public class ApiHandlerRegistry {
      * Register memory and data endpoints
      */
     private void registerMemoryEndpoints(HttpServer server) {
-        // List segments
-        registerEndpoint(server, "list_segments", exchange -> {
+        // Get memory layout (segments)
+        registerEndpoint(server, "get_memory_layout", exchange -> {
             Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
             int offset = HttpUtils.parseIntOrDefault(qparams.get("offset"), 0);
             int limit = HttpUtils.parseIntOrDefault(qparams.get("limit"), 100);
-            HttpUtils.sendResponse(exchange, memoryService.listSegments(offset, limit));
+            HttpUtils.sendResponse(exchange, memoryService.getMemoryLayout(offset, limit));
         });
         
         // List data items
@@ -535,15 +491,15 @@ public class ApiHandlerRegistry {
             HttpUtils.sendResponse(exchange, success ? "Renamed successfully" : "Rename failed");
         });
         
-        // Set memory data type
-        registerEndpoint(server, "set_memory_data_type", exchange -> {
+        // Set data type at address
+        registerEndpoint(server, "set_address_data_type", exchange -> {
             try {
                 Map<String, String> params = HttpUtils.parsePostParams(exchange);
                 String address = params.get("address");
                 String dataType = params.get("data_type");
                 boolean clearExisting = "true".equalsIgnoreCase(params.get("clear_existing"));
-                
-                String result = memoryService.setMemoryDataType(address, dataType, clearExisting);
+
+                String result = memoryService.setAddressDataType(address, dataType, clearExisting);
                 HttpUtils.sendResponse(exchange, result);
             } catch (IOException e) {
                 HttpUtils.sendResponse(exchange, "Error parsing parameters: " + e.getMessage());
@@ -567,10 +523,10 @@ public class ApiHandlerRegistry {
         });
         
         // Get data type at address
-        registerEndpoint(server, "get_data_type_at", exchange -> {
+        registerEndpoint(server, "get_address_data_type", exchange -> {
             Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
             String address = qparams.get("address");
-            HttpUtils.sendResponse(exchange, memoryService.getDataTypeAt(address));
+            HttpUtils.sendResponse(exchange, memoryService.getAddressDataType(address));
         });
     }
 
@@ -674,18 +630,17 @@ public class ApiHandlerRegistry {
      * Register variable-related endpoints
      */
     private void registerVariableEndpoints(HttpServer server) {
-        // Rename variable endpoint
-        registerEndpoint(server, "rename_variable", exchange -> {
+        // Batch rename variables endpoint (JSON body: {"function_name": "...", "renames": {"old": "new", ...}})
+        registerEndpoint(server, "rename_variables", exchange -> {
             try {
-                var params = HttpUtils.parsePostParams(exchange);
-                var functionName = params.get("function_name");
-                var oldName = params.get("old_name");
-                var newName = params.get("new_name");
-                var usageAddress = params.get("usage_address");
-                
-                var result = variableService.renameVariableInFunction(functionName, oldName, newName, usageAddress);
+                var body = new String(exchange.getRequestBody().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                // Simple JSON parsing without external library
+                var functionName = extractJsonString(body, "function_name");
+                var renames = extractJsonObject(body, "renames");
+
+                var result = variableService.batchRenameVariables(functionName, renames);
                 HttpUtils.sendResponse(exchange, result);
-            } catch (IOException e) {
+            } catch (Exception e) {
                 HttpUtils.sendResponse(exchange, String.format("Error: %s", e.getMessage()));
             }
         });
@@ -710,63 +665,274 @@ public class ApiHandlerRegistry {
             }
         });
         
-        // Set local variable type endpoint
-        registerEndpoint(server, "set_local_variable_type", exchange -> {
+        // Batch set variable types endpoint (JSON body: {"function_address": "...", "types": {"var": "type", ...}})
+        registerEndpoint(server, "set_variable_types", exchange -> {
             try {
-                var params = HttpUtils.parsePostParams(exchange);
-                var functionAddress = params.get("function_address");
-                var variableName = params.get("variable_name");
-                var newType = params.get("new_type");
-                
-                // Build the response message with a formatted text block
-                var responseMsg = new StringBuilder(String.format("""
-                    Setting variable type: %s
-                    to %s
-                    in function at %s
-                    
-                    """, variableName, newType, functionAddress));
-                
-                // Get data type info using Optional for cleaner null handling
-                Optional.ofNullable(programService.getCurrentProgram())
-                    .ifPresent(program -> {
-                        var dtm = program.getDataTypeManager();
-                        var directType = dataTypeService.findDataTypeByNameInAllCategories(dtm, newType);
-                        
-                        if (directType != null) {
-                            responseMsg.append(String.format("Found type: %s\n", directType.getPathName()));
-                        } else if (newType.startsWith("P") && newType.length() > 1) {
-                            findPointerBaseType(dtm, newType, responseMsg);
-                        } else {
-                            responseMsg.append(String.format("Type not found directly: %s\n", newType));
-                        }
-                    });
-                
-                // Try to set the type
-                var success = variableService.setLocalVariableType(functionAddress, variableName, newType);
-                var successMsg = success ? "Variable type set successfully" : "Failed to set variable type";
-                responseMsg.append(String.format("\nResult: %s", successMsg));
-                
-                HttpUtils.sendResponse(exchange, responseMsg.toString());
-            } catch (IOException e) {
+                var body = new String(exchange.getRequestBody().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                var functionAddress = extractJsonString(body, "function_address");
+                var types = extractJsonObject(body, "types");
+
+                var result = variableService.batchSetVariableTypes(functionAddress, types);
+                HttpUtils.sendResponse(exchange, result);
+            } catch (Exception e) {
                 HttpUtils.sendResponse(exchange, String.format("Error: %s", e.getMessage()));
             }
         });
     }
     
     /**
-     * Helper method to find pointer base type
+     * Extract a JSON string value by key from a JSON object string.
+     * Simple parser for {"key": "value"} patterns without external libraries.
      */
-    private void findPointerBaseType(ghidra.program.model.data.DataTypeManager dtm, String pointerType, StringBuilder responseMsg) {
-        var baseTypeName = pointerType.substring(1);
-        var baseType = dataTypeService.findDataTypeByNameInAllCategories(dtm, baseTypeName);
-        
-        if (baseType != null) {
-            responseMsg.append(String.format("Found base type for pointer: %s\n", baseType.getPathName()));
-        } else {
-            responseMsg.append(String.format("Base type not found for pointer: %s\n", baseTypeName));
+    static String extractJsonString(String json, String key) {
+        String searchKey = "\"" + key + "\"";
+        int keyIndex = json.indexOf(searchKey);
+        if (keyIndex < 0) return null;
+
+        int colonIndex = json.indexOf(':', keyIndex + searchKey.length());
+        if (colonIndex < 0) return null;
+
+        int quoteStart = json.indexOf('"', colonIndex + 1);
+        if (quoteStart < 0) return null;
+
+        int quoteEnd = json.indexOf('"', quoteStart + 1);
+        if (quoteEnd < 0) return null;
+
+        return json.substring(quoteStart + 1, quoteEnd);
+    }
+
+    /**
+     * Extract a JSON integer value by key from a JSON object string.
+     * Returns null if the key is not found or the value is not a valid integer.
+     */
+    static Integer extractJsonInt(String json, String key) {
+        String searchKey = "\"" + key + "\"";
+        int keyIndex = json.indexOf(searchKey);
+        if (keyIndex < 0) return null;
+
+        int colonIndex = json.indexOf(':', keyIndex + searchKey.length());
+        if (colonIndex < 0) return null;
+
+        // Skip whitespace after colon
+        int numStart = colonIndex + 1;
+        while (numStart < json.length() && Character.isWhitespace(json.charAt(numStart))) numStart++;
+
+        // Check if value is a quoted string (number in quotes)
+        if (numStart < json.length() && json.charAt(numStart) == '"') {
+            int quoteEnd = json.indexOf('"', numStart + 1);
+            if (quoteEnd < 0) return null;
+            try {
+                return Integer.parseInt(json.substring(numStart + 1, quoteEnd));
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        }
+
+        // Read unquoted number
+        int numEnd = numStart;
+        while (numEnd < json.length() && (Character.isDigit(json.charAt(numEnd)) ||
+               json.charAt(numEnd) == '-')) {
+            numEnd++;
+        }
+        if (numEnd == numStart) return null;
+
+        try {
+            return Integer.parseInt(json.substring(numStart, numEnd));
+        } catch (NumberFormatException e) {
+            return null;
         }
     }
-    
+
+    /**
+     * Extract a JSON object as a Map of string key-value pairs.
+     * Handles {"key": {"k1": "v1", "k2": "v2"}} patterns.
+     */
+    static Map<String, String> extractJsonObject(String json, String key) {
+        String searchKey = "\"" + key + "\"";
+        int keyIndex = json.indexOf(searchKey);
+        if (keyIndex < 0) return Map.of();
+
+        int braceStart = json.indexOf('{', keyIndex + searchKey.length());
+        if (braceStart < 0) return Map.of();
+
+        // Find matching close brace
+        int depth = 1;
+        int braceEnd = braceStart + 1;
+        while (braceEnd < json.length() && depth > 0) {
+            char c = json.charAt(braceEnd);
+            if (c == '{') depth++;
+            else if (c == '}') depth--;
+            braceEnd++;
+        }
+
+        String inner = json.substring(braceStart + 1, braceEnd - 1).trim();
+        if (inner.isEmpty()) return Map.of();
+
+        // Parse "key": "value" pairs
+        Map<String, String> result = new java.util.LinkedHashMap<>();
+        int i = 0;
+        while (i < inner.length()) {
+            int qs1 = inner.indexOf('"', i);
+            if (qs1 < 0) break;
+            int qe1 = inner.indexOf('"', qs1 + 1);
+            if (qe1 < 0) break;
+            String k = inner.substring(qs1 + 1, qe1);
+
+            int qs2 = inner.indexOf('"', qe1 + 1);
+            if (qs2 < 0) break;
+            int qe2 = inner.indexOf('"', qs2 + 1);
+            if (qe2 < 0) break;
+            String v = inner.substring(qs2 + 1, qe2);
+
+            result.put(k, v);
+            i = qe2 + 1;
+        }
+        return result;
+    }
+
+    /**
+     * Extract a JSON array of two-element string arrays: [["a","b"],["c","d"]]
+     * Returns a List of String[2] pairs.
+     * Handles values containing brackets (e.g., "char[32]") by parsing quoted strings properly.
+     */
+    static java.util.List<String[]> extractJsonArrayOfPairs(String json, String key) {
+        String searchKey = "\"" + key + "\"";
+        int keyIndex = json.indexOf(searchKey);
+        if (keyIndex < 0) return null;
+
+        int bracketStart = json.indexOf('[', keyIndex + searchKey.length());
+        if (bracketStart < 0) return null;
+
+        // Find matching close bracket (skip content inside quotes)
+        int depth = 1;
+        int bracketEnd = bracketStart + 1;
+        boolean inQuote = false;
+        while (bracketEnd < json.length() && depth > 0) {
+            char c = json.charAt(bracketEnd);
+            if (c == '"' && (bracketEnd == 0 || json.charAt(bracketEnd - 1) != '\\')) {
+                inQuote = !inQuote;
+            } else if (!inQuote) {
+                if (c == '[') depth++;
+                else if (c == ']') depth--;
+            }
+            bracketEnd++;
+        }
+
+        String inner = json.substring(bracketStart + 1, bracketEnd - 1).trim();
+        if (inner.isEmpty()) return java.util.List.of();
+
+        // Parse by extracting pairs of quoted strings between each inner [ ... ]
+        // We track bracket depth while respecting quotes
+        java.util.List<String[]> result = new java.util.ArrayList<>();
+        int i = 0;
+        while (i < inner.length()) {
+            // Find start of inner array
+            int arrStart = -1;
+            for (int j = i; j < inner.length(); j++) {
+                if (inner.charAt(j) == '[') { arrStart = j; break; }
+            }
+            if (arrStart < 0) break;
+
+            // Find matching end bracket, respecting quotes
+            int arrDepth = 1;
+            int arrEnd = arrStart + 1;
+            boolean arrInQuote = false;
+            while (arrEnd < inner.length() && arrDepth > 0) {
+                char c = inner.charAt(arrEnd);
+                if (c == '"' && (arrEnd == 0 || inner.charAt(arrEnd - 1) != '\\')) {
+                    arrInQuote = !arrInQuote;
+                } else if (!arrInQuote) {
+                    if (c == '[') arrDepth++;
+                    else if (c == ']') arrDepth--;
+                }
+                arrEnd++;
+            }
+
+            String pair = inner.substring(arrStart + 1, arrEnd - 1);
+            // Extract two quoted strings from the pair
+            int qs1 = pair.indexOf('"');
+            if (qs1 < 0) { i = arrEnd; continue; }
+            int qe1 = pair.indexOf('"', qs1 + 1);
+            if (qe1 < 0) { i = arrEnd; continue; }
+            int qs2 = pair.indexOf('"', qe1 + 1);
+            if (qs2 < 0) { i = arrEnd; continue; }
+            int qe2 = pair.indexOf('"', qs2 + 1);
+            if (qe2 < 0) { i = arrEnd; continue; }
+
+            result.add(new String[]{pair.substring(qs1 + 1, qe1), pair.substring(qs2 + 1, qe2)});
+            i = arrEnd;
+        }
+        return result;
+    }
+
+    /**
+     * Extract a JSON object as a Map of string keys to long values.
+     * Handles {"key": {"NAME1": 0, "NAME2": 1}} patterns.
+     */
+    static java.util.Map<String, Long> extractJsonLongObject(String json, String key) {
+        String searchKey = "\"" + key + "\"";
+        int keyIndex = json.indexOf(searchKey);
+        if (keyIndex < 0) return null;
+
+        int braceStart = json.indexOf('{', keyIndex + searchKey.length());
+        if (braceStart < 0) return null;
+
+        // Find matching close brace
+        int depth = 1;
+        int braceEnd = braceStart + 1;
+        while (braceEnd < json.length() && depth > 0) {
+            char c = json.charAt(braceEnd);
+            if (c == '{') depth++;
+            else if (c == '}') depth--;
+            braceEnd++;
+        }
+
+        String inner = json.substring(braceStart + 1, braceEnd - 1).trim();
+        if (inner.isEmpty()) return java.util.Map.of();
+
+        // Parse "key": number pairs
+        java.util.Map<String, Long> result = new java.util.LinkedHashMap<>();
+        int i = 0;
+        while (i < inner.length()) {
+            int qs1 = inner.indexOf('"', i);
+            if (qs1 < 0) break;
+            int qe1 = inner.indexOf('"', qs1 + 1);
+            if (qe1 < 0) break;
+            String k = inner.substring(qs1 + 1, qe1);
+
+            int colonIdx = inner.indexOf(':', qe1 + 1);
+            if (colonIdx < 0) break;
+
+            // Find the number value (skip whitespace, read until comma/end)
+            int numStart = colonIdx + 1;
+            while (numStart < inner.length() && Character.isWhitespace(inner.charAt(numStart))) numStart++;
+
+            int numEnd = numStart;
+            while (numEnd < inner.length() && (Character.isDigit(inner.charAt(numEnd)) ||
+                   inner.charAt(numEnd) == '-' || inner.charAt(numEnd) == 'x' ||
+                   inner.charAt(numEnd) == 'X' ||
+                   (inner.charAt(numEnd) >= 'a' && inner.charAt(numEnd) <= 'f') ||
+                   (inner.charAt(numEnd) >= 'A' && inner.charAt(numEnd) <= 'F'))) {
+                numEnd++;
+            }
+
+            String numStr = inner.substring(numStart, numEnd).trim();
+            try {
+                long value;
+                if (numStr.startsWith("0x") || numStr.startsWith("0X")) {
+                    value = Long.parseLong(numStr.substring(2), 16);
+                } else {
+                    value = Long.parseLong(numStr);
+                }
+                result.put(k, value);
+            } catch (NumberFormatException e) {
+                // skip invalid values
+            }
+            i = numEnd;
+        }
+        return result;
+    }
+
     /**
      * Helper method to create a pagination handler
      */

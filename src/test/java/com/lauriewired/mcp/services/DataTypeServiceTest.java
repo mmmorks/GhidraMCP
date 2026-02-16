@@ -50,97 +50,134 @@ public class DataTypeServiceTest {
         assertEquals("No program loaded", result);
     }
 
+    // Tests for updateStructure
+
     @Test
-    @DisplayName("renameStructField returns error when no program is loaded")
-    void testRenameStructField_NoProgram() {
-        String result = dataTypeService.renameStructField("TestStruct", "oldField", "newField");
+    @DisplayName("updateStructure returns error when no program is loaded")
+    void testUpdateStructure_NoProgram() {
+        String result = dataTypeService.updateStructure("TestStruct", null, null, null, null);
         assertEquals("No program loaded", result);
     }
 
     @Test
-    @DisplayName("renameStructField returns error for null struct name")
-    void testRenameStructField_NullStructName() {
-        String result = dataTypeService.renameStructField(null, "oldField", "newField");
+    @DisplayName("updateStructure returns error for null name")
+    void testUpdateStructure_NullName() {
+        String result = dataTypeService.updateStructure(null, null, null, null, null);
+        assertEquals("Structure name is required", result);
+    }
+
+    @Test
+    @DisplayName("updateStructure returns error for empty name")
+    void testUpdateStructure_EmptyName() {
+        String result = dataTypeService.updateStructure("", null, null, null, null);
+        assertEquals("Structure name is required", result);
+    }
+
+    @Test
+    @DisplayName("updateStructure with all optional params null returns no program loaded")
+    void testUpdateStructure_AllOptionalNull() {
+        String result = dataTypeService.updateStructure("MyStruct", "NewName", 64, null, null);
         assertEquals("No program loaded", result);
     }
 
     @Test
-    @DisplayName("renameStructField returns error for null old field name")
-    void testRenameStructField_NullOldFieldName() {
-        String result = dataTypeService.renameStructField("TestStruct", null, "newField");
+    @DisplayName("updateStructure with field renames returns no program loaded")
+    void testUpdateStructure_WithFieldRenames() {
+        java.util.Map<String, String> renames = java.util.Map.of("old_field", "new_field");
+        String result = dataTypeService.updateStructure("MyStruct", null, null, renames, null);
         assertEquals("No program loaded", result);
     }
 
     @Test
-    @DisplayName("renameStructField returns error for null new field name")
-    void testRenameStructField_NullNewFieldName() {
-        String result = dataTypeService.renameStructField("TestStruct", "oldField", null);
+    @DisplayName("updateStructure with type changes returns no program loaded")
+    void testUpdateStructure_WithTypeChanges() {
+        java.util.Map<String, String> types = java.util.Map.of("field1", "int");
+        String result = dataTypeService.updateStructure("MyStruct", null, null, null, types);
+        assertEquals("No program loaded", result);
+    }
+
+    // Tests for updateEnum
+
+    @Test
+    @DisplayName("updateEnum returns error when no program is loaded")
+    void testUpdateEnum_NoProgram() {
+        String result = dataTypeService.updateEnum("TestEnum", null, null, null, null);
         assertEquals("No program loaded", result);
     }
 
     @Test
-    @DisplayName("renameStructField handles empty struct name")
-    void testRenameStructField_EmptyStructName() {
-        String result = dataTypeService.renameStructField("", "oldField", "newField");
+    @DisplayName("updateEnum returns error for null name")
+    void testUpdateEnum_NullName() {
+        String result = dataTypeService.updateEnum(null, null, null, null, null);
+        assertEquals("Enum name is required", result);
+    }
+
+    @Test
+    @DisplayName("updateEnum returns error for empty name")
+    void testUpdateEnum_EmptyName() {
+        String result = dataTypeService.updateEnum("", null, null, null, null);
+        assertEquals("Enum name is required", result);
+    }
+
+    @Test
+    @DisplayName("updateEnum with all optional params returns no program loaded")
+    void testUpdateEnum_AllOptional() {
+        String result = dataTypeService.updateEnum("MyEnum", "NewName", 2, null, null);
         assertEquals("No program loaded", result);
     }
 
     @Test
-    @DisplayName("renameStructField handles empty old field name")
-    void testRenameStructField_EmptyOldFieldName() {
-        String result = dataTypeService.renameStructField("TestStruct", "", "newField");
+    @DisplayName("updateEnum with value renames returns no program loaded")
+    void testUpdateEnum_WithValueRenames() {
+        java.util.Map<String, String> renames = java.util.Map.of("OLD", "NEW");
+        String result = dataTypeService.updateEnum("MyEnum", null, null, renames, null);
         assertEquals("No program loaded", result);
     }
 
     @Test
-    @DisplayName("renameStructField handles empty new field name")
-    void testRenameStructField_EmptyNewFieldName() {
-        String result = dataTypeService.renameStructField("TestStruct", "oldField", "");
+    @DisplayName("updateEnum with value changes returns no program loaded")
+    void testUpdateEnum_WithValueChanges() {
+        java.util.Map<String, Long> changes = java.util.Map.of("VAL", 42L);
+        String result = dataTypeService.updateEnum("MyEnum", null, null, null, changes);
         assertEquals("No program loaded", result);
     }
 
-    @Test
-    @DisplayName("renameStructField handles field pattern matching")
-    void testRenameStructField_FieldPattern() {
-        String result = dataTypeService.renameStructField("TestStruct", "field0_0x00", "newField");
-        assertEquals("No program loaded", result);
-    }
-
-    // Tests for structure renaming
+    // Tests for resolveFieldKey
 
     @Test
-    @DisplayName("renameStructure returns error when no program is loaded")
-    void testRenameStructure_NoProgram() {
-        String result = dataTypeService.renameStructure("OldStruct", "NewStruct");
-        assertEquals("No program loaded", result);
+    @DisplayName("resolveFieldKey returns existing name when it exists")
+    void testResolveFieldKey_ExistingName() {
+        java.util.Set<String> existing = java.util.Set.of("field_a", "field_b");
+        java.util.Map<String, String> reverseRenames = java.util.Map.of();
+        String result = dataTypeService.resolveFieldKey("field_a", reverseRenames, existing);
+        assertEquals("field_a", result);
     }
 
     @Test
-    @DisplayName("renameStructure returns error for null old name")
-    void testRenameStructure_NullOldName() {
-        String result = dataTypeService.renameStructure(null, "NewStruct");
-        assertEquals("Current structure name is required", result);
+    @DisplayName("resolveFieldKey resolves new name to old name via reverse rename")
+    void testResolveFieldKey_NewNameResolvesToOld() {
+        java.util.Set<String> existing = java.util.Set.of("field_a");
+        java.util.Map<String, String> reverseRenames = java.util.Map.of("field_b", "field_a");
+        String result = dataTypeService.resolveFieldKey("field_b", reverseRenames, existing);
+        assertEquals("field_a", result);
     }
 
     @Test
-    @DisplayName("renameStructure returns error for empty old name")
-    void testRenameStructure_EmptyOldName() {
-        String result = dataTypeService.renameStructure("", "NewStruct");
-        assertEquals("Current structure name is required", result);
+    @DisplayName("resolveFieldKey returns error for ambiguous key")
+    void testResolveFieldKey_Ambiguous() {
+        java.util.Set<String> existing = java.util.Set.of("field_a", "field_b");
+        java.util.Map<String, String> reverseRenames = java.util.Map.of("field_b", "field_a");
+        String result = dataTypeService.resolveFieldKey("field_b", reverseRenames, existing);
+        assert result.startsWith("ERROR:Ambiguous");
     }
 
     @Test
-    @DisplayName("renameStructure returns error for null new name")
-    void testRenameStructure_NullNewName() {
-        String result = dataTypeService.renameStructure("OldStruct", null);
-        assertEquals("New structure name is required", result);
-    }
-
-    @Test
-    @DisplayName("renameStructure returns error for empty new name")
-    void testRenameStructure_EmptyNewName() {
-        String result = dataTypeService.renameStructure("OldStruct", "");
-        assertEquals("New structure name is required", result);
+    @DisplayName("resolveFieldKey returns error for not found key")
+    void testResolveFieldKey_NotFound() {
+        java.util.Set<String> existing = java.util.Set.of("field_a");
+        java.util.Map<String, String> reverseRenames = java.util.Map.of();
+        String result = dataTypeService.resolveFieldKey("nonexistent", reverseRenames, existing);
+        assert result.startsWith("ERROR:");
     }
 
     @Test
@@ -470,6 +507,126 @@ public class DataTypeServiceTest {
         
         // This test just documents the expected behavior
         // Real testing would require mocking Ghidra's DataTypeManager
+    }
+
+    // Tests for createStructure with inline fields
+
+    @Test
+    @DisplayName("createStructure with fields returns error when no program is loaded")
+    void testCreateStructureWithFields_NoProgram() {
+        java.util.List<String[]> fields = java.util.List.of(
+            new String[]{"x", "int"}, new String[]{"y", "int"});
+        String result = dataTypeService.createStructure("POINT", 0, null, fields);
+        assertEquals("No program loaded", result);
+    }
+
+    @Test
+    @DisplayName("createStructure with empty fields works like no fields")
+    void testCreateStructureWithFields_EmptyList() {
+        String result = dataTypeService.createStructure("TestStruct", 0, null,
+            java.util.List.of());
+        assertEquals("No program loaded", result);
+    }
+
+    @Test
+    @DisplayName("createStructure with null fields works like no fields")
+    void testCreateStructureWithFields_NullFields() {
+        String result = dataTypeService.createStructure("TestStruct", 0, null, null);
+        assertEquals("No program loaded", result);
+    }
+
+    // Tests for createEnum with inline values
+
+    @Test
+    @DisplayName("createEnum with values returns error when no program is loaded")
+    void testCreateEnumWithValues_NoProgram() {
+        java.util.Map<String, Long> values = java.util.Map.of("READ", 1L, "WRITE", 2L);
+        String result = dataTypeService.createEnum("FileFlags", 4, null, values);
+        assertEquals("No program loaded", result);
+    }
+
+    @Test
+    @DisplayName("createEnum with empty values works like no values")
+    void testCreateEnumWithValues_EmptyMap() {
+        String result = dataTypeService.createEnum("TestEnum", 4, null,
+            java.util.Map.of());
+        assertEquals("No program loaded", result);
+    }
+
+    @Test
+    @DisplayName("createEnum with null values works like no values")
+    void testCreateEnumWithValues_NullValues() {
+        String result = dataTypeService.createEnum("TestEnum", 4, null, null);
+        assertEquals("No program loaded", result);
+    }
+
+    @Test
+    @DisplayName("createEnum with values still validates size")
+    void testCreateEnumWithValues_InvalidSize() {
+        java.util.Map<String, Long> values = java.util.Map.of("A", 1L);
+        String result = dataTypeService.createEnum("TestEnum", 3, null, values);
+        assertEquals("Enum size must be 1, 2, 4, or 8 bytes", result);
+    }
+
+    @Test
+    @DisplayName("createEnum with values still validates name")
+    void testCreateEnumWithValues_NullName() {
+        java.util.Map<String, Long> values = java.util.Map.of("A", 1L);
+        String result = dataTypeService.createEnum(null, 4, null, values);
+        assertEquals("Enum name is required", result);
+    }
+
+    // Tests for listDataTypes
+
+    @Test
+    @DisplayName("listDataTypes returns error when no program is loaded")
+    void testListDataTypes_NoProgram() {
+        String result = dataTypeService.listDataTypes("all", 0, 10);
+        assertEquals("No program loaded", result);
+    }
+
+    @Test
+    @DisplayName("listDataTypes handles struct filter")
+    void testListDataTypes_StructFilter() {
+        String result = dataTypeService.listDataTypes("struct", 0, 10);
+        assertEquals("No program loaded", result);
+    }
+
+    @Test
+    @DisplayName("listDataTypes handles enum filter")
+    void testListDataTypes_EnumFilter() {
+        String result = dataTypeService.listDataTypes("enum", 0, 10);
+        assertEquals("No program loaded", result);
+    }
+
+    @Test
+    @DisplayName("listDataTypes handles null kind")
+    void testListDataTypes_NullKind() {
+        String result = dataTypeService.listDataTypes(null, 0, 10);
+        assertEquals("No program loaded", result);
+    }
+
+    // Tests for getDataType
+
+    @Test
+    @DisplayName("getDataType returns error when no program is loaded")
+    void testGetDataType_NoProgram() {
+        String result = dataTypeService.getDataType("POINT");
+        assertEquals("No program loaded", result);
+    }
+
+    @Test
+    @DisplayName("getDataType returns error for null name")
+    void testGetDataType_NullName() {
+        String result = dataTypeService.getDataType(null);
+        assertEquals("No program loaded", result);
+    }
+
+    @Test
+    @DisplayName("getDataType returns error for empty name")
+    void testGetDataType_EmptyName() {
+        String result = dataTypeService.getDataType("");
+        assertEquals("No program loaded", result);
     }
 
     // Tests for findDataTypeUsage - null/error cases

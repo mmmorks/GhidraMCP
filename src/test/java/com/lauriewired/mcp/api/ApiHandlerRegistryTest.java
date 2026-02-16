@@ -1,7 +1,11 @@
 package com.lauriewired.mcp.api;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -120,63 +124,65 @@ class ApiHandlerRegistryTest {
         registry.registerAllEndpoints();
 
         // Verify that all expected endpoints were registered
-        // Function endpoints - using new standardized names
-        verify(mockHttpServer).createContext(eq("/list_methods"), any(HttpHandler.class));
-        verify(mockHttpServer).createContext(eq("/decompile_function"), any(HttpHandler.class));
+        // Function endpoints (consolidated)
+        verify(mockHttpServer).createContext(eq("/list_functions"), any(HttpHandler.class));
+        verify(mockHttpServer).createContext(eq("/get_function_code"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/rename_function"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/get_function_by_address"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/get_current_address"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/get_current_function"), any(HttpHandler.class));
-        verify(mockHttpServer).createContext(eq("/list_functions"), any(HttpHandler.class));
-        verify(mockHttpServer).createContext(eq("/decompile_function_by_address"), any(HttpHandler.class));
-        verify(mockHttpServer).createContext(eq("/disassemble_function"), any(HttpHandler.class));
-        verify(mockHttpServer).createContext(eq("/rename_function_by_address"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/search_functions_by_name"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/set_function_prototype"), any(HttpHandler.class));
 
-        // Namespace endpoints
-        verify(mockHttpServer).createContext(eq("/list_classes"), any(HttpHandler.class));
-        verify(mockHttpServer).createContext(eq("/list_namespaces"), any(HttpHandler.class));
+        // Namespace endpoints (only symbols and symbol address remain)
         verify(mockHttpServer).createContext(eq("/list_symbols"), any(HttpHandler.class));
-        verify(mockHttpServer).createContext(eq("/list_imports"), any(HttpHandler.class));
-        verify(mockHttpServer).createContext(eq("/list_exports"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/get_symbol_address"), any(HttpHandler.class));
 
         // DataType endpoints
-        verify(mockHttpServer).createContext(eq("/list_structures"), any(HttpHandler.class));
-        verify(mockHttpServer).createContext(eq("/rename_structure"), any(HttpHandler.class));
-        verify(mockHttpServer).createContext(eq("/rename_struct_field"), any(HttpHandler.class));
+        verify(mockHttpServer).createContext(eq("/list_data_types"), any(HttpHandler.class));
+        verify(mockHttpServer).createContext(eq("/get_data_type"), any(HttpHandler.class));
+        verify(mockHttpServer).createContext(eq("/update_structure"), any(HttpHandler.class));
+        verify(mockHttpServer).createContext(eq("/update_enum"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/create_structure"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/add_structure_field"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/create_enum"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/add_enum_value"), any(HttpHandler.class));
-        verify(mockHttpServer).createContext(eq("/list_enums"), any(HttpHandler.class));
+        verify(mockHttpServer).createContext(eq("/find_data_type_usage"), any(HttpHandler.class));
 
         // Analysis endpoints
         verify(mockHttpServer).createContext(eq("/list_references"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/analyze_control_flow"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/analyze_data_flow"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/analyze_call_graph"), any(HttpHandler.class));
+        verify(mockHttpServer).createContext(eq("/list_references_from"), any(HttpHandler.class));
+        verify(mockHttpServer).createContext(eq("/get_function_callers"), any(HttpHandler.class));
+        verify(mockHttpServer).createContext(eq("/get_call_hierarchy"), any(HttpHandler.class));
 
         // Memory endpoints
-        verify(mockHttpServer).createContext(eq("/list_segments"), any(HttpHandler.class));
+        verify(mockHttpServer).createContext(eq("/get_memory_layout"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/list_data_items"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/rename_data"), any(HttpHandler.class));
-        verify(mockHttpServer).createContext(eq("/set_memory_data_type"), any(HttpHandler.class));
+        verify(mockHttpServer).createContext(eq("/set_address_data_type"), any(HttpHandler.class));
+        verify(mockHttpServer).createContext(eq("/read_memory"), any(HttpHandler.class));
+        verify(mockHttpServer).createContext(eq("/get_memory_permissions"), any(HttpHandler.class));
+        verify(mockHttpServer).createContext(eq("/get_address_data_type"), any(HttpHandler.class));
 
         // Comment endpoints
         verify(mockHttpServer).createContext(eq("/set_decompiler_comment"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/set_disassembly_comment"), any(HttpHandler.class));
-        
+        verify(mockHttpServer).createContext(eq("/get_comments"), any(HttpHandler.class));
+        verify(mockHttpServer).createContext(eq("/get_decompiler_comment"), any(HttpHandler.class));
+        verify(mockHttpServer).createContext(eq("/get_disassembly_comment"), any(HttpHandler.class));
+
         // Search endpoints
         verify(mockHttpServer).createContext(eq("/search_memory"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/search_disassembly"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/search_decompiled"), any(HttpHandler.class));
-        
+
         // Variable endpoints
-        verify(mockHttpServer).createContext(eq("/rename_variable"), any(HttpHandler.class));
+        verify(mockHttpServer).createContext(eq("/rename_variables"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/split_variable"), any(HttpHandler.class));
-        verify(mockHttpServer).createContext(eq("/set_local_variable_type"), any(HttpHandler.class));
+        verify(mockHttpServer).createContext(eq("/set_variable_types"), any(HttpHandler.class));
     }
 
     @Test
@@ -193,6 +199,107 @@ class ApiHandlerRegistryTest {
     }
 
     @Test
+    void testExtractJsonString() {
+        String json = """
+            {"function_name": "main", "renames": {"a": "b"}}""";
+        assertEquals("main", ApiHandlerRegistry.extractJsonString(json, "function_name"));
+        assertNull(ApiHandlerRegistry.extractJsonString(json, "nonexistent"));
+    }
+
+    @Test
+    void testExtractJsonObject() {
+        String json = """
+            {"function_name": "main", "renames": {"local_10": "buf", "local_14": "size"}}""";
+        Map<String, String> result = ApiHandlerRegistry.extractJsonObject(json, "renames");
+        assertEquals(2, result.size());
+        assertEquals("buf", result.get("local_10"));
+        assertEquals("size", result.get("local_14"));
+    }
+
+    @Test
+    void testExtractJsonObject_Empty() {
+        String json = """
+            {"function_name": "main", "renames": {}}""";
+        Map<String, String> result = ApiHandlerRegistry.extractJsonObject(json, "renames");
+        assertEquals(0, result.size());
+    }
+
+    @Test
+    void testExtractJsonArrayOfPairs() {
+        String json = """
+            {"name": "MY_STRUCT", "fields": [["x", "int"], ["y", "int"], ["name", "char[32]"]]}""";
+        var result = ApiHandlerRegistry.extractJsonArrayOfPairs(json, "fields");
+        assertNotNull(result);
+        assertEquals(3, result.size());
+        assertEquals("x", result.get(0)[0]);
+        assertEquals("int", result.get(0)[1]);
+        assertEquals("name", result.get(2)[0]);
+        assertEquals("char[32]", result.get(2)[1]);
+    }
+
+    @Test
+    void testExtractJsonArrayOfPairs_Empty() {
+        String json = """
+            {"name": "MY_STRUCT", "fields": []}""";
+        var result = ApiHandlerRegistry.extractJsonArrayOfPairs(json, "fields");
+        assertNotNull(result);
+        assertEquals(0, result.size());
+    }
+
+    @Test
+    void testExtractJsonArrayOfPairs_Missing() {
+        String json = """
+            {"name": "MY_STRUCT"}""";
+        var result = ApiHandlerRegistry.extractJsonArrayOfPairs(json, "fields");
+        assertNull(result);
+    }
+
+    @Test
+    void testExtractJsonInt() {
+        String json = """
+            {"name": "MyStruct", "size": 64, "new_name": "Renamed"}""";
+        assertEquals(64, ApiHandlerRegistry.extractJsonInt(json, "size"));
+        assertNull(ApiHandlerRegistry.extractJsonInt(json, "nonexistent"));
+        assertNull(ApiHandlerRegistry.extractJsonInt(json, "name"));
+    }
+
+    @Test
+    void testExtractJsonInt_QuotedNumber() {
+        String json = """
+            {"name": "MyStruct", "size": "32"}""";
+        assertEquals(32, ApiHandlerRegistry.extractJsonInt(json, "size"));
+    }
+
+    @Test
+    void testExtractJsonLongObject() {
+        String json = """
+            {"name": "MY_FLAGS", "values": {"FLAG_READ": 1, "FLAG_WRITE": 2, "FLAG_EXEC": 4}}""";
+        var result = ApiHandlerRegistry.extractJsonLongObject(json, "values");
+        assertNotNull(result);
+        assertEquals(3, result.size());
+        assertEquals(1L, result.get("FLAG_READ"));
+        assertEquals(2L, result.get("FLAG_WRITE"));
+        assertEquals(4L, result.get("FLAG_EXEC"));
+    }
+
+    @Test
+    void testExtractJsonLongObject_Empty() {
+        String json = """
+            {"name": "MY_FLAGS", "values": {}}""";
+        var result = ApiHandlerRegistry.extractJsonLongObject(json, "values");
+        assertNotNull(result);
+        assertEquals(0, result.size());
+    }
+
+    @Test
+    void testExtractJsonLongObject_Missing() {
+        String json = """
+            {"name": "MY_FLAGS"}""";
+        var result = ApiHandlerRegistry.extractJsonLongObject(json, "values");
+        assertNull(result);
+    }
+
+    @Test
     void testEndpointCount() {
         // Setup mock to return the HTTP server
         when(mockServerManager.isServerRunning()).thenReturn(true);
@@ -203,7 +310,7 @@ class ApiHandlerRegistryTest {
         registry.registerAllEndpoints();
 
         // Verify the expected number of endpoints were registered
-        // Updated to 55 after adding rename_structure endpoint
-        verify(mockHttpServer, times(55)).createContext(anyString(), any(HttpHandler.class));
+        // 44 endpoints total
+        verify(mockHttpServer, times(44)).createContext(anyString(), any(HttpHandler.class));
     }
 }

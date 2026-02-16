@@ -3,9 +3,13 @@ package com.lauriewired.mcp.services;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -94,107 +98,348 @@ public class DataTypeService {
     }
 
     /**
-     * Rename a field within a structure data type
+     * Bulk update a structure: rename fields, change field types, resize, and/or rename the struct.
+     * All changes are applied in a single transaction with per-field error reporting.
      *
-     * @param structName structure name
-     * @param oldFieldName current field name
-     * @param newFieldName new field name
-     * @return status message
+     * @param name current structure name (required)
+     * @param newName new name for the struct (optional)
+     * @param size new size in bytes (optional)
+     * @param fieldRenames map of old field name to new field name (optional)
+     * @param typeChanges map of field name (old or new) to new data type name (optional)
+     * @return status message with per-field results
      */
-    public String renameStructField(String structName, String oldFieldName, String newFieldName) {
+    public String updateStructure(String name, String newName, Integer size,
+                                   Map<String, String> fieldRenames,
+                                   Map<String, String> typeChanges) {
+        if (name == null || name.isEmpty()) {
+            return "Structure name is required";
+        }
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
-        if (structName == null || oldFieldName == null || newFieldName == null) {
-            return "Structure name, old field name, and new field name are required";
-        }
 
-        try (var tx = ProgramTransaction.start(program, "Rename struct field")) {
+        try (var tx = ProgramTransaction.start(program, "Update structure")) {
             ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
-            DataType dt = findDataTypeByNameInAllCategories(dtm, structName);
-            Structure struct = (dt instanceof Structure) ? (Structure) dt : null;
-            if (struct == null) {
-                return "Failed to rename field";
+            DataType dt = findDataTypeByNameInAllCategories(dtm, name);
+            if (!(dt instanceof Structure)) {
+                return "Structure '" + name + "' not found";
+            }
+            Structure struct = (Structure) dt;
+
+            List<String> results = new ArrayList<>();
+            int succeeded = 0;
+            int failed = 0;
+
+            // Build set of existing field names
+            Set<String> existingNames = new HashSet<>();
+            for (int i = 0; i < struct.getNumComponents(); i++) {
+                DataTypeComponent comp = struct.getComponent(i);
+                String fn = comp.getFieldName();
+                if (fn != null) existingNames.add(fn);
             }
 
-            boolean success = false;
-            // Check if oldFieldName matches pattern "field<N>_0x<offset>"
-            if (oldFieldName.matches("field\\d+_0x[0-9a-fA-F]+")) {
-                int index = Integer.parseInt(oldFieldName.substring(5, oldFieldName.indexOf('_')));
-                if (index >= 0 && index < struct.getNumComponents()) {
-                    DataTypeComponent component = struct.getComponent(index);
-                    struct.replace(index, component.getDataType(), component.getLength(),
-                                newFieldName, component.getComment());
-                    success = true;
+            // Build reverse lookup: new_name -> old_name from fieldRenames
+            Map<String, String> reverseRenames = new HashMap<>();
+            if (fieldRenames != null) {
+                for (Map.Entry<String, String> entry : fieldRenames.entrySet()) {
+                    reverseRenames.put(entry.getValue(), entry.getKey());
                 }
-            } else {
-                for (int i = 0; i < struct.getNumComponents(); i++) {
-                    DataTypeComponent component = struct.getComponent(i);
-                    if ((component.getFieldName() != null) &&
-                        component.getFieldName().equals(oldFieldName)) {
-                        struct.replace(i, component.getDataType(), component.getLength(),
-                                    newFieldName, component.getComment());
-                        success = true;
-                        break;
+            }
+
+            // Resolve typeChanges keys to old field names
+            Map<String, String> resolvedTypeChanges = new LinkedHashMap<>();
+            if (typeChanges != null) {
+                for (Map.Entry<String, String> entry : typeChanges.entrySet()) {
+                    String key = entry.getKey();
+                    String resolved = resolveFieldKey(key, reverseRenames, existingNames);
+                    if (resolved.startsWith("ERROR:")) {
+                        results.add("  " + key + " -> " + resolved.substring(6) + " [FAILED]");
+                        failed++;
+                    } else {
+                        resolvedTypeChanges.put(resolved, entry.getValue());
                     }
                 }
             }
 
-            if (success) {
-                tx.commit();
-                return "Field renamed successfully";
+            // Apply field renames and type changes
+            if (fieldRenames != null) {
+                for (Map.Entry<String, String> entry : fieldRenames.entrySet()) {
+                    String oldFieldName = entry.getKey();
+                    String newFieldName = entry.getValue();
+                    String newTypeName = resolvedTypeChanges.remove(oldFieldName);
+
+                    int idx = findComponentIndex(struct, oldFieldName);
+                    if (idx < 0) {
+                        results.add("  " + oldFieldName + " -> not found [FAILED]");
+                        failed++;
+                        continue;
+                    }
+
+                    DataTypeComponent comp = struct.getComponent(idx);
+                    DataType fieldType = comp.getDataType();
+                    int fieldLen = comp.getLength();
+
+                    if (newTypeName != null) {
+                        DataType resolved = resolveDataType(dtm, newTypeName);
+                        if (resolved != null) {
+                            fieldType = resolved;
+                            fieldLen = resolved.getLength();
+                        } else {
+                            results.add("  " + oldFieldName + " -> renamed to '" + newFieldName +
+                                    "', type '" + newTypeName + "' not found [PARTIAL]");
+                            struct.replace(idx, comp.getDataType(), comp.getLength(),
+                                    newFieldName, comp.getComment());
+                            succeeded++;
+                            continue;
+                        }
+                    }
+
+                    struct.replace(idx, fieldType, fieldLen, newFieldName, comp.getComment());
+                    StringBuilder msg = new StringBuilder("  " + oldFieldName + " -> renamed to '" + newFieldName + "'");
+                    if (newTypeName != null) msg.append(", type changed to '").append(newTypeName).append("'");
+                    msg.append(" [OK]");
+                    results.add(msg.toString());
+                    succeeded++;
+                }
             }
-            return "Failed to rename field";
-        } catch (RuntimeException e) {
-            Msg.error(this, "Error renaming struct field", e);
-            return "Failed to rename field: " + e.getMessage();
+
+            // Apply remaining type-only changes (not covered by renames)
+            for (Map.Entry<String, String> entry : resolvedTypeChanges.entrySet()) {
+                String fieldName = entry.getKey();
+                String newTypeName = entry.getValue();
+
+                int idx = findComponentIndex(struct, fieldName);
+                if (idx < 0) {
+                    results.add("  " + fieldName + " -> not found [FAILED]");
+                    failed++;
+                    continue;
+                }
+
+                DataTypeComponent comp = struct.getComponent(idx);
+                DataType resolved = resolveDataType(dtm, newTypeName);
+                if (resolved == null) {
+                    results.add("  " + fieldName + " -> type '" + newTypeName + "' not found [FAILED]");
+                    failed++;
+                    continue;
+                }
+
+                struct.replace(idx, resolved, resolved.getLength(),
+                        comp.getFieldName(), comp.getComment());
+                results.add("  " + fieldName + " -> type changed to '" + newTypeName + "' [OK]");
+                succeeded++;
+            }
+
+            // Apply size change
+            if (size != null && size > struct.getLength()) {
+                struct.growStructure(size - struct.getLength());
+                results.add("Size changed to " + size + " bytes");
+            }
+
+            // Rename struct last
+            if (newName != null && !newName.isEmpty()) {
+                try {
+                    dt.setName(newName);
+                    results.add("Struct renamed from '" + name + "' to '" + newName + "'");
+                } catch (Exception e) {
+                    results.add("Struct rename failed: " + e.getMessage() + " [FAILED]");
+                    failed++;
+                }
+            }
+
+            tx.commit();
+
+            StringBuilder sb = new StringBuilder("Updated structure '" + name + "':\n");
+            for (String r : results) sb.append(r).append("\n");
+            sb.append("Summary: ").append(succeeded).append(" succeeded, ").append(failed).append(" failed");
+            return sb.toString();
+        } catch (Exception e) {
+            Msg.error(this, "Error updating structure", e);
+            return "Failed to update structure: " + e.getMessage();
         }
     }
 
     /**
-     * Rename a structure data type
+     * Bulk update an enum: rename values, change numeric values, resize, and/or rename the enum.
+     * All changes are applied in a single transaction with per-entry error reporting.
      *
-     * @param oldName current structure name
-     * @param newName new structure name
-     * @return status message
+     * @param name current enum name (required)
+     * @param newName new name for the enum (optional)
+     * @param size new size in bytes, must be 1, 2, 4, or 8 (optional)
+     * @param valueRenames map of old value name to new value name (optional)
+     * @param valueChanges map of value name (old or new) to new numeric value (optional)
+     * @return status message with per-entry results
      */
-    public String renameStructure(String oldName, String newName) {
-        if (oldName == null || oldName.isEmpty()) {
-            return "Current structure name is required";
-        }
-        if (newName == null || newName.isEmpty()) {
-            return "New structure name is required";
+    public String updateEnum(String name, String newName, Integer size,
+                              Map<String, String> valueRenames,
+                              Map<String, Long> valueChanges) {
+        if (name == null || name.isEmpty()) {
+            return "Enum name is required";
         }
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
 
-        try (var tx = ProgramTransaction.start(program, "Rename structure")) {
+        try (var tx = ProgramTransaction.start(program, "Update enum")) {
             ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
-            DataType dt = findDataTypeByNameInAllCategories(dtm, oldName);
-            if (dt == null) {
-                return "Structure '" + oldName + "' not found";
+            DataType dt = findDataTypeByNameInAllCategories(dtm, name);
+            if (!(dt instanceof Enum)) {
+                return "Enum '" + name + "' not found";
             }
-            if (!(dt instanceof Structure)) {
-                return "'" + oldName + "' is not a structure";
+            Enum enumType = (Enum) dt;
+
+            List<String> results = new ArrayList<>();
+            int succeeded = 0;
+            int failed = 0;
+
+            // Build set of existing value names
+            Set<String> existingNames = new HashSet<>();
+            for (String n : enumType.getNames()) {
+                existingNames.add(n);
             }
 
-            DataType existing = findDataTypeByNameInAllCategories(dtm, newName);
-            if (existing != null) {
-                return "A data type named '" + newName + "' already exists";
+            // Build reverse lookup: new_name -> old_name from valueRenames
+            Map<String, String> reverseRenames = new HashMap<>();
+            if (valueRenames != null) {
+                for (Map.Entry<String, String> entry : valueRenames.entrySet()) {
+                    reverseRenames.put(entry.getValue(), entry.getKey());
+                }
             }
 
-            dt.setName(newName);
+            // Resolve valueChanges keys to old value names
+            Map<String, Long> resolvedValueChanges = new LinkedHashMap<>();
+            if (valueChanges != null) {
+                for (Map.Entry<String, Long> entry : valueChanges.entrySet()) {
+                    String key = entry.getKey();
+                    String resolved = resolveFieldKey(key, reverseRenames, existingNames);
+                    if (resolved.startsWith("ERROR:")) {
+                        results.add("  " + key + " -> " + resolved.substring(6) + " [FAILED]");
+                        failed++;
+                    } else {
+                        resolvedValueChanges.put(resolved, entry.getValue());
+                    }
+                }
+            }
+
+            // Phase 1: Gather current values and remove entries that need updating
+            // Phase 2: Re-add with new names/values
+            if (valueRenames != null) {
+                for (Map.Entry<String, String> entry : valueRenames.entrySet()) {
+                    String oldValName = entry.getKey();
+                    String newValName = entry.getValue();
+
+                    if (!existingNames.contains(oldValName)) {
+                        results.add("  " + oldValName + " -> not found [FAILED]");
+                        failed++;
+                        continue;
+                    }
+
+                    long currentValue = enumType.getValue(oldValName);
+                    Long newValue = resolvedValueChanges.remove(oldValName);
+                    long finalValue = (newValue != null) ? newValue : currentValue;
+
+                    enumType.remove(oldValName);
+                    enumType.add(newValName, finalValue);
+
+                    StringBuilder msg = new StringBuilder("  " + oldValName + " -> renamed to '" + newValName + "'");
+                    if (newValue != null) msg.append(", value changed to ").append(finalValue);
+                    msg.append(" [OK]");
+                    results.add(msg.toString());
+                    succeeded++;
+                }
+            }
+
+            // Apply remaining value-only changes
+            for (Map.Entry<String, Long> entry : resolvedValueChanges.entrySet()) {
+                String valName = entry.getKey();
+                long newValue = entry.getValue();
+
+                if (!existingNames.contains(valName)) {
+                    results.add("  " + valName + " -> not found [FAILED]");
+                    failed++;
+                    continue;
+                }
+
+                enumType.remove(valName);
+                enumType.add(valName, newValue);
+                results.add("  " + valName + " -> value changed to " + newValue + " [OK]");
+                succeeded++;
+            }
+
+            // Apply size change
+            if (size != null) {
+                if (size != 1 && size != 2 && size != 4 && size != 8) {
+                    results.add("Invalid enum size: " + size + " (must be 1, 2, 4, or 8) [FAILED]");
+                    failed++;
+                } else {
+                    // Ghidra doesn't expose a direct setLength — we update via internal API
+                    // The Enum interface doesn't have setLength, but we can cast if needed
+                    // For now, report size change only if it differs
+                    if (size != enumType.getLength()) {
+                        results.add("Size change to " + size + " bytes not supported on existing enum [FAILED]");
+                        failed++;
+                    }
+                }
+            }
+
+            // Rename enum last
+            if (newName != null && !newName.isEmpty()) {
+                try {
+                    dt.setName(newName);
+                    results.add("Enum renamed from '" + name + "' to '" + newName + "'");
+                } catch (Exception e) {
+                    results.add("Enum rename failed: " + e.getMessage() + " [FAILED]");
+                    failed++;
+                }
+            }
+
             tx.commit();
-            return "Structure renamed from '" + oldName + "' to '" + newName + "'";
-        } catch (InvalidNameException e) {
-            Msg.error(this, "Invalid data type name", e);
-            return "Invalid name '" + newName + "': " + e.getMessage();
-        } catch (ghidra.util.exception.DuplicateNameException e) {
-            Msg.error(this, "Duplicate data type name", e);
-            return "A data type named '" + newName + "' already exists";
-        } catch (RuntimeException e) {
-            Msg.error(this, "Error renaming structure", e);
-            return "Failed to rename structure: " + e.getMessage();
+
+            StringBuilder sb = new StringBuilder("Updated enum '" + name + "':\n");
+            for (String r : results) sb.append(r).append("\n");
+            sb.append("Summary: ").append(succeeded).append(" succeeded, ").append(failed).append(" failed");
+            return sb.toString();
+        } catch (Exception e) {
+            Msg.error(this, "Error updating enum", e);
+            return "Failed to update enum: " + e.getMessage();
         }
+    }
+
+    /**
+     * Resolve a key that may be an existing field/value name or a new name from a rename map.
+     *
+     * @param key the key to resolve
+     * @param reverseRenames map of new_name -> old_name
+     * @param existingNames set of currently existing names
+     * @return the resolved old name, or "ERROR:message" if ambiguous or not found
+     */
+    String resolveFieldKey(String key, Map<String, String> reverseRenames, Set<String> existingNames) {
+        boolean isExisting = existingNames.contains(key);
+        String oldFromRename = reverseRenames.get(key);
+        boolean isNewName = oldFromRename != null;
+
+        if (isExisting && isNewName && !key.equals(oldFromRename)) {
+            return "ERROR:Ambiguous key '" + key + "': matches existing field '" + key +
+                    "' and rename target from '" + oldFromRename + "'";
+        }
+        if (isExisting) return key;
+        if (isNewName) return oldFromRename;
+        return "ERROR:Field '" + key + "' not found";
+    }
+
+    /**
+     * Find the component index for a field by name, supporting auto-generated names like "field0_0x0".
+     */
+    private int findComponentIndex(Structure struct, String fieldName) {
+        if (fieldName.matches("field\\d+_0x[0-9a-fA-F]+")) {
+            int index = Integer.parseInt(fieldName.substring(5, fieldName.indexOf('_')));
+            if (index >= 0 && index < struct.getNumComponents()) return index;
+            return -1;
+        }
+        for (int i = 0; i < struct.getNumComponents(); i++) {
+            DataTypeComponent comp = struct.getComponent(i);
+            if (comp.getFieldName() != null && comp.getFieldName().equals(fieldName)) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     /**
@@ -353,6 +598,21 @@ public class DataTypeService {
      * @return status message
      */
     public String createStructure(String structName, int size, String categoryPath) {
+        return createStructure(structName, size, categoryPath, null);
+    }
+
+    /**
+     * Create a new structure data type with optional inline fields.
+     * When fields are provided, the structure and all fields are created in one transaction.
+     *
+     * @param structName name of the structure to create
+     * @param size size of the structure in bytes (0 for auto-size)
+     * @param categoryPath category path for the structure (e.g., "/MyStructures")
+     * @param fields optional list of [fieldName, fieldType] pairs to add immediately
+     * @return status message
+     */
+    public String createStructure(String structName, int size, String categoryPath,
+                                  List<String[]> fields) {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
         if (structName == null || structName.isEmpty()) {
@@ -373,11 +633,31 @@ public class DataTypeService {
             }
 
             StructureDataType struct = new StructureDataType(catPath, structName, size, dtm);
+
+            // Add inline fields if provided
+            if (fields != null && !fields.isEmpty()) {
+                for (String[] field : fields) {
+                    if (field.length < 2) continue;
+                    String fieldName = field[0];
+                    String fieldTypeName = field[1];
+                    DataType fieldType = resolveDataType(dtm, fieldTypeName);
+                    if (fieldType == null) {
+                        return "Failed to resolve field type '" + fieldTypeName +
+                               "' for field '" + fieldName + "'";
+                    }
+                    struct.add(fieldType, -1, fieldName, null);
+                }
+            }
+
             DataType addedType = dtm.addDataType(struct, null);
 
             tx.commit();
-            return "Structure '" + structName + "' created successfully at " +
+            String msg = "Structure '" + structName + "' created successfully at " +
                     addedType.getCategoryPath().getPath();
+            if (fields != null && !fields.isEmpty()) {
+                msg += " with " + fields.size() + " fields";
+            }
+            return msg;
         } catch (Exception e) {
             Msg.error(this, "Error creating structure", e);
             return "Failed to create structure: " + e.getMessage();
@@ -442,6 +722,21 @@ public class DataTypeService {
      * @return status message
      */
     public String createEnum(String enumName, int size, String categoryPath) {
+        return createEnum(enumName, size, categoryPath, null);
+    }
+
+    /**
+     * Create a new enum data type with optional inline values.
+     * When values are provided, the enum and all values are created in one transaction.
+     *
+     * @param enumName name of the enum to create
+     * @param size size of the enum in bytes (1, 2, 4, or 8)
+     * @param categoryPath category path for the enum (e.g., "/MyEnums")
+     * @param values optional map of value name to numeric value
+     * @return status message
+     */
+    public String createEnum(String enumName, int size, String categoryPath,
+                             Map<String, Long> values) {
         if (enumName == null || enumName.isEmpty()) {
             return "Enum name is required";
         }
@@ -466,11 +761,23 @@ public class DataTypeService {
             }
 
             EnumDataType enumType = new EnumDataType(catPath, enumName, size, dtm);
+
+            // Add inline values if provided
+            if (values != null && !values.isEmpty()) {
+                for (var entry : values.entrySet()) {
+                    enumType.add(entry.getKey(), entry.getValue());
+                }
+            }
+
             DataType addedType = dtm.addDataType(enumType, null);
 
             tx.commit();
-            return "Enum '" + enumName + "' created successfully at " +
+            String msg = "Enum '" + enumName + "' created successfully at " +
                     addedType.getCategoryPath().getPath();
+            if (values != null && !values.isEmpty()) {
+                msg += " with " + values.size() + " values";
+            }
+            return msg;
         } catch (Exception e) {
             Msg.error(this, "Error creating enum", e);
             return "Failed to create enum: " + e.getMessage();
@@ -753,6 +1060,161 @@ public class DataTypeService {
         }
         
         return String.join("\n", fields);
+    }
+
+    /**
+     * List data types (structures and/or enums) with pagination and LLM-friendly hints.
+     *
+     * @param kind filter: "all", "struct", or "enum"
+     * @param offset starting index
+     * @param limit maximum number of results
+     * @return paginated list of data types
+     */
+    public String listDataTypes(String kind, int offset, int limit) {
+        Program program = programService.getCurrentProgram();
+        if (program == null) return "No program loaded";
+
+        String normalizedKind = (kind == null || kind.isEmpty()) ? "all" : kind.toLowerCase();
+
+        ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
+        List<String> lines = new ArrayList<>();
+
+        if ("all".equals(normalizedKind) || "struct".equals(normalizedKind)) {
+            List<Structure> structs = new ArrayList<>();
+            dtm.getAllStructures().forEachRemaining(structs::add);
+            Collections.sort(structs, Comparator.comparing(Structure::getName));
+            for (Structure struct : structs) {
+                StringBuilder sb = new StringBuilder();
+                sb.append("[struct] ").append(struct.getName()).append(": {");
+                for (int i = 0; i < struct.getNumComponents(); i++) {
+                    DataTypeComponent comp = struct.getComponent(i);
+                    if (i > 0) sb.append(", ");
+                    sb.append(comp.getDataType().getName())
+                      .append(" ")
+                      .append(comp.getFieldName());
+                }
+                sb.append("}");
+                lines.add(sb.toString());
+            }
+        }
+
+        if ("all".equals(normalizedKind) || "enum".equals(normalizedKind)) {
+            List<Enum> enums = new ArrayList<>();
+            Iterator<DataType> allTypes = dtm.getAllDataTypes();
+            while (allTypes.hasNext()) {
+                DataType dt = allTypes.next();
+                if (dt instanceof Enum enumDataType) {
+                    enums.add(enumDataType);
+                }
+            }
+            Collections.sort(enums, Comparator.comparing(Enum::getName));
+            for (Enum enumType : enums) {
+                StringBuilder sb = new StringBuilder();
+                sb.append("[enum] ").append(enumType.getName())
+                  .append(" (").append(enumType.getLength()).append(" bytes): {");
+                String[] names = enumType.getNames();
+                for (int i = 0; i < names.length; i++) {
+                    if (i > 0) sb.append(", ");
+                    sb.append(names[i]).append("=").append(enumType.getValue(names[i]));
+                }
+                sb.append("}");
+                lines.add(sb.toString());
+            }
+        }
+
+        PaginationResult result = HttpUtils.paginateListWithHints(lines, offset, limit);
+        return result.getFormattedResult();
+    }
+
+    /**
+     * Get details about a named data type (auto-detects struct vs enum).
+     * For structs, returns full field layout. For enums, returns all values.
+     *
+     * @param name name of the data type
+     * @return detailed information about the data type
+     */
+    public String getDataType(String name) {
+        Program program = programService.getCurrentProgram();
+        if (program == null) return "No program loaded";
+        if (name == null || name.isEmpty()) return "Data type name is required";
+
+        ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
+        DataType dataType = findDataTypeByNameInAllCategories(dtm, name);
+        if (dataType == null) {
+            return "Data type not found: " + name;
+        }
+
+        if (dataType instanceof Structure struct) {
+            return formatStructureDetails(struct);
+        } else if (dataType instanceof Enum enumType) {
+            return formatEnumDetails(enumType);
+        } else {
+            // Generic type info
+            StringBuilder result = new StringBuilder();
+            result.append("Data Type: ").append(dataType.getName()).append("\n");
+            result.append("Category: ").append(dataType.getCategoryPath()).append("\n");
+            result.append("Size: ").append(dataType.getLength()).append(" bytes\n");
+            result.append("Kind: ").append(dataType.getClass().getSimpleName()).append("\n");
+            if (dataType.getDescription() != null) {
+                result.append("Description: ").append(dataType.getDescription()).append("\n");
+            }
+            return result.toString();
+        }
+    }
+
+    private String formatStructureDetails(Structure struct) {
+        StringBuilder result = new StringBuilder();
+        result.append("Structure: ").append(struct.getName()).append("\n");
+        result.append("Category: ").append(struct.getCategoryPath()).append("\n");
+        result.append("Size: ").append(struct.getLength()).append(" bytes\n");
+        result.append("Alignment: ").append(struct.getAlignment()).append("\n");
+        result.append("Packed: ").append(struct.isPackingEnabled() ? "Yes" : "No").append("\n");
+        result.append("Description: ").append(struct.getDescription() != null ? struct.getDescription() : "None").append("\n");
+        result.append("\nFields:\n");
+
+        DataTypeComponent[] components = struct.getComponents();
+        if (components.length == 0) {
+            result.append("  (no fields defined)\n");
+        } else {
+            for (DataTypeComponent comp : components) {
+                result.append(String.format("  [%04X] %s: %s (%d bytes)",
+                    comp.getOffset(),
+                    comp.getFieldName() != null ? comp.getFieldName() : "(unnamed)",
+                    comp.getDataType().getName(),
+                    comp.getLength()));
+                if (comp.getComment() != null) {
+                    result.append(" // ").append(comp.getComment());
+                }
+                result.append("\n");
+            }
+        }
+        return result.toString();
+    }
+
+    private String formatEnumDetails(Enum enumType) {
+        StringBuilder result = new StringBuilder();
+        result.append("Enum: ").append(enumType.getName()).append("\n");
+        result.append("Category: ").append(enumType.getCategoryPath()).append("\n");
+        result.append("Size: ").append(enumType.getLength()).append(" bytes\n");
+        result.append("Description: ").append(enumType.getDescription() != null ? enumType.getDescription() : "None").append("\n");
+        result.append("\nValues:\n");
+
+        String[] names = enumType.getNames();
+        List<Map.Entry<String, Long>> entries = new ArrayList<>();
+        for (String n : names) {
+            entries.add(Map.entry(n, enumType.getValue(n)));
+        }
+        entries.sort(Map.Entry.comparingByValue());
+
+        if (entries.isEmpty()) {
+            result.append("  (no values defined)\n");
+        } else {
+            for (Map.Entry<String, Long> entry : entries) {
+                result.append(String.format("  %s = 0x%X (%d)\n",
+                    entry.getKey(), entry.getValue(), entry.getValue()));
+            }
+        }
+        return result.toString();
     }
 
     /**
