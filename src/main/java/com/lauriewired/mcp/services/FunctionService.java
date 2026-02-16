@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import com.lauriewired.mcp.api.McpTool;
+import com.lauriewired.mcp.api.Param;
 import com.lauriewired.mcp.model.PaginationResult;
 import com.lauriewired.mcp.model.PrototypeResult;
 import com.lauriewired.mcp.utils.GhidraUtils;
@@ -49,14 +51,18 @@ public class FunctionService {
         this.programService = programService;
     }
 
-    /**
-     * List all function names with pagination and LLM-friendly hints
-     *
-     * @param offset starting index
-     * @param limit maximum number of items to return
-     * @return paginated list of function names with pagination metadata
-     */
-    public String getAllFunctionNames(int offset, int limit) {
+    @McpTool(description = """
+        List function names in the loaded Ghidra program with pagination.
+
+        Functions are defined subroutines in the binary (both user-defined and auto-discovered).
+
+        Returns: List of function names with pagination info. If more results are available,
+                 the response includes clear indicators and instructions for fetching additional pages.
+
+        Example: list_functions(0, 10) -> ['main', 'printf', 'malloc', ..., '--- PAGINATION INFO ---', ...] """)
+    public String listFunctions(
+            @Param(value = "Starting index for pagination (0-based)", defaultValue = "0") int offset,
+            @Param(value = "Maximum function names to return", defaultValue = "100") int limit) {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
 
@@ -69,21 +75,26 @@ public class FunctionService {
         return result.getFormattedResult();
     }
 
-    /**
-     * Get function code in the specified output mode.
-     * Resolves the function by name or address, then returns C pseudocode, assembly, or PCode.
-     *
-     * @param identifier function name or address (e.g., "main", "00401000")
-     * @param mode output mode: "C" (default), "assembly"/"asm", or "pcode"
-     * @return the requested code representation or an error message
-     */
-    public String getFunctionCode(String identifier, String mode) {
+    @McpTool(description = """
+        Get a function's code in the specified representation.
+
+        Resolves the function by name or address, then returns the requested output.
+
+        Returns: Function code in the requested format, or error message
+
+        Examples:
+            get_function_code("main") -> C pseudocode for main
+            get_function_code("00401000", "assembly") -> assembly listing
+            get_function_code("FUN_00401000", "pcode") -> PCode output """)
+    public String getFunctionCode(
+            @Param("Function name (e.g., \"main\") or address (e.g., \"00401000\", \"ram:00401000\")") String functionIdentifier,
+            @Param(value = "Output format - \"C\" for decompiled pseudocode (default), \"assembly\"/\"asm\" for disassembly listing, or \"pcode\" for Ghidra's intermediate representation", defaultValue = "C") String mode) {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
-        if (identifier == null || identifier.isEmpty()) return "Function identifier is required";
+        if (functionIdentifier == null || functionIdentifier.isEmpty()) return "Function identifier is required";
 
-        Function func = resolveFunction(program, identifier);
-        if (func == null) return "Function not found: " + identifier;
+        Function func = resolveFunction(program, functionIdentifier);
+        if (func == null) return "Function not found: " + functionIdentifier;
 
         // Normalize mode
         String normalizedMode = (mode == null || mode.isEmpty()) ? "c" : mode.toLowerCase().trim();
@@ -182,23 +193,31 @@ public class FunctionService {
         return sb.toString();
     }
 
-    /**
-     * Rename a function identified by name or address.
-     * Tries to resolve as an address first, then falls back to name lookup.
-     *
-     * @param identifier function name or address (e.g., "main", "00401000", "ram:00401000")
-     * @param newName new function name
-     * @return descriptive result message
-     */
-    public String renameFunction(String identifier, String newName) {
+    @McpTool(post = true, description = """
+        Rename a function identified by name or address.
+
+        Resolves the target function flexibly: pass a current function name
+        (e.g., "FUN_00401000") or an address (e.g., "00401000", "ram:00401000").
+
+        Returns: Success or failure message
+
+        Note: Function names must be unique within the program.
+
+        Examples:
+            rename_function("FUN_00401000", "initialize_system")
+            rename_function("00401000", "initialize_system")
+            rename_function("main", "entry_point") """)
+    public String renameFunction(
+            @Param("Current function name or address") String functionIdentifier,
+            @Param("New function name to assign") String newName) {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
-        if (identifier == null || identifier.isEmpty()) return "Function identifier is required";
+        if (functionIdentifier == null || functionIdentifier.isEmpty()) return "Function identifier is required";
         if (newName == null || newName.isEmpty()) return "New name is required";
 
-        Function func = resolveFunction(program, identifier);
+        Function func = resolveFunction(program, functionIdentifier);
         if (func == null) {
-            return "Function not found: " + identifier;
+            return "Function not found: " + functionIdentifier;
         }
 
         try (var tx = ProgramTransaction.start(program, "Rename function")) {
@@ -212,22 +231,25 @@ public class FunctionService {
         }
     }
 
-    /**
-     * Get function details by its address
-     *
-     * @param addressStr address of the function
-     * @return function details or error message
-     */
-    public String getFunctionByAddress(String addressStr) {
+    @McpTool(description = """
+        Get detailed information about a function at the specified address.
+
+        Retrieves name, signature, entry point and body range for the function.
+
+        Returns: Detailed function information or error message
+
+        Example: get_function_by_address("00401000") -> "Function: main at 00401000..." """)
+    public String getFunctionByAddress(
+            @Param("Address to look up (e.g., \"00401000\" or \"ram:00401000\")") String address) {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
-        if (addressStr == null || addressStr.isEmpty()) return "Address is required";
-        
+        if (address == null || address.isEmpty()) return "Address is required";
+
         try {
-            Address addr = program.getAddressFactory().getAddress(addressStr);
+            Address addr = program.getAddressFactory().getAddress(address);
             Function func = GhidraUtils.getFunctionForAddress(program, addr);
-            
-            if (func == null) return "No function found at address " + addressStr;
+
+            if (func == null) return "No function found at address " + address;
             
             return String.format("Function: %s at %s\nSignature: %s\nEntry: %s\nBody: %s - %s",
                 func.getName(),
@@ -241,11 +263,16 @@ public class FunctionService {
         }
     }
 
-    /**
-     * Get the address of the currently selected location in Ghidra GUI
-     *
-     * @return address or error message
-     */
+    @McpTool(description = """
+        Get the address currently selected by the user in the Ghidra GUI.
+
+        Retrieves cursor location in Code Browser or Decompiler view.
+
+        Returns: Currently selected address or error message
+
+        Note: Requires Ghidra GUI running with a selected location.
+
+        Example: get_current_address() -> "00401234" """)
     public String getCurrentAddress() {
         if (tool == null) return "No tool available";
         
@@ -256,11 +283,16 @@ public class FunctionService {
         return (location != null) ? location.getAddress().toString() : "No current location";
     }
 
-    /**
-     * Get details of the function at the current cursor position
-     *
-     * @return function details or error message
-     */
+    @McpTool(description = """
+        Get information about the function currently selected in the Ghidra GUI.
+
+        Returns details about function containing the selected address.
+
+        Returns: Current function information (name, entry point, signature) or error
+
+        Note: Requires Ghidra GUI with location selected within a function.
+
+        Example: get_current_function() -> "Function: main at 00401000..." """)
     public String getCurrentFunction() {
         if (tool == null) return "No tool available";
         
@@ -317,24 +349,27 @@ public class FunctionService {
         return null;
     }
 
-    /**
-     * Search for functions by name with pagination and LLM-friendly hints
-     *
-     * @param searchTerm search term
-     * @param offset starting index
-     * @param limit maximum number of results
-     * @return paginated list of matching functions with pagination metadata
-     */
-    public String searchFunctionsByName(String searchTerm, int offset, int limit) {
+    @McpTool(description = """
+        Search for functions by partial name match (case-insensitive).
+
+        Helps explore large binaries or find related functionality.
+
+        Returns: Matching functions formatted as "function_name @ address"
+
+        Example: search_functions_by_name("init") -> ['initialize @ 00401000', ...] """)
+    public String searchFunctionsByName(
+            @Param("Substring to search for in function names") String query,
+            @Param(value = "Starting index for pagination (0-based)", defaultValue = "0") int offset,
+            @Param(value = "Maximum matches to return", defaultValue = "100") int limit) {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
-        if (searchTerm == null || searchTerm.isEmpty()) return "Search term is required";
-    
+        if (query == null || query.isEmpty()) return "Search term is required";
+
         List<String> matches = new ArrayList<>();
         for (Function func : program.getFunctionManager().getFunctions(true)) {
             String name = func.getName();
             // simple substring match
-            if (name.toLowerCase().contains(searchTerm.toLowerCase())) {
+            if (name.toLowerCase().contains(query.toLowerCase())) {
                 matches.add(String.format("%s @ %s", name, func.getEntryPoint()));
             }
         }
@@ -345,22 +380,27 @@ public class FunctionService {
         return result.getFormattedResult();
     }
 
-    /**
-     * Set a function's prototype with proper error handling
-     *
-     * @param functionIdentifier function name or address
-     * @param prototype function prototype in C style
-     * @return result of the operation
-     */
-    public PrototypeResult setFunctionPrototype(String functionIdentifier, String prototype) {
+    @McpTool(post = true, description = """
+        Set or modify a function's signature/prototype.
+
+        Changes return type, parameter types and names to improve decompiler output.
+
+        Returns: Success or failure message with details
+
+        Note: Function name in prototype is ignored; only types matter. Parameter names are applied.
+
+        Example: set_function_prototype("00401000", "int process_data(char *buffer, size_t length)") """)
+    public String setFunctionPrototype(
+            @Param("Function name (e.g., \"main\") or address (e.g., \"00401000\", \"ram:00401000\")") String functionIdentifier,
+            @Param("C-style function signature (e.g., \"int main(int argc, char **argv)\")") String prototype) {
         // Input validation
         Program program = programService.getCurrentProgram();
-        if (program == null) return new PrototypeResult(false, "No program loaded");
+        if (program == null) return "No program loaded";
         if (functionIdentifier == null || functionIdentifier.isEmpty()) {
-            return new PrototypeResult(false, "Function identifier is required");
+            return "Function identifier is required";
         }
         if (prototype == null || prototype.isEmpty()) {
-            return new PrototypeResult(false, "Function prototype is required");
+            return "Function prototype is required";
         }
 
         try {
@@ -368,17 +408,26 @@ public class FunctionService {
             if (func == null) {
                 String msg = "Function not found: " + functionIdentifier;
                 Msg.error(this, msg);
-                return new PrototypeResult(false, msg);
+                return "Failed to set function prototype: " + msg;
             }
 
             Address addr = func.getEntryPoint();
             Msg.info(this, "Setting prototype for function " + func.getName() + ": " + prototype);
-            return parseFunctionSignatureAndApply(program, addr, prototype);
+            PrototypeResult result = parseFunctionSignatureAndApply(program, addr, prototype);
+            if (result.isSuccess()) {
+                String response = "Function prototype set successfully";
+                if (!result.getErrorMessage().isEmpty()) {
+                    response += "\n\nWarnings/Debug Info:\n" + result.getErrorMessage();
+                }
+                return response;
+            } else {
+                return "Failed to set function prototype: " + result.getErrorMessage();
+            }
 
         } catch (Exception e) {
             String msg = "Error setting function prototype: " + e.getMessage();
             Msg.error(this, msg, e);
-            return new PrototypeResult(false, msg);
+            return "Failed to set function prototype: " + msg;
         }
     }
 

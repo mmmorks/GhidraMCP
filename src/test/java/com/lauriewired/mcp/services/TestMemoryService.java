@@ -80,7 +80,7 @@ public class TestMemoryService extends MemoryService {
      * @return list of data items with their addresses, labels, and values
      */
     @Override
-    public String listDefinedData(int offset, int limit) {
+    public String listDataItems(int offset, int limit) {
         Program program = testProgramService.getCurrentProgram();
         if (program == null) return "No program loaded";
 
@@ -107,29 +107,29 @@ public class TestMemoryService extends MemoryService {
      * Rename a data label at the specified address
      * For testing, we'll simplify this to avoid Swing threading issues
      *
-     * @param addressStr address of the data to rename
+     * @param address address of the data to rename
      * @param newName new label name
-     * @return true if successful, false otherwise
+     * @return "Renamed successfully" or "Rename failed"
      */
     @Override
-    public boolean renameDataAtAddress(String addressStr, String newName) {
+    public String renameData(String address, String newName) {
         Program program = testProgramService.getCurrentProgram();
-        if (program == null) return false;
+        if (program == null) return "Rename failed";
 
         // For testing, we'll run directly without Swing
         int tx = program.startTransaction("Rename data");
         boolean success = false;
         try {
-            Address addr = program.getAddressFactory().getAddress(addressStr);
+            Address addr = program.getAddressFactory().getAddress(address);
             if (addr == null) {
-                return false;
+                return "Rename failed";
             }
-            
+
             // Check if data exists at this address
             if (program.getListing().getDefinedDataAt(addr) != null) {
                 SymbolTable symTable = program.getSymbolTable();
                 Symbol symbol = symTable.getPrimarySymbol(addr);
-                
+
                 if (symbol != null) {
                     symbol.setName(newName, SourceType.USER_DEFINED);
                     success = true;
@@ -149,47 +149,47 @@ public class TestMemoryService extends MemoryService {
         finally {
             program.endTransaction(tx, success);
         }
-        return success;
+        return success ? "Renamed successfully" : "Rename failed";
     }
     
     /**
      * Set the data type at a specific memory address
      * For testing, we'll simplify this to avoid Swing threading issues
      *
-     * @param addressStr address where to set the data type
-     * @param dataTypeName name of the data type to set
+     * @param address address where to set the data type
+     * @param dataType name of the data type to set
      * @param clearExisting whether to clear existing data at the address first
      * @return status message
      */
     @Override
-    public String setAddressDataType(String addressStr, String dataTypeName, boolean clearExisting) {
+    public String setAddressDataType(String address, String dataType, boolean clearExisting) {
         Program program = testProgramService.getCurrentProgram();
         if (program == null) return "No program loaded";
         if (testDataTypeService == null) return "DataTypeService not available";
-        
+
         // For testing, we'll run directly without Swing
         int tx = program.startTransaction("Set memory data type");
         String resultMessage;
         boolean success = false;
-        
+
         try {
-            Address addr = program.getAddressFactory().getAddress(addressStr);
+            Address addr = program.getAddressFactory().getAddress(address);
             if (addr == null) {
-                resultMessage = "Invalid address: " + addressStr;
+                resultMessage = "Invalid address: " + address;
                 return resultMessage;
             }
-            
+
             // Get the data type manager and resolve the type
             DataTypeManager dtm = program.getDataTypeManager();
-            DataType dataType = testDataTypeService.resolveDataType(dtm, dataTypeName);
-            
-            if (dataType == null) {
-                resultMessage = "Data type not found: " + dataTypeName;
+            DataType resolvedDataType = testDataTypeService.resolveDataType(dtm, dataType);
+
+            if (resolvedDataType == null) {
+                resultMessage = "Data type not found: " + dataType;
                 return resultMessage;
             }
-            
+
             Listing listing = program.getListing();
-            
+
             // Clear existing data if requested
             if (clearExisting) {
                 Data existingData = listing.getDataAt(addr);
@@ -197,12 +197,12 @@ public class TestMemoryService extends MemoryService {
                     listing.clearCodeUnits(addr, addr.add(existingData.getLength() - 1), false);
                 }
             }
-            
+
             // Create the data at the address
             try {
-                Data newData = listing.createData(addr, dataType);
+                Data newData = listing.createData(addr, resolvedDataType);
                 resultMessage = String.format("Data type '%s' (%d bytes) set at address %s",
-                    dataType.getName(),
+                    resolvedDataType.getName(),
                     newData.getLength(),
                     addr.toString());
                 success = true;
@@ -225,7 +225,7 @@ public class TestMemoryService extends MemoryService {
         finally {
             program.endTransaction(tx, success);
         }
-        
+
         return resultMessage;
     }
 }

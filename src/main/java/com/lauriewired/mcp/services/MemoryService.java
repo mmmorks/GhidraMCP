@@ -27,6 +27,9 @@ import ghidra.util.Msg;
 import ghidra.util.exception.DuplicateNameException;
 import ghidra.util.exception.InvalidInputException;
 
+import com.lauriewired.mcp.api.McpTool;
+import com.lauriewired.mcp.api.Param;
+
 /**
  * Service for memory and data-related operations
  */
@@ -55,14 +58,18 @@ public class MemoryService {
         this.dataTypeService = dataTypeService;
     }
 
-    /**
-     * List memory segments in the program with pagination
-     *
-     * @param offset starting index
-     * @param limit maximum number of segments to return
-     * @return list of memory segments with their address ranges
-     */
-    public String getMemoryLayout(int offset, int limit) {
+    @McpTool(description = """
+        Get the memory layout of the program (segments/sections).
+
+        Shows distinct regions in the binary's address space (.text, .data, .rodata, etc.)
+        with their address ranges.
+
+        Returns: Memory segments with name and address range
+
+        Example: get_memory_layout() -> ['.text: 00401000 - 00410000', '.data: 00411000 - 00412000', ...] """)
+    public String getMemoryLayout(
+            @Param(value = "Starting index for pagination (0-based)", defaultValue = "0") int offset,
+            @Param(value = "Maximum segments to return", defaultValue = "100") int limit) {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
 
@@ -76,14 +83,19 @@ public class MemoryService {
         return HttpUtils.paginateList(lines, offset, limit);
     }
 
-    /**
-     * List defined data items in the program with pagination and LLM-friendly hints
-     *
-     * @param offset starting index
-     * @param limit maximum number of data items to return
-     * @return paginated list of data items with pagination metadata
-     */
-    public String listDefinedData(int offset, int limit) {
+    @McpTool(description = """
+        List defined data labels and their values with pagination.
+
+        Shows memory locations containing data (strings, arrays, structures, primitives).
+
+        Returns: Data items with address, label and value
+
+        Note: Unlabeled items shown as "(unnamed)"
+
+        Example: list_data_items(0, 3) -> ['00410000: hello_msg = "Hello, World!"', ...] """)
+    public String listDataItems(
+            @Param(value = "Starting index for pagination (0-based)", defaultValue = "0") int offset,
+            @Param(value = "Maximum data items to return", defaultValue = "100") int limit) {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
 
@@ -108,27 +120,32 @@ public class MemoryService {
         return result.getFormattedResult();
     }
 
-    /**
-     * Rename a data label at the specified address
-     *
-     * @param addressStr address of the data to rename
-     * @param newName new label name
-     * @return true if successful, false otherwise
-     */
-    public boolean renameDataAtAddress(String addressStr, String newName) {
+    @McpTool(post = true, description = """
+        Rename a data label at the specified address.
+
+        Labels identify data elements (strings, arrays, structures) to improve code readability.
+
+        Returns: Message indicating operation was attempted
+
+        Note: Creates a new label if none exists at the address. Address must point to data, not code.
+
+        Example: rename_data("00402000", "config_table") """)
+    public String renameData(
+            @Param("Data address (e.g., \"00401000\" or \"ram:00401000\")") String address,
+            @Param("New name to assign") String newName) {
         Program program = programService.getCurrentProgram();
-        if (program == null) return false;
+        if (program == null) return "Rename failed";
 
         try (var tx = ProgramTransaction.start(program, "Rename data")) {
-            Address addr = program.getAddressFactory().getAddress(addressStr);
+            Address addr = program.getAddressFactory().getAddress(address);
             if (addr == null) {
-                Msg.error(this, "Invalid address: " + addressStr);
-                return false;
+                Msg.error(this, "Invalid address: " + address);
+                return "Rename failed";
             }
 
             if (program.getListing().getDefinedDataAt(addr) == null) {
-                Msg.error(this, "No defined data at address: " + addressStr);
-                return false;
+                Msg.error(this, "No defined data at address: " + address);
+                return "Rename failed";
             }
 
             SymbolTable symTable = program.getSymbolTable();
@@ -140,41 +157,48 @@ public class MemoryService {
                 symTable.createLabel(addr, newName, SourceType.USER_DEFINED);
             }
             tx.commit();
-            return true;
+            return "Renamed successfully";
         } catch (DuplicateNameException | InvalidInputException e) {
             Msg.error(this, "Rename data error", e);
-            return false;
+            return "Rename failed";
         }
     }
     
-    /**
-     * Set the data type at a specific memory address
-     *
-     * @param addressStr address where to set the data type
-     * @param dataTypeName name of the data type to set
-     * @param clearExisting whether to clear existing data at the address first
-     * @return status message
-     */
-    public String setAddressDataType(String addressStr, String dataTypeName, boolean clearExisting) {
+    @McpTool(post = true, description = """
+        Set the data type at a specific memory address.
+
+        Creates or modifies data at the specified address with the given type.
+        Symmetric counterpart to get_address_data_type.
+
+        Returns: Success message with details or error message
+
+        Note: The data type can be a built-in type, structure, enum, or array.
+        Array syntax: "type[size]" e.g., "char[256]" for a string buffer.
+
+        Example: set_address_data_type("00402000", "POINT") -> "Data type 'POINT' set at address 00402000" """)
+    public String setAddressDataType(
+            @Param("Memory address (e.g., \"00401000\" or \"ram:00401000\")") String address,
+            @Param("Data type name (\"int\", \"char[20]\", \"POINT\", etc.)") String dataType,
+            @Param(value = "Whether to clear existing data at the address first", defaultValue = "false") boolean clearExisting) {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
         if (dataTypeService == null) return "DataTypeService not available";
 
         try (var tx = ProgramTransaction.start(program, "Set memory data type")) {
-            Address addr = program.getAddressFactory().getAddress(addressStr);
+            Address addr = program.getAddressFactory().getAddress(address);
             if (addr == null) {
-                return "Invalid address: " + addressStr;
+                return "Invalid address: " + address;
             }
 
             DataTypeManager dtm = program.getDataTypeManager();
-            DataType dataType = dataTypeService.resolveDataType(dtm, dataTypeName);
+            DataType resolvedDataType = dataTypeService.resolveDataType(dtm, dataType);
 
-            if (dataType == null) {
-                if (dataTypeName.matches(".*\\[\\d+\\]$")) {
-                    return "Failed to create array data type '" + dataTypeName +
+            if (resolvedDataType == null) {
+                if (dataType.matches(".*\\[\\d+\\]$")) {
+                    return "Failed to create array data type '" + dataType +
                             "': base type could not be resolved. Check that the base type exists.";
                 } else {
-                    return "Data type '" + dataTypeName + "' not found. " +
+                    return "Data type '" + dataType + "' not found. " +
                             "Available types include: int, char, short, long, byte, etc.";
                 }
             }
@@ -182,7 +206,7 @@ public class MemoryService {
             Listing listing = program.getListing();
 
             if (clearExisting) {
-                int sizeNeeded = dataType.getLength();
+                int sizeNeeded = resolvedDataType.getLength();
                 if (sizeNeeded <= 0) {
                     sizeNeeded = 1;
                 }
@@ -191,10 +215,10 @@ public class MemoryService {
             }
 
             try {
-                Data newData = listing.createData(addr, dataType);
+                Data newData = listing.createData(addr, resolvedDataType);
                 tx.commit();
                 return String.format("Data type '%s' (%d bytes) set at address %s",
-                    dataType.getName(),
+                    resolvedDataType.getName(),
                     newData.getLength(),
                     addr.toString());
             } catch (CodeUnitInsertionException e) {
@@ -215,7 +239,7 @@ public class MemoryService {
                 } else if (errorMsg.contains("Insufficient")) {
                     return String.format("Failed to set data type: Insufficient space. " +
                            "The data type '%s' requires %d bytes but there's not enough space available.",
-                           dataType.getName(), dataType.getLength());
+                           resolvedDataType.getName(), resolvedDataType.getLength());
                 } else {
                     return "Failed to set data type: " + errorMsg;
                 }
@@ -226,27 +250,32 @@ public class MemoryService {
         }
     }
     
-    /**
-     * Read raw memory contents at a specific address
-     *
-     * @param addressStr address to read from
-     * @param size number of bytes to read
-     * @param format output format: "hex", "decimal", "binary", "ascii"
-     * @return formatted memory contents
-     */
-    public String readMemory(String addressStr, int size, String format) {
+    @McpTool(description = """
+        Read raw memory contents at a specific address.
+
+        Reads bytes from memory and formats them for analysis.
+
+        Returns: Formatted memory contents with context
+
+        Note: Shows memory in rows with address, hex bytes, and ASCII representation.
+
+        Example: read_memory("00401000", 32, "hex") -> Memory dump with hex values """)
+    public String readMemory(
+            @Param("Memory address to read from (e.g., \"00401000\")") String address,
+            @Param(value = "Number of bytes to read (1-1024, default: 16)", defaultValue = "16") int size,
+            @Param(value = "Output format - \"hex\", \"decimal\", \"binary\", or \"ascii\" (default: \"hex\")", defaultValue = "hex") String format) {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
-        if (addressStr == null || addressStr.isEmpty()) return "Address is required";
+        if (address == null || address.isEmpty()) return "Address is required";
         if (size <= 0 || size > 1024) return "Size must be between 1 and 1024 bytes";
-        
+
         try {
-            Address addr = program.getAddressFactory().getAddress(addressStr);
-            if (addr == null) return "Invalid address: " + addressStr;
-            
+            Address addr = program.getAddressFactory().getAddress(address);
+            if (addr == null) return "Invalid address: " + address;
+
             Memory memory = program.getMemory();
             MemoryBlock block = memory.getBlock(addr);
-            if (block == null) return "No memory block at address: " + addressStr;
+            if (block == null) return "No memory block at address: " + address;
             
             // Check if we can read the requested size
             Address endAddr = addr.add(size - 1);
@@ -288,24 +317,29 @@ public class MemoryService {
         }
     }
     
-    /**
-     * Get memory permissions at a specific address
-     *
-     * @param addressStr address to check
-     * @return memory permissions information
-     */
-    public String getMemoryPermissions(String addressStr) {
+    @McpTool(description = """
+        Get memory permissions and block information at an address.
+
+        Shows memory block properties including read/write/execute permissions.
+
+        Returns: Memory block info with permissions and properties
+
+        Note: Helps identify code vs data regions and memory protection.
+
+        Example: get_memory_permissions("00401000") -> "Block: .text, Permissions: R-X" """)
+    public String getMemoryPermissions(
+            @Param("Memory address to check (e.g., \"00401000\")") String address) {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
-        if (addressStr == null || addressStr.isEmpty()) return "Address is required";
-        
+        if (address == null || address.isEmpty()) return "Address is required";
+
         try {
-            Address addr = program.getAddressFactory().getAddress(addressStr);
-            if (addr == null) return "Invalid address: " + addressStr;
-            
+            Address addr = program.getAddressFactory().getAddress(address);
+            if (addr == null) return "Invalid address: " + address;
+
             Memory memory = program.getMemory();
             MemoryBlock block = memory.getBlock(addr);
-            if (block == null) return "No memory block at address: " + addressStr;
+            if (block == null) return "No memory block at address: " + address;
             
             StringBuilder result = new StringBuilder();
             result.append(String.format("Memory permissions at %s:\n", addr));
@@ -328,20 +362,26 @@ public class MemoryService {
         }
     }
     
-    /**
-     * Get the data type currently defined at an address
-     *
-     * @param addressStr address to check
-     * @return data type information
-     */
-    public String getAddressDataType(String addressStr) {
+    @McpTool(description = """
+        Get the data type currently defined at a memory address.
+
+        Shows whether address contains instruction, defined data, or is undefined.
+        Symmetric counterpart to set_address_data_type.
+
+        Returns: Data type information including type name, size, and value
+
+        Note: Useful for checking if memory has been analyzed/typed.
+
+        Example: get_address_data_type("00402000") -> "Type: DWORD, Value: 0x12345678" """)
+    public String getAddressDataType(
+            @Param("Memory address to check (e.g., \"00401000\")") String address) {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
-        if (addressStr == null || addressStr.isEmpty()) return "Address is required";
-        
+        if (address == null || address.isEmpty()) return "Address is required";
+
         try {
-            Address addr = program.getAddressFactory().getAddress(addressStr);
-            if (addr == null) return "Invalid address: " + addressStr;
+            Address addr = program.getAddressFactory().getAddress(address);
+            if (addr == null) return "Invalid address: " + address;
             
             Listing listing = program.getListing();
             StringBuilder result = new StringBuilder();

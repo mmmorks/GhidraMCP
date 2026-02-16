@@ -4,11 +4,16 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.ByteArrayOutputStream;
+import java.net.URI;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -18,6 +23,10 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import org.mockito.junit.jupiter.MockitoExtension;
+
+import com.sun.net.httpserver.Headers;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
 
 import com.lauriewired.mcp.McpServerManager;
 import com.lauriewired.mcp.services.AnalysisService;
@@ -38,37 +47,37 @@ class ApiHandlerRegistryTest {
 
     @Mock
     private McpServerManager mockServerManager;
-    
+
     @Mock
     private HttpServer mockHttpServer;
-    
+
     @Mock
     private FunctionService mockFunctionService;
-    
+
     @Mock
     private NamespaceService mockNamespaceService;
-    
+
     @Mock
     private DataTypeService mockDataTypeService;
-    
+
     @Mock
     private AnalysisService mockAnalysisService;
-    
+
     @Mock
     private MemoryService mockMemoryService;
-    
+
     @Mock
     private CommentService mockCommentService;
-    
+
     @Mock
     private ProgramService mockProgramService;
-    
+
     @Mock
     private SearchService mockSearchService;
-    
+
     @Mock
     private VariableService mockVariableService;
-    
+
     @Mock
     private HttpContext mockHttpContext;
 
@@ -93,10 +102,8 @@ class ApiHandlerRegistryTest {
 
     @Test
     void testConstructor_AcceptsParameters() {
-        // Test that constructor accepts all required parameters
         assertNotNull(registry);
-        
-        // Verify the registry was created successfully
+
         ApiHandlerRegistry testRegistry = new ApiHandlerRegistry(
             mockServerManager,
             mockFunctionService,
@@ -114,17 +121,14 @@ class ApiHandlerRegistryTest {
 
     @Test
     void testRegisterAllEndpoints() {
-        // Setup mock to return the HTTP server
         when(mockServerManager.isServerRunning()).thenReturn(true);
         when(mockServerManager.getServer()).thenReturn(mockHttpServer);
         when(mockHttpServer.createContext(anyString(), any(HttpHandler.class)))
             .thenReturn(mockHttpContext);
 
-        // Call the method
         registry.registerAllEndpoints();
 
-        // Verify that all expected endpoints were registered
-        // Function endpoints (consolidated)
+        // Function endpoints
         verify(mockHttpServer).createContext(eq("/list_functions"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/get_function_code"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/rename_function"), any(HttpHandler.class));
@@ -134,7 +138,7 @@ class ApiHandlerRegistryTest {
         verify(mockHttpServer).createContext(eq("/search_functions_by_name"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/set_function_prototype"), any(HttpHandler.class));
 
-        // Namespace endpoints (only symbols and symbol address remain)
+        // Namespace endpoints
         verify(mockHttpServer).createContext(eq("/list_symbols"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/get_symbol_address"), any(HttpHandler.class));
 
@@ -181,17 +185,17 @@ class ApiHandlerRegistryTest {
         verify(mockHttpServer).createContext(eq("/rename_variables"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/split_variable"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/set_variable_types"), any(HttpHandler.class));
+
+        // MCP tools metadata endpoint
+        verify(mockHttpServer).createContext(eq("/mcp/tools"), any(HttpHandler.class));
     }
 
     @Test
     void testRegisterAllEndpoints_HandlesNullServer() {
-        // Setup mock to return false for isServerRunning
         when(mockServerManager.isServerRunning()).thenReturn(false);
 
-        // Should not throw, but handle gracefully
         assertDoesNotThrow(() -> registry.registerAllEndpoints());
-        
-        // Verify isServerRunning was called but getServer was not
+
         verify(mockServerManager).isServerRunning();
         verify(mockServerManager, never()).getServer();
     }
@@ -282,14 +286,12 @@ class ApiHandlerRegistryTest {
 
     @Test
     void testFindUnescapedQuote_EscapedQuote() {
-        // In the string: hello\"world" — the first quote is escaped, the second is not
         String s = "hello\\\"world\"";
         assertEquals(12, ApiHandlerRegistry.findUnescapedQuote(s, 0));
     }
 
     @Test
     void testFindUnescapedQuote_DoubleBackslashThenQuote() {
-        // \\\\" — two backslashes then a quote: quote is NOT escaped
         String s = "hello\\\\\"world";
         assertEquals(7, ApiHandlerRegistry.findUnescapedQuote(s, 0));
     }
@@ -356,7 +358,6 @@ class ApiHandlerRegistryTest {
 
     @Test
     void testEndpointCount() {
-        // Setup mock to return the HTTP server
         when(mockServerManager.isServerRunning()).thenReturn(true);
         when(mockServerManager.getServer()).thenReturn(mockHttpServer);
         when(mockHttpServer.createContext(anyString(), any(HttpHandler.class)))
@@ -364,8 +365,169 @@ class ApiHandlerRegistryTest {
 
         registry.registerAllEndpoints();
 
-        // Verify the expected number of endpoints were registered
-        // 40 endpoints total (was 44: +1 get_program_info, -3 call-graph consolidated to 1, -5 comment consolidated to 2)
-        verify(mockHttpServer, times(40)).createContext(anyString(), any(HttpHandler.class));
+        // 40 tool endpoints + 1 /mcp/tools metadata endpoint = 41
+        verify(mockHttpServer, times(41)).createContext(anyString(), any(HttpHandler.class));
+    }
+
+    @Test
+    void testToolDefsPopulated() {
+        when(mockServerManager.isServerRunning()).thenReturn(true);
+        when(mockServerManager.getServer()).thenReturn(mockHttpServer);
+        when(mockHttpServer.createContext(anyString(), any(HttpHandler.class)))
+            .thenReturn(mockHttpContext);
+
+        registry.registerAllEndpoints();
+
+        // Should have 40 tool definitions
+        assertEquals(40, registry.getToolDefs().size());
+    }
+
+    @Test
+    void testToolNamesAreSnakeCase() {
+        when(mockServerManager.isServerRunning()).thenReturn(true);
+        when(mockServerManager.getServer()).thenReturn(mockHttpServer);
+        when(mockHttpServer.createContext(anyString(), any(HttpHandler.class)))
+            .thenReturn(mockHttpContext);
+
+        registry.registerAllEndpoints();
+
+        for (ToolDef def : registry.getToolDefs()) {
+            // Verify all tool names are snake_case (no uppercase letters)
+            assertEquals(def.getName(), def.getName().toLowerCase(),
+                "Tool name should be snake_case: " + def.getName());
+        }
+    }
+
+    @Test
+    void testAllToolDefsHaveDescriptions() {
+        when(mockServerManager.isServerRunning()).thenReturn(true);
+        when(mockServerManager.getServer()).thenReturn(mockHttpServer);
+        when(mockHttpServer.createContext(anyString(), any(HttpHandler.class)))
+            .thenReturn(mockHttpContext);
+
+        registry.registerAllEndpoints();
+
+        for (ToolDef def : registry.getToolDefs()) {
+            assertNotNull(def.getDescription(),
+                "Tool should have a description: " + def.getName());
+            assert !def.getDescription().isBlank() :
+                "Tool description should not be blank: " + def.getName();
+        }
+    }
+
+    @Test
+    void testAllToolDefsHaveValidInputSchemas() {
+        when(mockServerManager.isServerRunning()).thenReturn(true);
+        when(mockServerManager.getServer()).thenReturn(mockHttpServer);
+        when(mockHttpServer.createContext(anyString(), any(HttpHandler.class)))
+            .thenReturn(mockHttpContext);
+
+        registry.registerAllEndpoints();
+
+        for (ToolDef def : registry.getToolDefs()) {
+            String schema = def.toInputSchemaJson();
+            assertNotNull(schema, "Tool should have input schema: " + def.getName());
+            assert schema.contains("\"type\": \"object\"") :
+                "Input schema should be an object type: " + def.getName();
+        }
+    }
+
+    @Test
+    void testToolJsonContainsRequiredFields() {
+        when(mockServerManager.isServerRunning()).thenReturn(true);
+        when(mockServerManager.getServer()).thenReturn(mockHttpServer);
+        when(mockHttpServer.createContext(anyString(), any(HttpHandler.class)))
+            .thenReturn(mockHttpContext);
+
+        registry.registerAllEndpoints();
+
+        for (ToolDef def : registry.getToolDefs()) {
+            String json = def.toToolJson();
+            assert json.contains("\"name\"") : "Tool JSON should contain name: " + def.getName();
+            assert json.contains("\"description\"") : "Tool JSON should contain description: " + def.getName();
+            assert json.contains("\"inputSchema\"") : "Tool JSON should contain inputSchema: " + def.getName();
+            assert json.contains("\"method\"") : "Tool JSON should contain method: " + def.getName();
+        }
+    }
+
+    @Test
+    void testPostToolsHaveCorrectMethod() {
+        when(mockServerManager.isServerRunning()).thenReturn(true);
+        when(mockServerManager.getServer()).thenReturn(mockHttpServer);
+        when(mockHttpServer.createContext(anyString(), any(HttpHandler.class)))
+            .thenReturn(mockHttpContext);
+
+        registry.registerAllEndpoints();
+
+        // These tools should be POST
+        var postTools = java.util.Set.of(
+            "rename_function", "set_function_prototype",
+            "rename_data", "set_address_data_type",
+            "set_comment",
+            "rename_variables", "split_variable", "set_variable_types",
+            "create_structure", "add_structure_field", "update_structure",
+            "create_enum", "add_enum_value", "update_enum"
+        );
+
+        for (ToolDef def : registry.getToolDefs()) {
+            String json = def.toToolJson();
+            if (postTools.contains(def.getName())) {
+                assert json.contains("\"method\": \"POST\"") :
+                    def.getName() + " should be POST";
+            } else {
+                assert json.contains("\"method\": \"GET\"") :
+                    def.getName() + " should be GET";
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("/mcp/tools endpoint returns valid JSON array with all 40 tools")
+    void testMcpToolsEndpoint_ReturnsAllTools() throws Exception {
+        when(mockServerManager.isServerRunning()).thenReturn(true);
+        when(mockServerManager.getServer()).thenReturn(mockHttpServer);
+        when(mockHttpServer.createContext(anyString(), any(com.sun.net.httpserver.HttpHandler.class)))
+            .thenReturn(mockHttpContext);
+
+        ArgumentCaptor<com.sun.net.httpserver.HttpHandler> handlerCaptor =
+            ArgumentCaptor.forClass(com.sun.net.httpserver.HttpHandler.class);
+
+        registry.registerAllEndpoints();
+
+        verify(mockHttpServer).createContext(eq("/mcp/tools"), handlerCaptor.capture());
+        com.sun.net.httpserver.HttpHandler handler = handlerCaptor.getValue();
+
+        // Create a mock exchange for the /mcp/tools GET request
+        HttpExchange mockExchange = org.mockito.Mockito.mock(HttpExchange.class);
+        Headers mockHeaders = org.mockito.Mockito.mock(Headers.class);
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+
+        when(mockExchange.getRequestURI()).thenReturn(URI.create("/mcp/tools"));
+        when(mockExchange.getRequestMethod()).thenReturn("GET");
+        when(mockExchange.getResponseBody()).thenReturn(outputStream);
+        when(mockExchange.getResponseHeaders()).thenReturn(mockHeaders);
+
+        handler.handle(mockExchange);
+
+        String jsonOutput = outputStream.toString();
+
+        // Verify it's a JSON array
+        assertTrue(jsonOutput.startsWith("["), "Response should be a JSON array");
+        assertTrue(jsonOutput.endsWith("]"), "Response should end with ]");
+
+        // Verify all 40 tools are present by checking for each tool name
+        for (ToolDef def : registry.getToolDefs()) {
+            assertTrue(jsonOutput.contains("\"name\": \"" + def.getName() + "\""),
+                "JSON should contain tool: " + def.getName());
+        }
+
+        // Verify essential fields exist for each tool entry
+        assertTrue(jsonOutput.contains("\"description\""), "Should contain descriptions");
+        assertTrue(jsonOutput.contains("\"inputSchema\""), "Should contain input schemas");
+        assertTrue(jsonOutput.contains("\"method\""), "Should contain method indicators");
+
+        // Verify the response was sent with 200 status and JSON content type
+        verify(mockExchange).sendResponseHeaders(eq(200), any(long.class));
+        verify(mockHeaders).set("Content-Type", "application/json; charset=utf-8");
     }
 }

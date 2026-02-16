@@ -1,10 +1,12 @@
 package com.lauriewired.mcp.api;
 
-import java.io.IOException;
+import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
-import java.util.Optional;
+
 import com.lauriewired.mcp.McpServerManager;
-import com.lauriewired.mcp.model.PrototypeResult;
 import com.lauriewired.mcp.services.AnalysisService;
 import com.lauriewired.mcp.services.CommentService;
 import com.lauriewired.mcp.services.DataTypeService;
@@ -24,14 +26,8 @@ import com.sun.net.httpserver.HttpServer;
 import ghidra.util.Msg;
 
 /**
- * Functional interfaces for handler methods
- */
-interface PaginatedHandler {
-    String execute(int offset, int limit);
-}
-
-/**
- * Registers and manages API endpoints for the HTTP server
+ * Registers and manages API endpoints for the HTTP server.
+ * Uses @McpTool annotations + reflection to discover tool methods and auto-register handlers.
  */
 public class ApiHandlerRegistry {
     private final McpServerManager serverManager;
@@ -46,21 +42,8 @@ public class ApiHandlerRegistry {
     private final VariableService variableService;
     private final TelemetryLogger telemetryLogger;
     private final TimeoutHandler timeoutHandler;
-    
-    /**
-     * Creates a new ApiHandlerRegistry
-     *
-     * @param serverManager the server manager
-     * @param functionService the function service
-     * @param namespaceService the namespace service
-     * @param dataTypeService the data type service
-     * @param analysisService the analysis service
-     * @param commentService the comment service
-     * @param memoryService the memory service
-     * @param programService the program service
-     * @param searchService the search service
-     * @param variableService the variable service
-     */
+    private final List<ToolDef> toolDefs = new ArrayList<>();
+
     public ApiHandlerRegistry(
             McpServerManager serverManager,
             FunctionService functionService,
@@ -83,600 +66,138 @@ public class ApiHandlerRegistry {
         this.searchService = searchService;
         this.variableService = variableService;
         this.telemetryLogger = new TelemetryLogger();
-        
-        // Create a single timeout handler instance for all endpoints
+
         int timeoutSeconds = serverManager.getRequestTimeoutSeconds();
         this.timeoutHandler = new TimeoutHandler(timeoutSeconds);
-        this.timeoutHandler.start(); // Start the monitor thread after construction
+        this.timeoutHandler.start();
     }
-    
+
     /**
-     * Register all API endpoints with the server
+     * Register all API endpoints with the server via reflection over @McpTool methods on services.
      */
     public void registerAllEndpoints() {
         if (!serverManager.isServerRunning()) {
             Msg.warn(this, "Cannot register endpoints: Server is not running");
             return;
         }
-        
+
         HttpServer server = serverManager.getServer();
-        
-        // Register endpoints for all services
-        registerProgramEndpoints(server);
-        registerFunctionEndpoints(server);
-        registerNamespaceEndpoints(server);
-        registerDataTypeEndpoints(server);
-        registerAnalysisEndpoints(server);
-        registerMemoryEndpoints(server);
-        registerCommentEndpoints(server);
-        registerSearchEndpoints(server);
-        registerVariableEndpoints(server);
-        
-        Msg.info(this, "All API endpoints registered successfully");
+        toolDefs.clear();
+
+        Object[] services = {
+            programService, functionService, namespaceService,
+            dataTypeService, analysisService, commentService,
+            memoryService, searchService, variableService
+        };
+
+        for (Object service : services) {
+            // Walk up the class hierarchy to find @McpTool methods declared in the
+            // actual service class.  This is necessary because proxy/mock frameworks
+            // (e.g. Mockito ByteBuddy subclasses) override methods without carrying
+            // over annotations, so we must scan the declaring superclass directly.
+            for (Class<?> clz = service.getClass(); clz != null && clz != Object.class; clz = clz.getSuperclass()) {
+                for (Method method : clz.getDeclaredMethods()) {
+                    McpTool ann = method.getAnnotation(McpTool.class);
+                    if (ann == null) continue;
+                    method.setAccessible(true);
+                    ToolDef def = ToolDef.fromMethod(method, ann);
+                    toolDefs.add(def);
+                    registerEndpoint(server, def.getName(), createHandler(def, method, service));
+                }
+            }
+        }
+
+        // Register the /mcp/tools metadata endpoint
+        registerMcpToolsEndpoint(server);
+
+        Msg.info(this, "Registered " + toolDefs.size() + " tool endpoints + /mcp/tools");
     }
-    
+
     /**
-     * Shutdown the telemetry logger and save final reports
+     * Get the list of registered tool definitions (for testing).
      */
+    public List<ToolDef> getToolDefs() {
+        return toolDefs;
+    }
+
     public void shutdown() {
         if (telemetryLogger != null) {
             telemetryLogger.shutdown();
             Msg.info(this, "Telemetry logger shut down successfully");
         }
-        
-        // Shutdown the timeout handler
         if (timeoutHandler != null) {
             timeoutHandler.shutdown();
             Msg.info(this, "Timeout handler shut down successfully");
         }
     }
-    
-    /**
-     * Wrap a handler with telemetry logging and timeout
-     */
+
     private HttpHandler wrapWithTelemetryAndTimeout(HttpHandler handler, String toolName, String endpoint) {
-        // First wrap with telemetry (reusing the same logger instance)
         HttpHandler telemetryHandler = new TelemetryInterceptor(handler, telemetryLogger, toolName, endpoint);
-        
-        // Then wrap with timeout (using the singleton instance)
         return timeoutHandler.wrap(telemetryHandler);
     }
-    
-    /**
-     * Register an endpoint with automatic telemetry and timeout wrapping using standardized naming
-     * This method uses the tool name as the endpoint path (with leading slash)
-     */
+
     private void registerEndpoint(HttpServer server, String toolName, HttpHandler handler) {
         String endpoint = "/" + toolName;
         server.createContext(endpoint, wrapWithTelemetryAndTimeout(handler, toolName, endpoint));
     }
-    
-    /**
-     * Register program-level endpoints
-     */
-    private void registerProgramEndpoints(HttpServer server) {
-        registerEndpoint(server, "get_program_info", exchange -> {
-            HttpUtils.sendResponse(exchange, programService.getProgramInfo());
-        });
-    }
 
     /**
-     * Register function-related endpoints
+     * Create an HttpHandler from a ToolDef + Method, dispatching params via reflection.
      */
-    private void registerFunctionEndpoints(HttpServer server) {
-        // List functions with pagination
-        registerEndpoint(server, "list_functions", exchange -> {
-            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-            int offset = HttpUtils.parseIntOrDefault(qparams.get("offset"), 0);
-            int limit = HttpUtils.parseIntOrDefault(qparams.get("limit"), 100);
-
-            HttpUtils.sendResponse(exchange, functionService.getAllFunctionNames(offset, limit));
-        });
-        
-        // Get function code (C pseudocode, assembly, or pcode)
-        registerEndpoint(server, "get_function_code", exchange -> {
-            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-            String identifier = qparams.get("function_identifier");
-            String mode = qparams.getOrDefault("mode", "C");
-            HttpUtils.sendResponse(exchange, functionService.getFunctionCode(identifier, mode));
-        });
-        
-        // Rename function (accepts name or address as identifier)
-        registerEndpoint(server, "rename_function", exchange -> {
-            Map<String, String> params = HttpUtils.parsePostParams(exchange);
-            String identifier = params.get("function_identifier");
-            String newName = params.get("new_name");
-            HttpUtils.sendResponse(exchange, functionService.renameFunction(identifier, newName));
-        });
-        
-        // Get function by address
-        registerEndpoint(server, "get_function_by_address", exchange -> {
-            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-            String address = qparams.get("address");
-            HttpUtils.sendResponse(exchange, functionService.getFunctionByAddress(address));
-        });
-        
-        // Get current address
-        registerEndpoint(server, "get_current_address", exchange -> {
-            HttpUtils.sendResponse(exchange, functionService.getCurrentAddress());
-        });
-        
-        // Get current function
-        registerEndpoint(server, "get_current_function", exchange -> {
-            HttpUtils.sendResponse(exchange, functionService.getCurrentFunction());
-        });
-        
-        // Search functions by name
-        registerEndpoint(server, "search_functions_by_name", exchange -> {
-            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-            String searchTerm = qparams.get("query");
-            int offset = HttpUtils.parseIntOrDefault(qparams.get("offset"), 0);
-            int limit = HttpUtils.parseIntOrDefault(qparams.get("limit"), 100);
-            HttpUtils.sendResponse(exchange, functionService.searchFunctionsByName(searchTerm, offset, limit));
-        });
-        
-        // Set function prototype
-        registerEndpoint(server, "set_function_prototype", exchange -> {
+    private HttpHandler createHandler(ToolDef def, Method method, Object target) {
+        return exchange -> {
             try {
-                Map<String, String> params = HttpUtils.parsePostParams(exchange);
-                String functionIdentifier = params.get("function_identifier");
-                String prototype = params.get("prototype");
-
-                // Call the set prototype function and get detailed result
-                PrototypeResult result = functionService.setFunctionPrototype(functionIdentifier, prototype);
-                
-                // Format response based on success/failure and any messages
-                String response;
-                if (result.isSuccess()) {
-                    response = "Function prototype set successfully";
-                    if (!result.getErrorMessage().isEmpty()) {
-                        response += "\n\nWarnings/Debug Info:\n" + result.getErrorMessage();
+                java.util.Map<String, Object> params = def.parseParams(exchange);
+                // Build args array in method parameter order
+                java.lang.reflect.Parameter[] methodParams = method.getParameters();
+                Object[] args = new Object[methodParams.length];
+                for (int i = 0; i < methodParams.length; i++) {
+                    Param paramAnn = methodParams[i].getAnnotation(Param.class);
+                    if (paramAnn != null) {
+                        String snakeName = ToolDef.camelToSnake(methodParams[i].getName());
+                        args[i] = params.get(snakeName);
                     }
-                } else {
-                    response = "Failed to set function prototype: " + result.getErrorMessage();
                 }
-                
-                HttpUtils.sendResponse(exchange, response);
-            } catch (IOException e) {
-                HttpUtils.sendJsonErrorResponse(exchange, 500, "Error processing request: " + e.getMessage());
-            }
-        });
-    }
-
-    /**
-     * Register namespace and class endpoints
-     */
-    private void registerNamespaceEndpoints(HttpServer server) {
-        // Register symbols endpoint
-        registerEndpoint(server, "list_symbols",
-            createPaginatedHandler(namespaceService::listSymbols));
-        
-        // Get symbol address
-        registerEndpoint(server, "get_symbol_address", exchange -> {
-            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-            String symbolName = qparams.get("symbol_name");
-            HttpUtils.sendResponse(exchange, namespaceService.getSymbolAddress(symbolName));
-        });
-    }
-    
-    /**
-     * Register structure and data type endpoints
-     */
-    private void registerDataTypeEndpoints(HttpServer server) {
-        // List data types (structs and/or enums)
-        registerEndpoint(server, "list_data_types", exchange -> {
-            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-            String kind = qparams.getOrDefault("kind", "all");
-            int offset = HttpUtils.parseIntOrDefault(qparams.get("offset"), 0);
-            int limit = HttpUtils.parseIntOrDefault(qparams.get("limit"), 100);
-            HttpUtils.sendResponse(exchange, dataTypeService.listDataTypes(kind, offset, limit));
-        });
-        
-        // Bulk update structure (JSON body)
-        registerEndpoint(server, "update_structure", exchange -> {
-            try {
-                var body = new String(exchange.getRequestBody().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
-                var structName = extractJsonString(body, "name");
-                var newName = extractJsonString(body, "new_name");
-                var sizeVal = extractJsonInt(body, "size");
-                var fieldRenames = extractJsonObject(body, "field_renames");
-                var typeChanges = extractJsonObject(body, "type_changes");
-
-                String result = dataTypeService.updateStructure(structName, newName, sizeVal,
-                        fieldRenames.isEmpty() ? null : fieldRenames,
-                        typeChanges.isEmpty() ? null : typeChanges);
+                String result = (String) method.invoke(target, args);
                 HttpUtils.sendResponse(exchange, result);
+            } catch (java.lang.reflect.InvocationTargetException e) {
+                Throwable cause = e.getCause();
+                HttpUtils.sendJsonErrorResponse(exchange, 500, "Error: " + (cause != null ? cause.getMessage() : e.getMessage()));
             } catch (Exception e) {
                 HttpUtils.sendJsonErrorResponse(exchange, 500, "Error: " + e.getMessage());
             }
-        });
-
-        // Bulk update enum (JSON body)
-        registerEndpoint(server, "update_enum", exchange -> {
-            try {
-                var body = new String(exchange.getRequestBody().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
-                var enumName = extractJsonString(body, "name");
-                var newName = extractJsonString(body, "new_name");
-                var sizeVal = extractJsonInt(body, "size");
-                var valueRenames = extractJsonObject(body, "value_renames");
-                var valueChanges = extractJsonLongObject(body, "value_changes");
-
-                String result = dataTypeService.updateEnum(enumName, newName, sizeVal,
-                        valueRenames.isEmpty() ? null : valueRenames,
-                        valueChanges == null || valueChanges.isEmpty() ? null : valueChanges);
-                HttpUtils.sendResponse(exchange, result);
-            } catch (Exception e) {
-                HttpUtils.sendJsonErrorResponse(exchange, 500, "Error: " + e.getMessage());
-            }
-        });
-
-        // Create structure (JSON body with optional inline fields)
-        registerEndpoint(server, "create_structure", exchange -> {
-            try {
-                var body = new String(exchange.getRequestBody().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
-                var structName = extractJsonString(body, "name");
-                var sizeStr = extractJsonString(body, "size");
-                int size = 0;
-                if (sizeStr != null) {
-                    try { size = Integer.parseInt(sizeStr); } catch (NumberFormatException ignored) {}
-                }
-                var categoryPath = extractJsonString(body, "category_path");
-                var fields = extractJsonArrayOfPairs(body, "fields");
-
-                String result = dataTypeService.createStructure(structName, size, categoryPath, fields);
-                HttpUtils.sendResponse(exchange, result);
-            } catch (Exception e) {
-                HttpUtils.sendJsonErrorResponse(exchange, 500, "Error: " + e.getMessage());
-            }
-        });
-
-        // Add structure field
-        registerEndpoint(server, "add_structure_field", exchange -> {
-            try {
-                Map<String, String> params = HttpUtils.parsePostParams(exchange);
-                String structName = params.get("struct_name");
-                String fieldName = params.get("field_name");
-                String fieldType = params.get("field_type");
-                int fieldSize = HttpUtils.parseIntOrDefault(params.get("field_size"), -1);
-                int offset = HttpUtils.parseIntOrDefault(params.get("offset"), -1);
-                String comment = params.get("comment");
-                
-                String result = dataTypeService.addStructureField(structName, fieldName, fieldType,
-                                                                 fieldSize, offset, comment);
-                HttpUtils.sendResponse(exchange, result);
-            } catch (IOException e) {
-                HttpUtils.sendJsonErrorResponse(exchange, 500, "Error parsing parameters: " + e.getMessage());
-            }
-        });
-
-        // Get data type details (auto-detects struct vs enum)
-        registerEndpoint(server, "get_data_type", exchange -> {
-            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-            String name = qparams.get("name");
-            HttpUtils.sendResponse(exchange, dataTypeService.getDataType(name));
-        });
-
-        // Create enum (JSON body with optional inline values)
-        registerEndpoint(server, "create_enum", exchange -> {
-            try {
-                var body = new String(exchange.getRequestBody().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
-                var enumName = extractJsonString(body, "name");
-                var sizeStr = extractJsonString(body, "size");
-                int size = 4;
-                if (sizeStr != null) {
-                    try { size = Integer.parseInt(sizeStr); } catch (NumberFormatException ignored) {}
-                }
-                var categoryPath = extractJsonString(body, "category_path");
-                var values = extractJsonLongObject(body, "values");
-
-                String result = dataTypeService.createEnum(enumName, size, categoryPath, values);
-                HttpUtils.sendResponse(exchange, result);
-            } catch (Exception e) {
-                HttpUtils.sendJsonErrorResponse(exchange, 500, "Error: " + e.getMessage());
-            }
-        });
-
-        // Add enum value
-        registerEndpoint(server, "add_enum_value", exchange -> {
-            try {
-                Map<String, String> params = HttpUtils.parsePostParams(exchange);
-                String enumName = params.get("enum_name");
-                String valueName = params.get("value_name");
-                long value = Long.parseLong(params.getOrDefault("value", "0"));
-                
-                String result = dataTypeService.addEnumValue(enumName, valueName, value);
-                HttpUtils.sendResponse(exchange, result);
-            } catch (IOException e) {
-                HttpUtils.sendJsonErrorResponse(exchange, 500, "Error parsing parameters: " + e.getMessage());
-            } catch (NumberFormatException e) {
-                HttpUtils.sendJsonErrorResponse(exchange, 400, "Invalid numeric value: " + e.getMessage());
-            }
-        });
-
-        // Find data type usage
-        registerEndpoint(server, "find_data_type_usage", exchange -> {
-            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-            String typeName = qparams.get("type_name");
-            String fieldName = qparams.get("field_name");
-            int offset = HttpUtils.parseIntOrDefault(qparams.get("offset"), 0);
-            int limit = HttpUtils.parseIntOrDefault(qparams.get("limit"), 100);
-            HttpUtils.sendResponse(exchange, dataTypeService.findDataTypeUsage(typeName, fieldName, offset, limit));
-        });
-    }
-    
-    /**
-     * Register analysis endpoints
-     */
-    private void registerAnalysisEndpoints(HttpServer server) {
-        // List references
-        registerEndpoint(server, "list_references", exchange -> {
-            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-            String address = qparams.get("address");
-            int offset = HttpUtils.parseIntOrDefault(qparams.get("offset"), 0);
-            int limit = HttpUtils.parseIntOrDefault(qparams.get("limit"), 100);
-            HttpUtils.sendResponse(exchange, analysisService.listReferences(address, offset, limit));
-        });
-        
-        // Analyze control flow
-        registerEndpoint(server, "analyze_control_flow", exchange -> {
-            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-            String functionIdentifier = qparams.get("function_identifier");
-            HttpUtils.sendResponse(exchange, analysisService.analyzeControlFlow(functionIdentifier));
-        });
-
-        // Analyze data flow
-        registerEndpoint(server, "analyze_data_flow", exchange -> {
-            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-            String functionIdentifier = qparams.get("function_identifier");
-            String variableName = qparams.get("variable");
-            HttpUtils.sendResponse(exchange, analysisService.analyzeDataFlow(functionIdentifier, variableName));
-        });
-
-        // Get call graph (unified: callers, callees, or both)
-        registerEndpoint(server, "get_call_graph", exchange -> {
-            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-            String functionIdentifier = qparams.get("function_identifier");
-            int depth = HttpUtils.parseIntOrDefault(qparams.get("depth"), 2);
-            String direction = qparams.getOrDefault("direction", "both");
-            HttpUtils.sendResponse(exchange, analysisService.getCallGraph(functionIdentifier, depth, direction));
-        });
-
-        // List references from
-        registerEndpoint(server, "list_references_from", exchange -> {
-            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-            String address = qparams.get("address");
-            int offset = HttpUtils.parseIntOrDefault(qparams.get("offset"), 0);
-            int limit = HttpUtils.parseIntOrDefault(qparams.get("limit"), 100);
-            HttpUtils.sendResponse(exchange, analysisService.listReferencesFrom(address, offset, limit));
-        });
-        
-    }
-    
-    /**
-     * Register memory and data endpoints
-     */
-    private void registerMemoryEndpoints(HttpServer server) {
-        // Get memory layout (segments)
-        registerEndpoint(server, "get_memory_layout", exchange -> {
-            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-            int offset = HttpUtils.parseIntOrDefault(qparams.get("offset"), 0);
-            int limit = HttpUtils.parseIntOrDefault(qparams.get("limit"), 100);
-            HttpUtils.sendResponse(exchange, memoryService.getMemoryLayout(offset, limit));
-        });
-        
-        // List data items
-        registerEndpoint(server, "list_data_items", exchange -> {
-            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-            int offset = HttpUtils.parseIntOrDefault(qparams.get("offset"), 0);
-            int limit = HttpUtils.parseIntOrDefault(qparams.get("limit"), 100);
-            HttpUtils.sendResponse(exchange, memoryService.listDefinedData(offset, limit));
-        });
-        
-        // Rename data
-        registerEndpoint(server, "rename_data", exchange -> {
-            Map<String, String> params;
-            try {
-                params = HttpUtils.parsePostParams(exchange);
-            } catch (IOException e) {
-                HttpUtils.sendJsonErrorResponse(exchange, 500, "Error parsing parameters: " + e.getMessage());
-                return;
-            }
-            
-            boolean success = memoryService.renameDataAtAddress(params.get("address"), params.get("new_name"));
-            if (success) {
-                HttpUtils.sendJsonResponse(exchange, "Renamed successfully");
-            } else {
-                HttpUtils.sendJsonErrorResponse(exchange, 400, "Rename failed");
-            }
-        });
-        
-        // Set data type at address
-        registerEndpoint(server, "set_address_data_type", exchange -> {
-            try {
-                Map<String, String> params = HttpUtils.parsePostParams(exchange);
-                String address = params.get("address");
-                String dataType = params.get("data_type");
-                boolean clearExisting = "true".equalsIgnoreCase(params.get("clear_existing"));
-
-                String result = memoryService.setAddressDataType(address, dataType, clearExisting);
-                HttpUtils.sendResponse(exchange, result);
-            } catch (IOException e) {
-                HttpUtils.sendJsonErrorResponse(exchange, 500, "Error parsing parameters: " + e.getMessage());
-            }
-        });
-
-        // Read memory
-        registerEndpoint(server, "read_memory", exchange -> {
-            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-            String address = qparams.get("address");
-            int size = HttpUtils.parseIntOrDefault(qparams.get("size"), 16);
-            String format = qparams.getOrDefault("format", "hex");
-            HttpUtils.sendResponse(exchange, memoryService.readMemory(address, size, format));
-        });
-        
-        // Get memory permissions
-        registerEndpoint(server, "get_memory_permissions", exchange -> {
-            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-            String address = qparams.get("address");
-            HttpUtils.sendResponse(exchange, memoryService.getMemoryPermissions(address));
-        });
-        
-        // Get data type at address
-        registerEndpoint(server, "get_address_data_type", exchange -> {
-            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-            String address = qparams.get("address");
-            HttpUtils.sendResponse(exchange, memoryService.getAddressDataType(address));
-        });
+        };
     }
 
     /**
-     * Register comments endpoints
+     * Register the /mcp/tools endpoint that serves tool definitions as JSON.
      */
-    private void registerCommentEndpoints(HttpServer server) {
-        // Get comment(s) at address — returns all types
-        registerEndpoint(server, "get_comment", exchange -> {
-            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-            String address = qparams.get("address");
-            HttpUtils.sendResponse(exchange, commentService.getComments(address));
-        });
-
-        // Set comment at address with specified type
-        registerEndpoint(server, "set_comment", exchange -> {
-            try {
-                Map<String, String> params = HttpUtils.parsePostParams(exchange);
-                String address = params.get("address");
-                String comment = params.get("comment");
-                String commentType = params.get("type");
-                if (commentType == null || commentType.isEmpty()) {
-                    HttpUtils.sendJsonErrorResponse(exchange, 400, "Error: 'type' parameter is required (pre, post, eol, plate, repeatable)");
-                    return;
-                }
-                boolean success = commentService.setComment(address, comment, commentType);
-                if (success) {
-                    HttpUtils.sendJsonResponse(exchange, "Comment set successfully");
-                } else {
-                    HttpUtils.sendJsonErrorResponse(exchange, 400, "Failed to set comment. Valid types: pre, post, eol, plate, repeatable");
-                }
-            } catch (IOException e) {
-                HttpUtils.sendJsonErrorResponse(exchange, 500, "Error parsing parameters: " + e.getMessage());
+    private void registerMcpToolsEndpoint(HttpServer server) {
+        registerEndpoint(server, "mcp/tools", exchange -> {
+            StringBuilder sb = new StringBuilder("[");
+            for (int i = 0; i < toolDefs.size(); i++) {
+                if (i > 0) sb.append(",");
+                sb.append(toolDefs.get(i).toToolJson());
+            }
+            sb.append("]");
+            byte[] bytes = sb.toString().getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
+            exchange.sendResponseHeaders(200, bytes.length);
+            try (var os = exchange.getResponseBody()) {
+                os.write(bytes);
             }
         });
     }
 
-    /**
-     * Register search-related endpoints
-     */
-    private void registerSearchEndpoints(HttpServer server) {
-        // Memory search endpoint
-        registerEndpoint(server, "search_memory", exchange -> {
-            try {
-                Map<String, String> params = HttpUtils.parseQueryParams(exchange);
-                String query = params.get("query");
-                boolean asString = "true".equalsIgnoreCase(params.get("as_string"));
-                String blockName = params.get("block_name");
-                int limit = Integer.parseInt(params.getOrDefault("limit", "10"));
-                
-                String result = searchService.searchMemory(query, asString, blockName, limit);
-                HttpUtils.sendResponse(exchange, result);
-            } catch (IOException | RuntimeException e) {
-                HttpUtils.sendJsonErrorResponse(exchange, 500, "Error processing search request: " + e.getMessage());
-            }
-        });
-        
-        // Disassembly search endpoint
-        registerEndpoint(server, "search_disassembly", exchange -> {
-            try {
-                Map<String, String> params = HttpUtils.parseQueryParams(exchange);
-                String query = params.get("query");
-                int offset = Integer.parseInt(params.getOrDefault("offset", "0"));
-                int limit = Integer.parseInt(params.getOrDefault("limit", "10"));
-                
-                String result = searchService.searchDisassembly(query, offset, limit);
-                HttpUtils.sendResponse(exchange, result);
-            } catch (RuntimeException | IOException e) {
-                HttpUtils.sendJsonErrorResponse(exchange, 500, "Error processing disassembly search: " + e.getMessage());
-            }
-        });
-        
-        // Decompiled code search endpoint
-        registerEndpoint(server, "search_decompiled", exchange -> {
-            try {
-                Map<String, String> params = HttpUtils.parseQueryParams(exchange);
-                String query = params.get("query");
-                int offset = Integer.parseInt(params.getOrDefault("offset", "0"));
-                int limit = Integer.parseInt(params.getOrDefault("limit", "5"));
-                
-                String result = searchService.searchDecompiledCode(query, offset, limit);
-                HttpUtils.sendResponse(exchange, result);
-            } catch (IOException | RuntimeException e) {
-                HttpUtils.sendJsonErrorResponse(exchange, 500, "Error processing decompiled code search: " + e.getMessage());
-            }
-        });
-    }
+    // =========================================================================
+    // JSON extraction utilities (used by ToolDef.parseParams for complex types)
+    // =========================================================================
 
-    /**
-     * Register variable-related endpoints
-     */
-    private void registerVariableEndpoints(HttpServer server) {
-        // Batch rename variables endpoint (JSON body: {"function_identifier": "...", "renames": {"old": "new", ...}})
-        registerEndpoint(server, "rename_variables", exchange -> {
-            try {
-                var body = new String(exchange.getRequestBody().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
-                var functionIdentifier = extractJsonString(body, "function_identifier");
-                var renames = extractJsonObject(body, "renames");
-
-                var result = variableService.batchRenameVariables(functionIdentifier, renames);
-                HttpUtils.sendResponse(exchange, result);
-            } catch (Exception e) {
-                HttpUtils.sendJsonErrorResponse(exchange, 500, String.format("Error: %s", e.getMessage()));
-            }
-        });
-
-        // Split variable endpoint
-        registerEndpoint(server, "split_variable", exchange -> {
-            try {
-                var params = HttpUtils.parsePostParams(exchange);
-                var functionIdentifier = params.get("function_identifier");
-                var variableName = params.get("variable_name");
-                var usageAddress = params.get("usage_address");
-
-                // Use Optional to handle the optional new_name parameter
-                var newName = Optional.ofNullable(params.get("new_name"))
-                    .filter(name -> !name.isEmpty())
-                    .orElse(variableName + "_split");
-
-                var result = variableService.renameVariableInFunction(functionIdentifier, variableName, newName, usageAddress);
-                HttpUtils.sendResponse(exchange, result);
-            } catch (IOException e) {
-                HttpUtils.sendJsonErrorResponse(exchange, 500, String.format("Error: %s", e.getMessage()));
-            }
-        });
-
-        // Batch set variable types endpoint (JSON body: {"function_identifier": "...", "types": {"var": "type", ...}})
-        registerEndpoint(server, "set_variable_types", exchange -> {
-            try {
-                var body = new String(exchange.getRequestBody().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
-                var functionIdentifier = extractJsonString(body, "function_identifier");
-                var types = extractJsonObject(body, "types");
-
-                var result = variableService.batchSetVariableTypes(functionIdentifier, types);
-                HttpUtils.sendResponse(exchange, result);
-            } catch (Exception e) {
-                HttpUtils.sendJsonErrorResponse(exchange, 500, String.format("Error: %s", e.getMessage()));
-            }
-        });
-    }
-
-    /**
-     * Find the next unescaped double-quote in a string, starting from fromIndex.
-     * A quote is escaped if preceded by an odd number of backslashes.
-     */
     static int findUnescapedQuote(String s, int fromIndex) {
         int i = fromIndex;
         while (i < s.length()) {
             int q = s.indexOf('"', i);
             if (q < 0) return -1;
-            // Count preceding backslashes
             int backslashes = 0;
             int j = q - 1;
             while (j >= 0 && s.charAt(j) == '\\') {
@@ -684,16 +205,13 @@ public class ApiHandlerRegistry {
                 j--;
             }
             if (backslashes % 2 == 0) {
-                return q; // Even backslashes means the quote is NOT escaped
+                return q;
             }
             i = q + 1;
         }
         return -1;
     }
 
-    /**
-     * Unescape a JSON string value: convert \" → ", \\ → \, \n → newline, etc.
-     */
     static String unescapeJsonString(String s) {
         if (s == null || s.indexOf('\\') < 0) return s;
         StringBuilder sb = new StringBuilder(s.length());
@@ -734,11 +252,6 @@ public class ApiHandlerRegistry {
         return sb.toString();
     }
 
-    /**
-     * Extract a JSON string value by key from a JSON object string.
-     * Simple parser for {"key": "value"} patterns without external libraries.
-     * Handles escaped quotes within values.
-     */
     static String extractJsonString(String json, String key) {
         String searchKey = "\"" + key + "\"";
         int keyIndex = json.indexOf(searchKey);
@@ -756,10 +269,6 @@ public class ApiHandlerRegistry {
         return unescapeJsonString(json.substring(quoteStart + 1, quoteEnd));
     }
 
-    /**
-     * Extract a JSON integer value by key from a JSON object string.
-     * Returns null if the key is not found or the value is not a valid integer.
-     */
     static Integer extractJsonInt(String json, String key) {
         String searchKey = "\"" + key + "\"";
         int keyIndex = json.indexOf(searchKey);
@@ -768,11 +277,9 @@ public class ApiHandlerRegistry {
         int colonIndex = json.indexOf(':', keyIndex + searchKey.length());
         if (colonIndex < 0) return null;
 
-        // Skip whitespace after colon
         int numStart = colonIndex + 1;
         while (numStart < json.length() && Character.isWhitespace(json.charAt(numStart))) numStart++;
 
-        // Check if value is a quoted string (number in quotes)
         if (numStart < json.length() && json.charAt(numStart) == '"') {
             int quoteEnd = json.indexOf('"', numStart + 1);
             if (quoteEnd < 0) return null;
@@ -783,7 +290,6 @@ public class ApiHandlerRegistry {
             }
         }
 
-        // Read unquoted number
         int numEnd = numStart;
         while (numEnd < json.length() && (Character.isDigit(json.charAt(numEnd)) ||
                json.charAt(numEnd) == '-')) {
@@ -798,10 +304,6 @@ public class ApiHandlerRegistry {
         }
     }
 
-    /**
-     * Extract a JSON object as a Map of string key-value pairs.
-     * Handles {"key": {"k1": "v1", "k2": "v2"}} patterns.
-     */
     static Map<String, String> extractJsonObject(String json, String key) {
         String searchKey = "\"" + key + "\"";
         int keyIndex = json.indexOf(searchKey);
@@ -810,7 +312,6 @@ public class ApiHandlerRegistry {
         int braceStart = json.indexOf('{', keyIndex + searchKey.length());
         if (braceStart < 0) return Map.of();
 
-        // Find matching close brace
         int depth = 1;
         int braceEnd = braceStart + 1;
         while (braceEnd < json.length() && depth > 0) {
@@ -823,7 +324,6 @@ public class ApiHandlerRegistry {
         String inner = json.substring(braceStart + 1, braceEnd - 1).trim();
         if (inner.isEmpty()) return Map.of();
 
-        // Parse "key": "value" pairs
         Map<String, String> result = new java.util.LinkedHashMap<>();
         int i = 0;
         while (i < inner.length()) {
@@ -845,11 +345,6 @@ public class ApiHandlerRegistry {
         return result;
     }
 
-    /**
-     * Extract a JSON array of two-element string arrays: [["a","b"],["c","d"]]
-     * Returns a List of String[2] pairs.
-     * Handles values containing brackets (e.g., "char[32]") by parsing quoted strings properly.
-     */
     static java.util.List<String[]> extractJsonArrayOfPairs(String json, String key) {
         String searchKey = "\"" + key + "\"";
         int keyIndex = json.indexOf(searchKey);
@@ -858,7 +353,6 @@ public class ApiHandlerRegistry {
         int bracketStart = json.indexOf('[', keyIndex + searchKey.length());
         if (bracketStart < 0) return null;
 
-        // Find matching close bracket (skip content inside quotes)
         int depth = 1;
         int bracketEnd = bracketStart + 1;
         boolean inQuote = false;
@@ -876,19 +370,15 @@ public class ApiHandlerRegistry {
         String inner = json.substring(bracketStart + 1, bracketEnd - 1).trim();
         if (inner.isEmpty()) return java.util.List.of();
 
-        // Parse by extracting pairs of quoted strings between each inner [ ... ]
-        // We track bracket depth while respecting quotes
         java.util.List<String[]> result = new java.util.ArrayList<>();
         int i = 0;
         while (i < inner.length()) {
-            // Find start of inner array
             int arrStart = -1;
             for (int j = i; j < inner.length(); j++) {
                 if (inner.charAt(j) == '[') { arrStart = j; break; }
             }
             if (arrStart < 0) break;
 
-            // Find matching end bracket, respecting quotes
             int arrDepth = 1;
             int arrEnd = arrStart + 1;
             boolean arrInQuote = false;
@@ -904,7 +394,6 @@ public class ApiHandlerRegistry {
             }
 
             String pair = inner.substring(arrStart + 1, arrEnd - 1);
-            // Extract two quoted strings from the pair
             int qs1 = pair.indexOf('"');
             if (qs1 < 0) { i = arrEnd; continue; }
             int qe1 = findUnescapedQuote(pair, qs1 + 1);
@@ -920,10 +409,6 @@ public class ApiHandlerRegistry {
         return result;
     }
 
-    /**
-     * Extract a JSON object as a Map of string keys to long values.
-     * Handles {"key": {"NAME1": 0, "NAME2": 1}} patterns.
-     */
     static java.util.Map<String, Long> extractJsonLongObject(String json, String key) {
         String searchKey = "\"" + key + "\"";
         int keyIndex = json.indexOf(searchKey);
@@ -932,7 +417,6 @@ public class ApiHandlerRegistry {
         int braceStart = json.indexOf('{', keyIndex + searchKey.length());
         if (braceStart < 0) return null;
 
-        // Find matching close brace
         int depth = 1;
         int braceEnd = braceStart + 1;
         while (braceEnd < json.length() && depth > 0) {
@@ -945,7 +429,6 @@ public class ApiHandlerRegistry {
         String inner = json.substring(braceStart + 1, braceEnd - 1).trim();
         if (inner.isEmpty()) return java.util.Map.of();
 
-        // Parse "key": number pairs
         java.util.Map<String, Long> result = new java.util.LinkedHashMap<>();
         int i = 0;
         while (i < inner.length()) {
@@ -958,7 +441,6 @@ public class ApiHandlerRegistry {
             int colonIdx = inner.indexOf(':', qe1 + 1);
             if (colonIdx < 0) break;
 
-            // Find the number value (skip whitespace, read until comma/end)
             int numStart = colonIdx + 1;
             while (numStart < inner.length() && Character.isWhitespace(inner.charAt(numStart))) numStart++;
 
@@ -987,17 +469,4 @@ public class ApiHandlerRegistry {
         }
         return result;
     }
-
-    /**
-     * Helper method to create a pagination handler
-     */
-    private HttpHandler createPaginatedHandler(final PaginatedHandler handler) {
-        return exchange -> {
-            Map<String, String> qparams = HttpUtils.parseQueryParams(exchange);
-            int offset = HttpUtils.parseIntOrDefault(qparams.get("offset"), 0);
-            int limit = HttpUtils.parseIntOrDefault(qparams.get("limit"), 100);
-            HttpUtils.sendResponse(exchange, handler.execute(offset, limit));
-        };
-    }
-    
 }

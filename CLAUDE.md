@@ -40,22 +40,30 @@ pip install -r requirements.txt
 LLM Client → (MCP/stdio) → bridge_mcp_ghidra.py → (HTTP) → GhidraMCPPlugin (inside Ghidra)
 ```
 
-**Java plugin entrypoint:** `GhidraMCPPlugin` constructs 9 services and passes them to `ApiHandlerRegistry`, which registers ~54 HTTP endpoints on an embedded `HttpServer` (default port 8080).
+**Java plugin entrypoint:** `GhidraMCPPlugin` constructs 9 services and passes them to `ApiHandlerRegistry`, which uses reflection to discover `@McpTool`-annotated methods on all services and registers 40 HTTP endpoints + a `/mcp/tools` metadata endpoint on an embedded `HttpServer` (default port 8080).
+
+**Annotation-driven tool registry** (in `com.lauriewired.mcp.api`):
+- `@McpTool` — marks a service method as an MCP tool (description, POST vs GET)
+- `@Param` — annotates each parameter (description, default value)
+- `ToolDef` — runtime tool definition built from reflection; handles `camelCase→snake_case` name conversion, JSON Schema generation, and param parsing
+- `ParamType` — maps Java types to JSON Schema types (STRING, INTEGER, BOOLEAN, STRING_MAP, LONG_MAP, STRING_PAIR_LIST)
+- `ToolParamDef` — parameter definition record
 
 **Service layer** (all in `com.lauriewired.mcp.services`):
 - `ProgramService` — provides current `Program` reference from Ghidra's `PluginTool`; used by all other services
 - `FunctionService`, `DataTypeService`, `AnalysisService`, `MemoryService`, `NamespaceService`, `CommentService`, `SearchService`, `VariableService`
 
 **Key utilities:**
-- `HttpUtils` — parses query params, reads POST bodies, sends responses
+- `HttpUtils` — parses query params, reads POST bodies, sends JSON envelope responses
 - `GhidraUtils` — address parsing, function lookup helpers
-- `TimeoutHandler` — wraps HTTP handlers with configurable request timeouts
+- `TimeoutHandler` — wraps HTTP handlers with configurable request timeouts (GET only)
 - `ProgramTransaction` — wraps Ghidra `program.startTransaction()`/`endTransaction()` for write operations
 
-**Python bridge:** `bridge_mcp_ghidra.py` uses `FastMCP` to expose ~54 `@mcp.tool()` functions, each making HTTP GET/POST to the Java plugin.
+**Python bridge:** `bridge_mcp_ghidra.py` is a generic ~130-line MCP proxy. At startup it fetches tool definitions from `GET /mcp/tools` and dynamically registers them as MCP tools. No per-tool code needed — Java is the single source of truth for tool metadata.
 
 ## Key Patterns
 
+- **Declarative tool registration** — adding a tool means annotating a service method with `@McpTool` + `@Param`. Reflection discovers it, converts Java camelCase names to snake_case, generates JSON Schema, and registers the HTTP handler automatically. The Python bridge picks it up from `/mcp/tools` with zero changes needed.
 - **All Ghidra state access goes through `ProgramService.getCurrentProgram()`** — services never cache the Program reference.
 - **Write operations** (rename, create struct, set type, etc.) must use `ProgramTransaction` or manual `startTransaction`/`endTransaction`.
 - **No Gson or external JSON libraries** — JSON is built manually with string concatenation/formatting to avoid classpath issues in Ghidra's plugin environment.

@@ -225,23 +225,23 @@ public class SearchServiceTest {
     }
 
     @Test
-    @DisplayName("searchDecompiledCode returns error when no program is loaded")
-    void testSearchDecompiledCode_NoProgram() {
-        String result = searchService.searchDecompiledCode("function", 0, 10);
+    @DisplayName("searchDecompiled returns error when no program is loaded")
+    void testSearchDecompiled_NoProgram() {
+        String result = searchService.searchDecompiled("function", 0, 10);
         assertEquals("No program loaded", result);
     }
 
     @Test
-    @DisplayName("searchDecompiledCode returns error for null query")
-    void testSearchDecompiledCode_NullQuery() {
-        String result = searchService.searchDecompiledCode(null, 0, 10);
+    @DisplayName("searchDecompiled returns error for null query")
+    void testSearchDecompiled_NullQuery() {
+        String result = searchService.searchDecompiled(null, 0, 10);
         assertEquals("No program loaded", result);
     }
 
     @Test
-    @DisplayName("searchDecompiledCode returns error for empty query")
-    void testSearchDecompiledCode_EmptyQuery() {
-        String result = searchService.searchDecompiledCode("", 0, 10);
+    @DisplayName("searchDecompiled returns error for empty query")
+    void testSearchDecompiled_EmptyQuery() {
+        String result = searchService.searchDecompiled("", 0, 10);
         assertEquals("No program loaded", result);
     }
 
@@ -294,26 +294,26 @@ public class SearchServiceTest {
     }
 
     @Test
-    @DisplayName("searchDecompiledCode with no functions returns no matches")
-    void testSearchDecompiledCode_NoFunctions() {
+    @DisplayName("searchDecompiled with no functions returns no matches")
+    void testSearchDecompiled_NoFunctions() {
         // Setup
         when(mockProgramService.getCurrentProgram()).thenReturn(mockProgram);
         when(mockProgram.getFunctionManager()).thenReturn(mockFunctionManager);
-        
+
         // Mock language that doesn't support pcode to avoid decompiler initialization
         ghidra.program.model.lang.Language mockLanguage = mock(ghidra.program.model.lang.Language.class);
         when(mockProgram.getLanguage()).thenReturn(mockLanguage);
         when(mockLanguage.supportsPcode()).thenReturn(false);
-        
+
         // Mock empty function iterator - need to mock iterator() method for for-each loop
         Iterator<Function> emptyIterator = mock(Iterator.class);
         when(emptyIterator.hasNext()).thenReturn(false);
         when(mockFunctionManager.getFunctions(true)).thenReturn(mockFunctionIterator);
         when(mockFunctionIterator.iterator()).thenReturn(emptyIterator);
-        
+
         // Test
-        String result = searchServiceWithMocks.searchDecompiledCode("test", 0, 10);
-        
+        String result = searchServiceWithMocks.searchDecompiled("test", 0, 10);
+
         // Verify - when language doesn't support pcode, it should return an error
         assertNotNull(result);
         assertTrue(result.contains("Decompiler not available") || result.contains("No matches found"));
@@ -370,31 +370,31 @@ public class SearchServiceTest {
     }
 
     @Test
-    @DisplayName("searchDecompiledCode handles invalid regex pattern")
-    void testSearchDecompiledCode_InvalidRegex() {
-        String result = searchService.searchDecompiledCode("(unclosed", 0, 10);
+    @DisplayName("searchDecompiled handles invalid regex pattern")
+    void testSearchDecompiled_InvalidRegex() {
+        String result = searchService.searchDecompiled("(unclosed", 0, 10);
         // When no program is loaded, it returns "No program loaded" before checking regex
         assertEquals("No program loaded", result);
     }
 
     @Test
-    @DisplayName("searchDecompiledCode handles valid regex pattern")
-    void testSearchDecompiledCode_ValidRegex() {
-        String result = searchService.searchDecompiledCode("if\\s*\\(.*\\)", 0, 10);
+    @DisplayName("searchDecompiled handles valid regex pattern")
+    void testSearchDecompiled_ValidRegex() {
+        String result = searchService.searchDecompiled("if\\s*\\(.*\\)", 0, 10);
         assertEquals("No program loaded", result);
     }
 
     @Test
-    @DisplayName("searchDecompiledCode handles negative offset")
-    void testSearchDecompiledCode_NegativeOffset() {
-        String result = searchService.searchDecompiledCode("function", -1, 10);
+    @DisplayName("searchDecompiled handles negative offset")
+    void testSearchDecompiled_NegativeOffset() {
+        String result = searchService.searchDecompiled("function", -1, 10);
         assertEquals("No program loaded", result);
     }
 
     @Test
-    @DisplayName("searchDecompiledCode handles zero limit")
-    void testSearchDecompiledCode_ZeroLimit() {
-        String result = searchService.searchDecompiledCode("function", 0, 0);
+    @DisplayName("searchDecompiled handles zero limit")
+    void testSearchDecompiled_ZeroLimit() {
+        String result = searchService.searchDecompiled("function", 0, 0);
         assertEquals("No program loaded", result);
     }
 

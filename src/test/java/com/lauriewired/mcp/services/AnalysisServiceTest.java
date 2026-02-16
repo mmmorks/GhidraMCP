@@ -151,15 +151,15 @@ public class AnalysisServiceTest {
     }
 
     @Test
-    @DisplayName("listReferences returns error for null name or address")
-    void testListReferences_NullNameOrAddress() {
+    @DisplayName("listReferences returns error for null address")
+    void testListReferences_NullAddress() {
         String result = analysisService.listReferences(null, 0, 10);
         assertEquals("No program loaded", result);
     }
 
     @Test
-    @DisplayName("listReferences returns error for empty name or address")
-    void testListReferences_EmptyNameOrAddress() {
+    @DisplayName("listReferences returns error for empty address")
+    void testListReferences_EmptyAddress() {
         String result = analysisService.listReferences("", 0, 10);
         assertEquals("No program loaded", result);
     }

@@ -28,6 +28,9 @@ import ghidra.program.model.mem.MemoryBlock;
 import ghidra.util.Msg;
 import ghidra.util.task.TaskMonitor;
 
+import com.lauriewired.mcp.api.McpTool;
+import com.lauriewired.mcp.api.Param;
+
 /**
  * Service for search-related operations in Ghidra
  */
@@ -43,16 +46,19 @@ public class SearchService {
         this.programService = programService;
     }
 
-    /**
-     * Search for byte patterns in memory using Ghidra's built-in search API
-     *
-     * @param query the byte pattern or string to search for
-     * @param asString whether to treat the query as a UTF-8 string
-     * @param blockName optional memory block name to restrict search (null for all blocks)
-     * @param limit maximum number of results to return
-     * @return formatted search results
-     */
-    public String searchMemory(String query, boolean asString, String blockName, int limit) {
+    @McpTool(description = """
+        Search program memory for byte patterns or strings.
+
+        Searches initialized memory blocks for specified patterns and shows context around matches.
+
+        Returns: Memory matches with address, label, and context bytes
+
+        Example: search_memory("Password", True) -> matches of "Password" string in memory """)
+    public String searchMemory(
+            @Param("The pattern to search for (string or hex bytes like \"00 FF 32\")") String query,
+            @Param(value = "True to search for UTF-8 string, False to search for hex bytes", defaultValue = "true") boolean asString,
+            @Param(value = "Optional memory block name to restrict search", defaultValue = "") String blockName,
+            @Param(value = "Maximum number of results to return", defaultValue = "10") int limit) {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
         if (query == null || query.isEmpty()) return "Search query is required";
@@ -310,15 +316,18 @@ public class SearchService {
         return result.toString();
     }
 
-    /**
-     * Search for text in disassembled code
-     * 
-     * @param query the regex pattern to search for
-     * @param offset starting index
-     * @param limit maximum number of results
-     * @return matching assembly instructions with context
-     */
-    public String searchDisassembly(String query, int offset, int limit) {
+    @McpTool(description = """
+        Search for patterns in disassembled code using regex.
+
+        Searches instruction mnemonics, operands, and comments in functions.
+
+        Returns: Matching instructions with function context and nearby instructions
+
+        Example: search_disassembly("mov.*eax") -> finds MOV instructions using EAX register """)
+    public String searchDisassembly(
+            @Param("Regex pattern to search for in assembly instructions") String query,
+            @Param(value = "Starting index for pagination", defaultValue = "0") int offset,
+            @Param(value = "Maximum number of results to return", defaultValue = "10") int limit) {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
         if (query == null || query.isEmpty()) return "Search query is required";
@@ -492,15 +501,20 @@ public class SearchService {
         return String.join("\n", paginatedResults);
     }
     
-    /**
-     * Search for text in decompiled code
-     * 
-     * @param query the regex pattern to search for
-     * @param offset starting index
-     * @param limit maximum number of results
-     * @return matching decompiled code with context
-     */
-    public String searchDecompiledCode(String query, int offset, int limit) {
+    @McpTool(description = """
+        Search for patterns in decompiled C-like code using regex.
+
+        Searches variables, expressions, and comments in decompiled functions.
+
+        Returns: Matching code fragments with function context and surrounding lines
+
+        Note: This is resource-intensive as each function must be decompiled.
+
+        Example: search_decompiled("malloc\\\\(.*\\\\)") -> finds malloc calls in decompiled code """)
+    public String searchDecompiled(
+            @Param("Regex pattern to search for in decompiled code") String query,
+            @Param(value = "Starting index for pagination", defaultValue = "0") int offset,
+            @Param(value = "Maximum number of functions to search/return", defaultValue = "5") int limit) {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
         if (query == null || query.isEmpty()) return "Search query is required";

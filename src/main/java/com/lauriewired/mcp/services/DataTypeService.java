@@ -13,6 +13,8 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import com.lauriewired.mcp.api.McpTool;
+import com.lauriewired.mcp.api.Param;
 import com.lauriewired.mcp.model.PaginationResult;
 import com.lauriewired.mcp.utils.HttpUtils;
 import com.lauriewired.mcp.utils.ProgramTransaction;
@@ -97,20 +99,25 @@ public class DataTypeService {
         return result.getFormattedResult();
     }
 
-    /**
-     * Bulk update a structure: rename fields, change field types, resize, and/or rename the struct.
-     * All changes are applied in a single transaction with per-field error reporting.
-     *
-     * @param name current structure name (required)
-     * @param newName new name for the struct (optional)
-     * @param size new size in bytes (optional)
-     * @param fieldRenames map of old field name to new field name (optional)
-     * @param typeChanges map of field name (old or new) to new data type name (optional)
-     * @return status message with per-field results
-     */
-    public String updateStructure(String name, String newName, Integer size,
-                                   Map<String, String> fieldRenames,
-                                   Map<String, String> typeChanges) {
+    @McpTool(post = true, description = """
+        Bulk update a structure: rename fields, change field types, resize, and/or rename.
+
+        All changes are applied in a single transaction with per-field error reporting.
+
+        Returns: Per-field results with success/failure status and summary
+
+        Note: For auto-generated field names like "field1_0x10", the number after "field"
+        is the component index. type_changes keys are resolved against both existing field
+        names and rename targets; ambiguous keys produce an error for that entry.
+
+        Example: update_structure("MyStruct", field_renames={"field0_0x0": "width"},
+                                  type_changes={"width": "int"}) """)
+    public String updateStructure(
+            @Param("Current structure name") String name,
+            @Param(value = "New name for the structure (optional)", defaultValue = "") String newName,
+            @Param(value = "New size in bytes (optional, only grows)", defaultValue = "") Integer size,
+            @Param(value = "Map of old field name to new field name", defaultValue = "") Map<String, String> fieldRenames,
+            @Param(value = "Map of field name to new data type", defaultValue = "") Map<String, String> typeChanges) {
         if (name == null || name.isEmpty()) {
             return "Structure name is required";
         }
@@ -257,20 +264,25 @@ public class DataTypeService {
         }
     }
 
-    /**
-     * Bulk update an enum: rename values, change numeric values, resize, and/or rename the enum.
-     * All changes are applied in a single transaction with per-entry error reporting.
-     *
-     * @param name current enum name (required)
-     * @param newName new name for the enum (optional)
-     * @param size new size in bytes, must be 1, 2, 4, or 8 (optional)
-     * @param valueRenames map of old value name to new value name (optional)
-     * @param valueChanges map of value name (old or new) to new numeric value (optional)
-     * @return status message with per-entry results
-     */
-    public String updateEnum(String name, String newName, Integer size,
-                              Map<String, String> valueRenames,
-                              Map<String, Long> valueChanges) {
+    @McpTool(post = true, description = """
+        Bulk update an enum: rename values, change numeric values, resize, and/or rename.
+
+        All changes are applied in a single transaction with per-entry error reporting.
+
+        Returns: Per-entry results with success/failure status and summary
+
+        Note: value_changes keys are resolved against both existing value names and
+        rename targets; ambiguous keys produce an error for that entry.
+
+        Example: update_enum("MyFlags", new_name="FilePermissions",
+                             value_renames={"OLD_VAL": "NEW_VAL"},
+                             value_changes={"NEW_VAL": 42}) """)
+    public String updateEnum(
+            @Param("Current enum name") String name,
+            @Param(value = "New name for the enum (optional)", defaultValue = "") String newName,
+            @Param(value = "New size in bytes \u2014 must be 1, 2, 4, or 8 (optional)", defaultValue = "") Integer size,
+            @Param(value = "Map of old value name to new value name", defaultValue = "") Map<String, String> valueRenames,
+            @Param(value = "Map of value name to new numeric value", defaultValue = "") Map<String, Long> valueChanges) {
         if (name == null || name.isEmpty()) {
             return "Enum name is required";
         }
@@ -601,30 +613,35 @@ public class DataTypeService {
         return createStructure(structName, size, categoryPath, null);
     }
 
-    /**
-     * Create a new structure data type with optional inline fields.
-     * When fields are provided, the structure and all fields are created in one transaction.
-     *
-     * @param structName name of the structure to create
-     * @param size size of the structure in bytes (0 for auto-size)
-     * @param categoryPath category path for the structure (e.g., "/MyStructures")
-     * @param fields optional list of [fieldName, fieldType] pairs to add immediately
-     * @return status message
-     */
-    public String createStructure(String structName, int size, String categoryPath,
-                                  List<String[]> fields) {
+    @McpTool(post = true, description = """
+        Create a new structure data type in Ghidra, optionally with inline fields.
+
+        Creates a structure with the specified name, and when fields are provided,
+        adds all fields in a single transaction \u2014 avoiding the multi-step
+        create \u2192 add_field \u2192 add_field dance.
+
+        Returns: Success message with path or error message
+
+        Note: Structure names must be unique. Use add_structure_field to add fields to existing structs.
+
+        Example: create_structure("POINT", 0, "", [["x", "int"], ["y", "int"]]) """)
+    public String createStructure(
+            @Param("Name of the structure to create") String name,
+            @Param(value = "Size in bytes (0 for auto-size based on fields)", defaultValue = "0") int size,
+            @Param(value = "Category path like \"/MyStructures\" (empty for root)", defaultValue = "") String categoryPath,
+            @Param(value = "Optional list of [field_name, data_type] pairs to add immediately", defaultValue = "") List<String[]> fields) {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
-        if (structName == null || structName.isEmpty()) {
+        if (name == null || name.isEmpty()) {
             return "Structure name is required";
         }
 
         try (var tx = ProgramTransaction.start(program, "Create structure")) {
             ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
 
-            DataType existing = findDataTypeByNameInAllCategories(dtm, structName);
+            DataType existing = findDataTypeByNameInAllCategories(dtm, name);
             if (existing != null && existing instanceof Structure) {
-                return "Structure '" + structName + "' already exists";
+                return "Structure '" + name + "' already exists";
             }
 
             CategoryPath catPath = CategoryPath.ROOT;
@@ -632,7 +649,7 @@ public class DataTypeService {
                 catPath = new CategoryPath(categoryPath);
             }
 
-            StructureDataType struct = new StructureDataType(catPath, structName, size, dtm);
+            StructureDataType struct = new StructureDataType(catPath, name, size, dtm);
 
             // Add inline fields if provided
             if (fields != null && !fields.isEmpty()) {
@@ -652,7 +669,7 @@ public class DataTypeService {
             DataType addedType = dtm.addDataType(struct, null);
 
             tx.commit();
-            String msg = "Structure '" + structName + "' created successfully at " +
+            String msg = "Structure '" + name + "' created successfully at " +
                     addedType.getCategoryPath().getPath();
             if (fields != null && !fields.isEmpty()) {
                 msg += " with " + fields.size() + " fields";
@@ -664,19 +681,23 @@ public class DataTypeService {
         }
     }
 
-    /**
-     * Add a field to an existing structure
-     *
-     * @param structName name of the structure
-     * @param fieldName name of the field to add
-     * @param fieldType data type of the field
-     * @param fieldSize size of the field (for fixed-size types)
-     * @param offset offset in the structure (-1 to append)
-     * @param comment optional comment for the field
-     * @return status message
-     */
-    public String addStructureField(String structName, String fieldName, String fieldType,
-                                  int fieldSize, int offset, String comment) {
+    @McpTool(post = true, description = """
+        Add a field to an existing structure.
+
+        Adds a new field with specified type at given offset or appends to end.
+
+        Returns: Success or error message
+
+        Note: Field types can be built-in types, typedefs, or other structures/enums.
+
+        Example: add_structure_field("MY_STRUCT", "count", "int") -> "Field 'count' added to structure 'MY_STRUCT'" """)
+    public String addStructureField(
+            @Param("Name of the structure to modify") String structName,
+            @Param("Name for the new field") String fieldName,
+            @Param("Data type like \"int\", \"char\", \"DWORD\", or another struct name") String fieldType,
+            @Param(value = "Size in bytes for fixed-size types (-1 for default)", defaultValue = "-1") int fieldSize,
+            @Param(value = "Offset in structure to insert at (-1 to append)", defaultValue = "-1") int offset,
+            @Param(value = "Optional comment for the field", defaultValue = "") String comment) {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
         if (structName == null || fieldType == null) {
@@ -725,19 +746,24 @@ public class DataTypeService {
         return createEnum(enumName, size, categoryPath, null);
     }
 
-    /**
-     * Create a new enum data type with optional inline values.
-     * When values are provided, the enum and all values are created in one transaction.
-     *
-     * @param enumName name of the enum to create
-     * @param size size of the enum in bytes (1, 2, 4, or 8)
-     * @param categoryPath category path for the enum (e.g., "/MyEnums")
-     * @param values optional map of value name to numeric value
-     * @return status message
-     */
-    public String createEnum(String enumName, int size, String categoryPath,
-                             Map<String, Long> values) {
-        if (enumName == null || enumName.isEmpty()) {
+    @McpTool(post = true, description = """
+        Create a new enum data type in Ghidra, optionally with inline values.
+
+        Creates an enumeration with the specified name, and when values are provided,
+        adds all values in a single transaction \u2014 avoiding the multi-step
+        create \u2192 add_value \u2192 add_value dance.
+
+        Returns: Success message with path or error message
+
+        Note: Enum names must be unique. Use add_enum_value to add values to existing enums.
+
+        Example: create_enum("FILE_FLAGS", 4, "", {"FLAG_READ": 1, "FLAG_WRITE": 2}) """)
+    public String createEnum(
+            @Param("Name of the enum to create") String name,
+            @Param(value = "Size in bytes - must be 1, 2, 4, or 8 (default: 4)", defaultValue = "4") int size,
+            @Param(value = "Category path like \"/MyEnums\" (empty for root)", defaultValue = "") String categoryPath,
+            @Param(value = "Optional dictionary mapping value names to numeric values", defaultValue = "") Map<String, Long> values) {
+        if (name == null || name.isEmpty()) {
             return "Enum name is required";
         }
         if (size != 1 && size != 2 && size != 4 && size != 8) {
@@ -750,9 +776,9 @@ public class DataTypeService {
         try (var tx = ProgramTransaction.start(program, "Create enum")) {
             ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
 
-            DataType existing = findDataTypeByNameInAllCategories(dtm, enumName);
+            DataType existing = findDataTypeByNameInAllCategories(dtm, name);
             if (existing != null && existing instanceof Enum) {
-                return "Enum '" + enumName + "' already exists";
+                return "Enum '" + name + "' already exists";
             }
 
             CategoryPath catPath = CategoryPath.ROOT;
@@ -760,7 +786,7 @@ public class DataTypeService {
                 catPath = new CategoryPath(categoryPath);
             }
 
-            EnumDataType enumType = new EnumDataType(catPath, enumName, size, dtm);
+            EnumDataType enumType = new EnumDataType(catPath, name, size, dtm);
 
             // Add inline values if provided
             if (values != null && !values.isEmpty()) {
@@ -772,7 +798,7 @@ public class DataTypeService {
             DataType addedType = dtm.addDataType(enumType, null);
 
             tx.commit();
-            String msg = "Enum '" + enumName + "' created successfully at " +
+            String msg = "Enum '" + name + "' created successfully at " +
                     addedType.getCategoryPath().getPath();
             if (values != null && !values.isEmpty()) {
                 msg += " with " + values.size() + " values";
@@ -784,15 +810,20 @@ public class DataTypeService {
         }
     }
 
-    /**
-     * Add a value to an existing enum
-     *
-     * @param enumName name of the enum
-     * @param valueName name of the enum value
-     * @param value numeric value
-     * @return status message
-     */
-    public String addEnumValue(String enumName, String valueName, long value) {
+    @McpTool(post = true, description = """
+        Add a value to an existing enum.
+
+        Adds a named constant with numeric value to the enumeration.
+
+        Returns: Success or error message
+
+        Note: Value names must be unique within the enum. Values can be negative.
+
+        Example: add_enum_value("MY_FLAGS", "FLAG_ENABLED", 0x01) -> "Value 'FLAG_ENABLED' (1) added to enum 'MY_FLAGS'" """)
+    public String addEnumValue(
+            @Param("Name of the enum to modify") String enumName,
+            @Param("Name for the enum constant") String valueName,
+            @Param("Numeric value for the constant") long value) {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
         if (enumName == null || valueName == null) {
@@ -1062,15 +1093,16 @@ public class DataTypeService {
         return String.join("\n", fields);
     }
 
-    /**
-     * List data types (structures and/or enums) with pagination and LLM-friendly hints.
-     *
-     * @param kind filter: "all", "struct", or "enum"
-     * @param offset starting index
-     * @param limit maximum number of results
-     * @return paginated list of data types
-     */
-    public String listDataTypes(String kind, int offset, int limit) {
+    @McpTool(description = """
+        List data types (structures and/or enums) in the program with pagination.
+
+        Returns: Data types with summary info, prefixed with [struct] or [enum]
+
+        Example: list_data_types("struct", 0, 5) -> ['[struct] POINT: {int x, int y}', ...] """)
+    public String listDataTypes(
+            @Param(value = "Filter by type \u2014 \"all\" (default), \"struct\", or \"enum\"", defaultValue = "all") String kind,
+            @Param(value = "Starting index for pagination (0-based)", defaultValue = "0") int offset,
+            @Param(value = "Maximum data types to return", defaultValue = "100") int limit) {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
 
@@ -1126,14 +1158,17 @@ public class DataTypeService {
         return result.getFormattedResult();
     }
 
-    /**
-     * Get details about a named data type (auto-detects struct vs enum).
-     * For structs, returns full field layout. For enums, returns all values.
-     *
-     * @param name name of the data type
-     * @return detailed information about the data type
-     */
-    public String getDataType(String name) {
+    @McpTool(description = """
+        Get detailed information about a named data type (auto-detects struct vs enum).
+
+        For structures: returns full field layout with offsets, types, sizes, and comments.
+        For enums: returns all values sorted numerically with hex and decimal representation.
+
+        Returns: Detailed data type information
+
+        Example: get_data_type("POINT") -> "Structure: POINT\\nSize: 8 bytes\\nFields:\\n  [0000] x: int..." """)
+    public String getDataType(
+            @Param("Name of the data type to examine (e.g., \"POINT\", \"FILE_FLAGS\")") String name) {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
         if (name == null || name.isEmpty()) return "Data type name is required";
@@ -1263,25 +1298,31 @@ public class DataTypeService {
         return a.getClass().equals(b.getClass()) && a.getName().equals(b.getName());
     }
 
-    /**
-     * Find all locations where a data type is used in the program.
-     * Mirrors Ghidra's ReferenceUtils.doFindDataTypeReferences() algorithm:
-     *   1. Search defined data items (including sub-components)
-     *   2. Search function signatures (return types, parameters, locals)
-     *
-     * Optionally filters to a specific field name within a composite type,
-     * mirroring Ghidra's FieldMatcher / findDataTypeFieldReferences().
-     *
-     * @param typeName  name of the data type to find usages of
-     * @param fieldName optional field name to restrict search to (null for all uses)
-     * @param offset    pagination offset
-     * @param limit     pagination limit
-     * @return paginated list of usage locations
-     */
-    public String findDataTypeUsage(String typeName, String fieldName, int offset, int limit) {
+    @McpTool(description = """
+        Find all locations where a data type is used in the program.
+
+        Searches defined data items and function signatures (return types, parameters,
+        local variables) for usages of the specified type, including through pointers,
+        arrays, and typedefs.
+
+        When field_name is provided and the type is a struct/union, restricts the search
+        to locations where that specific field is referenced (similar to Ghidra's
+        "Find References to Field" feature).
+
+        Returns: List of usage locations with context (data labels, function signatures)
+
+        Example: find_data_type_usage("POINT") -> ['Data: origin @ 00402000 (type: POINT)', ...] """)
+    public String findDataTypeUsage(
+            @Param("Name of the data type to search for (e.g., \"POINT\", \"MyStruct\")") String typeName,
+            @Param(value = "Optional field name to restrict search to", defaultValue = "") String fieldName,
+            @Param(value = "Starting index for pagination (0-based)", defaultValue = "0") int offset,
+            @Param(value = "Maximum results to return", defaultValue = "100") int limit) {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
         if (typeName == null || typeName.isEmpty()) return "Type name is required";
+
+        // Normalize empty field name to null
+        if (fieldName != null && fieldName.isEmpty()) fieldName = null;
 
         ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
         DataType targetType = findDataTypeByNameInAllCategories(dtm, typeName);

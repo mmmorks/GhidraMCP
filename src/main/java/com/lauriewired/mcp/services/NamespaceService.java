@@ -3,6 +3,8 @@ package com.lauriewired.mcp.services;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.lauriewired.mcp.api.McpTool;
+import com.lauriewired.mcp.api.Param;
 import com.lauriewired.mcp.utils.HttpUtils;
 
 import ghidra.program.model.listing.Program;
@@ -25,14 +27,17 @@ public class NamespaceService {
         this.programService = programService;
     }
 
-    /**
-     * List all symbols in the program with pagination
-     *
-     * @param offset starting index
-     * @param limit maximum number of symbols to return
-     * @return list of symbol names and addresses
-     */
-    public String listSymbols(int offset, int limit) {
+    @McpTool(description = """
+        List all symbols (functions, variables, labels, etc.) with pagination.
+
+        Comprehensive listing of all named entities in the program.
+
+        Returns: Symbols with addresses in format "symbol_name -> address"
+
+        Example: list_symbols(0, 5) -> ['main -> 00401000', 'gVar1 -> 00410010', ...] """)
+    public String listSymbols(
+            @Param(value = "Starting index for pagination (0-based)", defaultValue = "0") int offset,
+            @Param(value = "Maximum symbols to return", defaultValue = "100") int limit) {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
 
@@ -43,13 +48,18 @@ public class NamespaceService {
         return HttpUtils.paginateList(lines, offset, limit);
     }
     
-    /**
-     * Get the address of a symbol by name
-     *
-     * @param symbolName name of the symbol to look up
-     * @return symbol address or error message
-     */
-    public String getSymbolAddress(String symbolName) {
+    @McpTool(description = """
+        Get the memory address of a named symbol in the program.
+
+        Looks up symbols (functions, variables, labels) by name in the symbol table.
+
+        Returns: Memory address in Ghidra's format or error message
+
+        Note: For functions, returns entry point; for data, returns storage location.
+
+        Example: get_symbol_address("main") -> "00401000" """)
+    public String getSymbolAddress(
+            @Param("Symbol name (case-sensitive, exact match required)") String symbolName) {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
         if (symbolName == null || symbolName.isEmpty()) return "Symbol name is required";

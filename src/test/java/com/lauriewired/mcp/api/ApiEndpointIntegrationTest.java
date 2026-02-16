@@ -210,14 +210,131 @@ public class ApiEndpointIntegrationTest {
         when(mockExchange.getRequestHeaders()).thenReturn(mockHeaders);
         when(mockHeaders.getFirst("Content-Type")).thenReturn("application/x-www-form-urlencoded");
         
-        // Setup mock service response
+        // Setup mock service response — default is false (backward compatible)
         when(mockMemoryService.setAddressDataType("0x3000", "POINT", false))
             .thenReturn("Data type 'POINT' (8 bytes) set at address 0x3000");
-        
+
         // Invoke the handler
         handler.handle(mockExchange);
-        
+
         // Verify the service was called with false as default
         verify(mockMemoryService).setAddressDataType("0x3000", "POINT", false);
+    }
+
+    // GET Endpoint Tests
+
+    @Test
+    @DisplayName("GET endpoint parses query parameters correctly")
+    void testGetEndpoint_QueryParams() throws Exception {
+        ArgumentCaptor<HttpHandler> handlerCaptor = ArgumentCaptor.forClass(HttpHandler.class);
+
+        apiHandlerRegistry.registerAllEndpoints();
+
+        verify(mockServer).createContext(eq("/get_function_code"), handlerCaptor.capture());
+        HttpHandler handler = handlerCaptor.getValue();
+
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+
+        when(mockExchange.getRequestURI()).thenReturn(
+            URI.create("/get_function_code?function_identifier=main&mode=C"));
+        when(mockExchange.getRequestMethod()).thenReturn("GET");
+        when(mockExchange.getResponseBody()).thenReturn(outputStream);
+        when(mockExchange.getResponseHeaders()).thenReturn(mockHeaders);
+
+        when(mockFunctionService.getFunctionCode("main", "C"))
+            .thenReturn("int main(int argc, char **argv) { ... }");
+
+        handler.handle(mockExchange);
+
+        verify(mockFunctionService).getFunctionCode("main", "C");
+    }
+
+    @Test
+    @DisplayName("GET endpoint uses default values for optional parameters")
+    void testGetEndpoint_DefaultParams() throws Exception {
+        ArgumentCaptor<HttpHandler> handlerCaptor = ArgumentCaptor.forClass(HttpHandler.class);
+
+        apiHandlerRegistry.registerAllEndpoints();
+
+        verify(mockServer).createContext(eq("/get_function_code"), handlerCaptor.capture());
+        HttpHandler handler = handlerCaptor.getValue();
+
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+
+        // Only provide function_identifier, mode should default to "C"
+        when(mockExchange.getRequestURI()).thenReturn(
+            URI.create("/get_function_code?function_identifier=main"));
+        when(mockExchange.getRequestMethod()).thenReturn("GET");
+        when(mockExchange.getResponseBody()).thenReturn(outputStream);
+        when(mockExchange.getResponseHeaders()).thenReturn(mockHeaders);
+
+        when(mockFunctionService.getFunctionCode("main", "C"))
+            .thenReturn("int main() { ... }");
+
+        handler.handle(mockExchange);
+
+        verify(mockFunctionService).getFunctionCode("main", "C");
+    }
+
+    @Test
+    @DisplayName("GET paginated endpoint respects offset and limit")
+    void testGetEndpoint_Pagination() throws Exception {
+        ArgumentCaptor<HttpHandler> handlerCaptor = ArgumentCaptor.forClass(HttpHandler.class);
+
+        apiHandlerRegistry.registerAllEndpoints();
+
+        verify(mockServer).createContext(eq("/list_functions"), handlerCaptor.capture());
+        HttpHandler handler = handlerCaptor.getValue();
+
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+
+        when(mockExchange.getRequestURI()).thenReturn(
+            URI.create("/list_functions?offset=10&limit=5"));
+        when(mockExchange.getRequestMethod()).thenReturn("GET");
+        when(mockExchange.getResponseBody()).thenReturn(outputStream);
+        when(mockExchange.getResponseHeaders()).thenReturn(mockHeaders);
+
+        when(mockFunctionService.listFunctions(10, 5))
+            .thenReturn("func1\nfunc2\nfunc3");
+
+        handler.handle(mockExchange);
+
+        verify(mockFunctionService).listFunctions(10, 5);
+    }
+
+    // POST with JSON body tests
+
+    @Test
+    @DisplayName("POST endpoint with JSON body parses complex types")
+    void testPostEndpoint_JsonBody() throws Exception {
+        ArgumentCaptor<HttpHandler> handlerCaptor = ArgumentCaptor.forClass(HttpHandler.class);
+
+        apiHandlerRegistry.registerAllEndpoints();
+
+        verify(mockServer).createContext(eq("/rename_variables"), handlerCaptor.capture());
+        HttpHandler handler = handlerCaptor.getValue();
+
+        String jsonBody = "{\"function_identifier\": \"main\", \"renames\": {\"local_10\": \"buffer\", \"local_14\": \"size\"}}";
+        ByteArrayInputStream inputStream = new ByteArrayInputStream(jsonBody.getBytes());
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+
+        when(mockExchange.getRequestURI()).thenReturn(URI.create("/rename_variables"));
+        when(mockExchange.getRequestMethod()).thenReturn("POST");
+        when(mockExchange.getRequestBody()).thenReturn(inputStream);
+        when(mockExchange.getResponseBody()).thenReturn(outputStream);
+        when(mockExchange.getResponseHeaders()).thenReturn(mockHeaders);
+        when(mockExchange.getRequestHeaders()).thenReturn(mockHeaders);
+        when(mockHeaders.getFirst("Content-Type")).thenReturn("application/json");
+
+        java.util.Map<String, String> expectedRenames = new java.util.LinkedHashMap<>();
+        expectedRenames.put("local_10", "buffer");
+        expectedRenames.put("local_14", "size");
+
+        when(mockVariableService.renameVariables("main", expectedRenames))
+            .thenReturn("{\"status\": \"success\", \"renamed\": 2}");
+
+        handler.handle(mockExchange);
+
+        verify(mockVariableService).renameVariables("main", expectedRenames);
     }
 }

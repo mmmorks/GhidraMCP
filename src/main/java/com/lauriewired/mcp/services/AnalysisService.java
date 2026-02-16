@@ -10,6 +10,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import com.lauriewired.mcp.api.McpTool;
+import com.lauriewired.mcp.api.Param;
 import com.lauriewired.mcp.utils.GhidraUtils;
 
 import ghidra.app.decompiler.DecompileResults;
@@ -53,13 +55,19 @@ public class AnalysisService {
         this.functionService = functionService;
     }
 
-    /**
-     * Analyze the control flow of a function
-     *
-     * @param functionIdentifier function name or address
-     * @return detailed control flow analysis
-     */
-    public String analyzeControlFlow(String functionIdentifier) {
+    @McpTool(description = """
+        Analyze the control flow of a function.
+
+        Creates a textual control flow graph (CFG) showing how basic blocks connect.
+
+        Returns: Detailed CFG with blocks, jumps, and instructions
+
+        Note: Basic blocks are instruction sequences with single entry/exit points.
+        Essential for understanding branching and loops.
+
+        Example: analyze_control_flow("main") -> "Control Flow Analysis for function:..." """)
+    public String analyzeControlFlow(
+            @Param("Function name (e.g., \"main\") or address (e.g., \"00401000\", \"ram:00401000\")") String functionIdentifier) {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
         if (functionIdentifier == null || functionIdentifier.isEmpty()) return "Function identifier is required";
@@ -150,50 +158,55 @@ public class AnalysisService {
         }
     }
     
-    /**
-     * Analyze the data flow for a variable in a function
-     *
-     * @param functionIdentifier function name or address
-     * @param variableName name of the variable to analyze
-     * @return detailed data flow analysis
-     */
-    public String analyzeDataFlow(String functionIdentifier, String variableName) {
+    @McpTool(description = """
+        Analyze the data flow for a variable in a function.
+
+        Tracks where a variable is defined (written) and used (read) throughout execution paths.
+
+        Returns: Detailed analysis with variable info, definitions and uses
+
+        Note: Helps understand value propagation and useful for analyzing algorithms.
+
+        Example: analyze_data_flow("main", "local_10") -> "Data Flow Analysis..." """)
+    public String analyzeDataFlow(
+            @Param("Function name (e.g., \"main\") or address (e.g., \"00401000\", \"ram:00401000\")") String functionIdentifier,
+            @Param("Variable name to track") String variable) {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
         if (functionIdentifier == null || functionIdentifier.isEmpty()) return "Function identifier is required";
-        if (variableName == null || variableName.isEmpty()) return "Variable name is required";
+        if (variable == null || variable.isEmpty()) return "Variable name is required";
 
         try {
             Function func = functionService.resolveFunction(program, functionIdentifier);
             if (func == null) return "Function not found: " + functionIdentifier;
-            
+
             StringBuilder result = new StringBuilder();
-            result.append("Data Flow Analysis for variable '").append(variableName)
+            result.append("Data Flow Analysis for variable '").append(variable)
                   .append("' in function ").append(func.getName())
                   .append(" at ").append(func.getEntryPoint()).append("\n\n");
-            
+
             // Decompile the function to get high-level variable information
             DecompileResults decompResults = GhidraUtils.decompileFunction(func, program);
             if (decompResults == null) {
                 return "Could not decompile function for data flow analysis";
             }
-            
+
             HighFunction highFunc = decompResults.getHighFunction();
             if (highFunc == null) {
                 return "No high function available for data flow analysis";
             }
-            
+
             // Find the variable by name
-            ghidra.program.model.pcode.HighSymbol targetSymbol = 
-                GhidraUtils.findVariableByName(highFunc, variableName);
-                
+            ghidra.program.model.pcode.HighSymbol targetSymbol =
+                GhidraUtils.findVariableByName(highFunc, variable);
+
             if (targetSymbol == null) {
-                return "Variable '" + variableName + "' not found in function";
+                return "Variable '" + variable + "' not found in function";
             }
             
             HighVariable highVar = targetSymbol.getHighVariable();
             if (highVar == null) {
-                return "No high variable found for '" + variableName + "'";
+                return "No high variable found for '" + variable + "'";
             }
             
             // Get information about the variable
@@ -261,15 +274,21 @@ public class AnalysisService {
         }
     }
     
-    /**
-     * Get the call graph for a function.
-     *
-     * @param functionIdentifier function name or address
-     * @param depth max traversal depth (1-5)
-     * @param direction "callers", "callees", or "both"
-     * @return formatted call graph
-     */
-    public String getCallGraph(String functionIdentifier, int depth, String direction) {
+    @McpTool(description = """
+        Get the call graph for a function.
+
+        Shows callers (functions that call this one), callees (functions this one calls), or both.
+
+        Returns: Hierarchical call graph with function names and addresses
+
+        Examples:
+            get_call_graph("main") -> full call hierarchy for main
+            get_call_graph("process_data", direction="callers") -> who calls process_data
+            get_call_graph("00401000", depth=3, direction="callees") -> what does this function call """)
+    public String getCallGraph(
+            @Param("Function name (e.g., \"main\") or address (e.g., \"00401000\", \"ram:00401000\")") String functionIdentifier,
+            @Param(value = "Maximum depth to traverse (1-5, default: 2)", defaultValue = "2") int depth,
+            @Param(value = "\"callers\" for upstream only, \"callees\" for downstream only, \"both\" for full hierarchy (default: \"both\")", defaultValue = "both") String direction) {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
         if (functionIdentifier == null || functionIdentifier.isEmpty())
@@ -368,31 +387,34 @@ public class AnalysisService {
         }
     }
     
-    /**
-     * List all references to a specific address
-     * 
-     * @param nameOrAddress name or address to find references to
-     * @param offset starting index for pagination
-     * @param limit maximum number of references to return
-     * @return list of references to the specified address
-     */
-    public String listReferences(String nameOrAddress, int offset, int limit) {
+    @McpTool(description = """
+        List cross-references (xrefs) to the specified address.
+
+        Shows locations where an address is referenced from, helping track usage.
+
+        Returns: References with source address, type, and containing function
+
+        Example: list_references("00401000") -> ['00400f50 -> 00401000 (from CALL in main)', ...] """)
+    public String listReferences(
+            @Param("Target address (e.g., \"00401000\" or \"ram:00401000\")") String address,
+            @Param(value = "Starting index for pagination (0-based)", defaultValue = "0") int offset,
+            @Param(value = "Maximum references to return", defaultValue = "100") int limit) {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
-        if (nameOrAddress == null) return "Address or name is required";
+        if (address == null) return "Address or name is required";
 
         List<String> refs = new ArrayList<>();
         try {
             // Try to get the address directly first (if addressStr is a hex address)
-            Address addr = program.getAddressFactory().getAddress(nameOrAddress);
+            Address addr = program.getAddressFactory().getAddress(address);
 
             // If addr is null or we couldn't get it directly, try to find it as a symbol name
             if (addr == null) {
-                addr = GhidraUtils.getSymbolAddress(program, nameOrAddress);
+                addr = GhidraUtils.getSymbolAddress(program, address);
             }
-            
+
             if (addr == null) {
-                return "Could not resolve address for " + nameOrAddress;
+                return "Could not resolve address for " + address;
             }
             
             ReferenceManager refMgr = program.getReferenceManager();
@@ -411,7 +433,7 @@ public class AnalysisService {
             }
 
             if (refs.isEmpty()) {
-                return "No references found to " + nameOrAddress + " (address: " + addr + ")";
+                return "No references found to " + address + " (address: " + addr + ")";
             }
 
             Collections.sort(refs);
@@ -428,31 +450,36 @@ public class AnalysisService {
         }
     }
     
-    /**
-     * List all references from a specific address
-     *
-     * @param nameOrAddress name or address to find references from
-     * @param offset starting index for pagination
-     * @param limit maximum number of references to return
-     * @return list of references from the specified address
-     */
-    public String listReferencesFrom(String nameOrAddress, int offset, int limit) {
+    @McpTool(description = """
+        List all references FROM a specific address.
+
+        Shows what addresses/symbols this address references (calls, jumps, data access).
+
+        Returns: List of references with destination addresses and types
+
+        Note: Complements list_references which shows references TO an address.
+
+        Example: list_references_from("main") -> "00401000 -> 00401234 (strlen) [CALL]" """)
+    public String listReferencesFrom(
+            @Param("Source address or symbol name (e.g., \"00401000\" or \"main\")") String address,
+            @Param(value = "Starting index for pagination (default: 0)", defaultValue = "0") int offset,
+            @Param(value = "Maximum number of references to return (default: 100)", defaultValue = "100") int limit) {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
-        if (nameOrAddress == null) return "Address or name is required";
+        if (address == null) return "Address or name is required";
 
         List<String> refs = new ArrayList<>();
         try {
             // Try to get the address directly first (if addressStr is a hex address)
-            Address addr = program.getAddressFactory().getAddress(nameOrAddress);
+            Address addr = program.getAddressFactory().getAddress(address);
 
             // If addr is null or we couldn't get it directly, try to find it as a symbol name
             if (addr == null) {
-                addr = GhidraUtils.getSymbolAddress(program, nameOrAddress);
+                addr = GhidraUtils.getSymbolAddress(program, address);
             }
-            
+
             if (addr == null) {
-                return "Could not resolve address for " + nameOrAddress;
+                return "Could not resolve address for " + address;
             }
             
             ReferenceManager refMgr = program.getReferenceManager();
@@ -475,7 +502,7 @@ public class AnalysisService {
             }
 
             if (refs.isEmpty()) {
-                return "No references found from " + nameOrAddress + " (address: " + addr + ")";
+                return "No references found from " + address + " (address: " + addr + ")";
             }
 
             Collections.sort(refs);

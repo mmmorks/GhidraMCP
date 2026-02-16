@@ -16,8 +16,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import com.lauriewired.mcp.model.PrototypeResult;
-
 import ghidra.app.services.ProgramManager;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressFactory;
@@ -77,12 +75,12 @@ public class FunctionServiceTest {
     // ===== Tests for null/no program cases =====
     
     @Test
-    @DisplayName("getAllFunctionNames returns empty string when no program is loaded")
+    @DisplayName("listFunctions returns empty string when no program is loaded")
     void testGetAllFunctionNames_NoProgram() {
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
         when(mockProgramManager.getCurrentProgram()).thenReturn(null);
         
-        String result = functionService.getAllFunctionNames(0, 10);
+        String result = functionService.listFunctions(0, 10);
         assertEquals("No program loaded", result);
     }
 
@@ -116,10 +114,10 @@ public class FunctionServiceTest {
         assertEquals("Function identifier is required", result);
     }
 
-    // ===== Happy path tests for getAllFunctionNames =====
+    // ===== Happy path tests for listFunctions =====
     
     @Test
-    @DisplayName("getAllFunctionNames returns function names successfully")
+    @DisplayName("listFunctions returns function names successfully")
     void testGetAllFunctionNames_Success() {
         setupDefaultMocks();
         
@@ -139,7 +137,7 @@ public class FunctionServiceTest {
         
         when(mockFunctionManager.getFunctions(true)).thenReturn(mockFunctionIterator);
         
-        String result = functionService.getAllFunctionNames(0, 10);
+        String result = functionService.listFunctions(0, 10);
         
         assertTrue(result.contains("main"));
         assertTrue(result.contains("helper_function"));
@@ -148,7 +146,7 @@ public class FunctionServiceTest {
     }
     
     @Test
-    @DisplayName("getAllFunctionNames respects offset and limit parameters")
+    @DisplayName("listFunctions respects offset and limit parameters")
     void testGetAllFunctionNames_WithPagination() {
         setupDefaultMocks();
         
@@ -166,7 +164,7 @@ public class FunctionServiceTest {
         when(mockFunctionManager.getFunctions(true)).thenReturn(mockFunctionIterator);
         
         // Test with offset=2, limit=2 (should get function_2 and function_3)
-        String result = functionService.getAllFunctionNames(2, 2);
+        String result = functionService.listFunctions(2, 2);
         
         assertFalse(result.contains("function_0"));
         assertFalse(result.contains("function_1"));
@@ -176,7 +174,7 @@ public class FunctionServiceTest {
     }
     
     @Test
-    @DisplayName("getAllFunctionNames handles empty function list")
+    @DisplayName("listFunctions handles empty function list")
     void testGetAllFunctionNames_NoFunctions() {
         setupDefaultMocks();
         
@@ -186,7 +184,7 @@ public class FunctionServiceTest {
         when(emptyIterator.hasNext()).thenReturn(false);
         when(mockFunctionManager.getFunctions(true)).thenReturn(emptyIterator);
         
-        String result = functionService.getAllFunctionNames(0, 10);
+        String result = functionService.listFunctions(0, 10);
         
         assertEquals("No results found.", result);
         verify(mockFunctionManager).getFunctions(true);
@@ -305,21 +303,19 @@ public class FunctionServiceTest {
     void testSetFunctionPrototype_NoProgram() {
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
         when(mockProgramManager.getCurrentProgram()).thenReturn(null);
-        
-        PrototypeResult result = functionService.setFunctionPrototype("0x401000", "int test(void)");
-        assertFalse(result.isSuccess());
-        assertEquals("No program loaded", result.getErrorMessage());
+
+        String result = functionService.setFunctionPrototype("0x401000", "int test(void)");
+        assertEquals("No program loaded", result);
     }
-    
+
     @Test
     @DisplayName("setFunctionPrototype returns error for null identifier")
     void testSetFunctionPrototype_NullIdentifier() {
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
         when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
 
-        PrototypeResult result = functionService.setFunctionPrototype(null, "int test(void)");
-        assertFalse(result.isSuccess());
-        assertEquals("Function identifier is required", result.getErrorMessage());
+        String result = functionService.setFunctionPrototype(null, "int test(void)");
+        assertEquals("Function identifier is required", result);
     }
 
     @Test
@@ -328,31 +324,28 @@ public class FunctionServiceTest {
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
         when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
 
-        PrototypeResult result = functionService.setFunctionPrototype("", "int test(void)");
-        assertFalse(result.isSuccess());
-        assertEquals("Function identifier is required", result.getErrorMessage());
+        String result = functionService.setFunctionPrototype("", "int test(void)");
+        assertEquals("Function identifier is required", result);
     }
-    
+
     @Test
     @DisplayName("setFunctionPrototype returns error for null prototype")
     void testSetFunctionPrototype_NullPrototype() {
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
         when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
-        
-        PrototypeResult result = functionService.setFunctionPrototype("0x401000", null);
-        assertFalse(result.isSuccess());
-        assertEquals("Function prototype is required", result.getErrorMessage());
+
+        String result = functionService.setFunctionPrototype("0x401000", null);
+        assertEquals("Function prototype is required", result);
     }
-    
+
     @Test
     @DisplayName("setFunctionPrototype returns error for empty prototype")
     void testSetFunctionPrototype_EmptyPrototype() {
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
         when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
-        
-        PrototypeResult result = functionService.setFunctionPrototype("0x401000", "");
-        assertFalse(result.isSuccess());
-        assertEquals("Function prototype is required", result.getErrorMessage());
+
+        String result = functionService.setFunctionPrototype("0x401000", "");
+        assertEquals("Function prototype is required", result);
     }
     
     // ===== Tests for resolveFunction =====
@@ -387,10 +380,10 @@ public class FunctionServiceTest {
     }
     
     @Test
-    @DisplayName("getAllFunctionNames handles null tool gracefully")
+    @DisplayName("listFunctions handles null tool gracefully")
     void testGetAllFunctionNames_NullTool() {
         TestFunctionService serviceWithNullTool = new TestFunctionService((MockablePluginTool) null, new TestProgramService((MockablePluginTool) null));
-        String result = serviceWithNullTool.getAllFunctionNames(0, 10);
+        String result = serviceWithNullTool.listFunctions(0, 10);
         assertEquals("No program loaded", result);
     }
 }

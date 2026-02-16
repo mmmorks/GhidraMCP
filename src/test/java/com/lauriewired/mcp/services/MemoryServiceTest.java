@@ -132,59 +132,59 @@ public class MemoryServiceTest {
     }
 
     @Test
-    @DisplayName("listDefinedData returns error when no program is loaded")
-    void testListDefinedData_NoProgram() {
-        String result = memoryService.listDefinedData(0, 10);
+    @DisplayName("listDataItems returns error when no program is loaded")
+    void testListDataItems_NoProgram() {
+        String result = memoryService.listDataItems(0, 10);
         assertEquals("No program loaded", result);
     }
 
     @Test
-    @DisplayName("listDefinedData handles negative offset")
-    void testListDefinedData_NegativeOffset() {
-        String result = memoryService.listDefinedData(-1, 10);
+    @DisplayName("listDataItems handles negative offset")
+    void testListDataItems_NegativeOffset() {
+        String result = memoryService.listDataItems(-1, 10);
         assertEquals("No program loaded", result);
     }
 
     @Test
-    @DisplayName("listDefinedData handles zero limit")
-    void testListDefinedData_ZeroLimit() {
-        String result = memoryService.listDefinedData(0, 0);
+    @DisplayName("listDataItems handles zero limit")
+    void testListDataItems_ZeroLimit() {
+        String result = memoryService.listDataItems(0, 0);
         assertEquals("No program loaded", result);
     }
 
     @Test
-    @DisplayName("renameDataAtAddress returns false when no program is loaded")
-    void testRenameDataAtAddress_NoProgram() {
-        boolean result = memoryService.renameDataAtAddress("0x1000", "newName");
-        assertFalse(result);
+    @DisplayName("renameData returns 'Rename failed' when no program is loaded")
+    void testRenameData_NoProgram() {
+        String result = memoryService.renameData("0x1000", "newName");
+        assertEquals("Rename failed", result);
     }
 
     @Test
-    @DisplayName("renameDataAtAddress returns false for null address")
-    void testRenameDataAtAddress_NullAddress() {
-        boolean result = memoryService.renameDataAtAddress(null, "newName");
-        assertFalse(result);
+    @DisplayName("renameData returns 'Rename failed' for null address")
+    void testRenameData_NullAddress() {
+        String result = memoryService.renameData(null, "newName");
+        assertEquals("Rename failed", result);
     }
 
     @Test
-    @DisplayName("renameDataAtAddress returns false for empty address")
-    void testRenameDataAtAddress_EmptyAddress() {
-        boolean result = memoryService.renameDataAtAddress("", "newName");
-        assertFalse(result);
+    @DisplayName("renameData returns 'Rename failed' for empty address")
+    void testRenameData_EmptyAddress() {
+        String result = memoryService.renameData("", "newName");
+        assertEquals("Rename failed", result);
     }
 
     @Test
-    @DisplayName("renameDataAtAddress returns false for null name")
-    void testRenameDataAtAddress_NullName() {
-        boolean result = memoryService.renameDataAtAddress("0x1000", null);
-        assertFalse(result);
+    @DisplayName("renameData returns 'Rename failed' for null name")
+    void testRenameData_NullName() {
+        String result = memoryService.renameData("0x1000", null);
+        assertEquals("Rename failed", result);
     }
 
     @Test
-    @DisplayName("renameDataAtAddress returns false for empty name")
-    void testRenameDataAtAddress_EmptyName() {
-        boolean result = memoryService.renameDataAtAddress("0x1000", "");
-        assertFalse(result);
+    @DisplayName("renameData returns 'Rename failed' for empty name")
+    void testRenameData_EmptyName() {
+        String result = memoryService.renameData("0x1000", "");
+        assertEquals("Rename failed", result);
     }
 
     @Test
@@ -263,178 +263,178 @@ public class MemoryServiceTest {
     }
     
     @Test
-    @DisplayName("listDefinedData returns data items when program is loaded")
-    void testListDefinedData_Success() {
+    @DisplayName("listDataItems returns data items when program is loaded")
+    void testListDataItems_Success() {
         // Setup mocks
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
         when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
         when(mockProgram.getMemory()).thenReturn(mockMemory);
         when(mockProgram.getListing()).thenReturn(mockListing);
-        
+
         // Mock memory block
         when(mockBlock1.getStart()).thenReturn(mockStartAddr1);
         when(mockBlock1.contains(mockDataAddr)).thenReturn(true);
         MemoryBlock[] blocks = {mockBlock1};
         when(mockMemory.getBlocks()).thenReturn(blocks);
-        
+
         // Mock data iterator
         when(mockListing.getDefinedData(mockStartAddr1, true)).thenReturn(mockDataIterator);
         when(mockDataIterator.hasNext()).thenReturn(true, false);
         when(mockDataIterator.next()).thenReturn(mockData);
-        
+
         // Mock data
         when(mockData.getAddress()).thenReturn(mockDataAddr);
         when(mockData.getLabel()).thenReturn("myVariable");
         when(mockData.getDefaultValueRepresentation()).thenReturn("0x42");
         when(mockDataAddr.toString()).thenReturn("00400100");
-        
+
         // Execute
-        String result = testMemoryService.listDefinedData(0, 10);
-        
+        String result = testMemoryService.listDataItems(0, 10);
+
         // Verify
         assertTrue(result.contains("00400100: myVariable = 0x42"));
     }
-    
+
     @Test
-    @DisplayName("listDefinedData handles unnamed data")
-    void testListDefinedData_UnnamedData() {
+    @DisplayName("listDataItems handles unnamed data")
+    void testListDataItems_UnnamedData() {
         // Setup mocks
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
         when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
         when(mockProgram.getMemory()).thenReturn(mockMemory);
         when(mockProgram.getListing()).thenReturn(mockListing);
-        
+
         // Mock memory block
         when(mockBlock1.getStart()).thenReturn(mockStartAddr1);
         when(mockBlock1.contains(mockDataAddr)).thenReturn(true);
         MemoryBlock[] blocks = {mockBlock1};
         when(mockMemory.getBlocks()).thenReturn(blocks);
-        
+
         // Mock data iterator
         when(mockListing.getDefinedData(mockStartAddr1, true)).thenReturn(mockDataIterator);
         when(mockDataIterator.hasNext()).thenReturn(true, false);
         when(mockDataIterator.next()).thenReturn(mockData);
-        
+
         // Mock data with no label
         when(mockData.getAddress()).thenReturn(mockDataAddr);
         when(mockData.getLabel()).thenReturn(null);
         when(mockData.getDefaultValueRepresentation()).thenReturn("0xFF");
         when(mockDataAddr.toString()).thenReturn("00400200");
-        
+
         // Execute
-        String result = testMemoryService.listDefinedData(0, 10);
-        
+        String result = testMemoryService.listDataItems(0, 10);
+
         // Verify
         assertTrue(result.contains("00400200: (unnamed) = 0xFF"));
     }
     
     @Test
-    @DisplayName("renameDataAtAddress successfully renames existing symbol")
-    void testRenameDataAtAddress_ExistingSymbol_Success() throws Exception {
+    @DisplayName("renameData successfully renames existing symbol")
+    void testRenameData_ExistingSymbol_Success() throws Exception {
         // Setup mocks
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
         when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
         when(mockProgram.getAddressFactory()).thenReturn(mockAddressFactory);
         when(mockProgram.getListing()).thenReturn(mockListing);
         when(mockProgram.getSymbolTable()).thenReturn(mockSymbolTable);
-        
+
         // Mock address
         when(mockAddressFactory.getAddress("0x1000")).thenReturn(mockDataAddr);
-        
+
         // Mock data exists at address
         when(mockListing.getDefinedDataAt(mockDataAddr)).thenReturn(mockData);
-        
+
         // Mock existing symbol
         when(mockSymbolTable.getPrimarySymbol(mockDataAddr)).thenReturn(mockSymbol);
-        
+
         // Mock transaction
         when(mockProgram.startTransaction(anyString())).thenReturn(1);
-        
+
         // Execute
-        boolean result = testMemoryService.renameDataAtAddress("0x1000", "newName");
-        
+        String result = testMemoryService.renameData("0x1000", "newName");
+
         // Verify
-        assertTrue(result);
+        assertEquals("Renamed successfully", result);
         verify(mockSymbol).setName("newName", SourceType.USER_DEFINED);
         verify(mockProgram).endTransaction(1, true);
     }
-    
+
     @Test
-    @DisplayName("renameDataAtAddress creates new label when no symbol exists")
-    void testRenameDataAtAddress_NoSymbol_CreatesLabel() throws Exception {
+    @DisplayName("renameData creates new label when no symbol exists")
+    void testRenameData_NoSymbol_CreatesLabel() throws Exception {
         // Setup mocks
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
         when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
         when(mockProgram.getAddressFactory()).thenReturn(mockAddressFactory);
         when(mockProgram.getListing()).thenReturn(mockListing);
         when(mockProgram.getSymbolTable()).thenReturn(mockSymbolTable);
-        
+
         // Mock address
         when(mockAddressFactory.getAddress("0x2000")).thenReturn(mockDataAddr);
-        
+
         // Mock data exists at address
         when(mockListing.getDefinedDataAt(mockDataAddr)).thenReturn(mockData);
-        
+
         // Mock no existing symbol
         when(mockSymbolTable.getPrimarySymbol(mockDataAddr)).thenReturn(null);
-        
+
         // Mock transaction
         when(mockProgram.startTransaction(anyString())).thenReturn(1);
-        
+
         // Execute
-        boolean result = testMemoryService.renameDataAtAddress("0x2000", "brandNewLabel");
-        
+        String result = testMemoryService.renameData("0x2000", "brandNewLabel");
+
         // Verify
-        assertTrue(result);
+        assertEquals("Renamed successfully", result);
         verify(mockSymbolTable).createLabel(mockDataAddr, "brandNewLabel", SourceType.USER_DEFINED);
         verify(mockProgram).endTransaction(1, true);
     }
-    
+
     @Test
-    @DisplayName("renameDataAtAddress returns false for invalid address")
-    void testRenameDataAtAddress_InvalidAddress() {
+    @DisplayName("renameData returns 'Rename failed' for invalid address")
+    void testRenameData_InvalidAddress() {
         // Setup mocks
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
         when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
         when(mockProgram.getAddressFactory()).thenReturn(mockAddressFactory);
-        
+
         // Mock invalid address
         when(mockAddressFactory.getAddress("invalid")).thenReturn(null);
-        
+
         // Mock transaction
         when(mockProgram.startTransaction(anyString())).thenReturn(1);
-        
+
         // Execute
-        boolean result = testMemoryService.renameDataAtAddress("invalid", "newName");
-        
+        String result = testMemoryService.renameData("invalid", "newName");
+
         // Verify
-        assertFalse(result);
+        assertEquals("Rename failed", result);
         verify(mockProgram).endTransaction(1, false);
     }
-    
+
     @Test
-    @DisplayName("renameDataAtAddress returns false when no data at address")
-    void testRenameDataAtAddress_NoDataAtAddress() {
+    @DisplayName("renameData returns 'Rename failed' when no data at address")
+    void testRenameData_NoDataAtAddress() {
         // Setup mocks
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
         when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
         when(mockProgram.getAddressFactory()).thenReturn(mockAddressFactory);
         when(mockProgram.getListing()).thenReturn(mockListing);
-        
+
         // Mock address
         when(mockAddressFactory.getAddress("0x3000")).thenReturn(mockDataAddr);
-        
+
         // Mock no data at address
         when(mockListing.getDefinedDataAt(mockDataAddr)).thenReturn(null);
-        
+
         // Mock transaction
         when(mockProgram.startTransaction(anyString())).thenReturn(1);
-        
+
         // Execute
-        boolean result = testMemoryService.renameDataAtAddress("0x3000", "newName");
-        
+        String result = testMemoryService.renameData("0x3000", "newName");
+
         // Verify
-        assertFalse(result);
+        assertEquals("Rename failed", result);
         verify(mockProgram).endTransaction(1, false);
     }
     

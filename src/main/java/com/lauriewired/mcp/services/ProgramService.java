@@ -1,5 +1,7 @@
 package com.lauriewired.mcp.services;
 
+import com.lauriewired.mcp.api.McpTool;
+
 import ghidra.app.services.ProgramManager;
 import ghidra.framework.plugintool.PluginTool;
 import ghidra.program.model.address.AddressIterator;
@@ -34,11 +36,16 @@ public class ProgramService {
         return pm != null ? pm.getCurrentProgram() : null;
     }
 
-    /**
-     * Get metadata about the currently loaded program.
-     *
-     * @return formatted program information string
-     */
+    @McpTool(description = """
+        Get metadata about the currently loaded binary.
+
+        Returns architecture, endianness, file format, base address, entry point,
+        and counts of functions/symbols. This is typically the first tool to call
+        when starting analysis of a new binary.
+
+        Returns: Program metadata including processor, format, addresses, and counts
+
+        Example: get_program_info() -> "Program: firmware.bin\\nFormat: ELF\\nProcessor: ARM..." """)
     public String getProgramInfo() {
         Program program = getCurrentProgram();
         if (program == null) return "No program loaded";

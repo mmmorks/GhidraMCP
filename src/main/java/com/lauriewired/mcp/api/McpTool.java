@@ -1,0 +1,24 @@
+package com.lauriewired.mcp.api;
+
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+
+/**
+ * Marks a method as an MCP tool endpoint.
+ * Reflection discovers annotated methods at startup, auto-converts camelCase names
+ * to snake_case for the MCP/HTTP interface, and registers HTTP handlers.
+ */
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.METHOD)
+public @interface McpTool {
+    /** Override tool name (empty = derive from method name via camelToSnake). */
+    String name() default "";
+
+    /** Tool description text. A Parameters: section is auto-appended from @Param annotations. */
+    String description();
+
+    /** If true, the endpoint accepts POST; otherwise GET. */
+    boolean post() default false;
+}

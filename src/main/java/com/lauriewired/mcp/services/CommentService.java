@@ -1,5 +1,7 @@
 package com.lauriewired.mcp.services;
 
+import com.lauriewired.mcp.api.McpTool;
+import com.lauriewired.mcp.api.Param;
 import com.lauriewired.mcp.utils.ProgramTransaction;
 
 import ghidra.program.model.address.Address;
@@ -22,16 +24,25 @@ public class CommentService {
         this.programService = programService;
     }
     
-    /**
-     * Set a comment at an address with the specified comment type string.
-     *
-     * @param addressStr address where the comment should be placed
-     * @param comment comment text
-     * @param commentType comment type: "pre"/"decompiler", "post", "eol"/"disassembly", "plate", "repeatable"
-     * @return true if successful, false if invalid type or error
-     */
-    public boolean setComment(String addressStr, String comment, String commentType) {
-        int type = switch (commentType.toLowerCase()) {
+    @McpTool(post = true, description = """
+        Set a comment at an address.
+
+        Creates or replaces a comment of the specified type.
+
+        Returns: Success or failure message
+
+        Examples:
+            set_comment("00401010", "Initialize config", "decompiler")
+            set_comment("00401010", "Save return address", "eol")
+            set_comment("00401000", "--- Main Entry ---", "plate") """)
+    public String setComment(
+            @Param("Target address (e.g., \"00401000\" or \"ram:00401000\")") String address,
+            @Param("Comment text to set") String comment,
+            @Param("Comment type: \"pre\"/\"decompiler\", \"eol\"/\"disassembly\", \"post\", \"plate\", \"repeatable\"") String type) {
+        if (type == null || type.isEmpty()) {
+            return "Error: 'type' parameter is required (pre, post, eol, plate, repeatable)";
+        }
+        int commentType = switch (type.toLowerCase()) {
             case "pre", "decompiler" -> CodeUnit.PRE_COMMENT;
             case "post" -> CodeUnit.POST_COMMENT;
             case "eol", "disassembly" -> CodeUnit.EOL_COMMENT;
@@ -39,8 +50,11 @@ public class CommentService {
             case "repeatable" -> CodeUnit.REPEATABLE_COMMENT;
             default -> -1;
         };
-        if (type == -1) return false;
-        return setCommentAtAddress(addressStr, comment, type, "Set " + commentType + " comment");
+        if (commentType == -1) {
+            return "Failed to set comment. Valid types: pre, post, eol, plate, repeatable";
+        }
+        boolean success = setCommentAtAddress(address, comment, commentType, "Set " + type + " comment");
+        return success ? "Comment set successfully" : "Failed to set comment. Valid types: pre, post, eol, plate, repeatable";
     }
 
     /**
@@ -68,26 +82,29 @@ public class CommentService {
         }
     }
     
-    /**
-     * Get all comments at a specific address
-     *
-     * @param addressStr address to get comments from
-     * @return all comments at the address
-     */
-    public String getComments(String addressStr) {
+    @McpTool(description = """
+        Get all comments at a specific address.
+
+        Retrieves all comment types (pre/decompiler, post, eol/disassembly, plate, repeatable).
+
+        Returns: All comments found at the address, organized by type
+
+        Example: get_comment("00401000") -> "Pre Comment (Decompiler): Initialize system..." """)
+    public String getComment(
+            @Param("Address to get comments from (e.g., \"00401000\")") String address) {
         Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
-        if (addressStr == null || addressStr.isEmpty()) return "Address is required";
-        
+        if (address == null || address.isEmpty()) return "Address is required";
+
         try {
-            Address addr = program.getAddressFactory().getAddress(addressStr);
-            if (addr == null) return "Invalid address: " + addressStr;
-            
+            Address addr = program.getAddressFactory().getAddress(address);
+            if (addr == null) return "Invalid address: " + address;
+
             CodeUnit codeUnit = program.getListing().getCodeUnitAt(addr);
-            if (codeUnit == null) return "No code unit at address: " + addressStr;
+            if (codeUnit == null) return "No code unit at address: " + address;
             
             StringBuilder result = new StringBuilder();
-            result.append("Comments at ").append(addressStr).append(":\n");
+            result.append("Comments at ").append(address).append(":\n");
             
             // Get all comment types
             String preComment = codeUnit.getComment(CodeUnit.PRE_COMMENT);

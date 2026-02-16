@@ -3,9 +3,16 @@ package com.lauriewired.mcp.services;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import static org.mockito.Mockito.when;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import ghidra.program.model.listing.Program;
 
 /**
  * Unit tests for VariableService
@@ -25,65 +32,65 @@ public class VariableServiceTest {
     }
 
     @Test
-    @DisplayName("renameVariableInFunction returns error when no program is loaded")
-    void testRenameVariableInFunction_NoProgram() {
-        String result = variableService.renameVariableInFunction("main", "oldVar", "newVar", null);
+    @DisplayName("splitVariable returns error when no program is loaded")
+    void testSplitVariable_NoProgram() {
+        String result = variableService.splitVariable("main", "oldVar", "00401000", "newVar");
         assertEquals("No program loaded", result);
     }
 
     @Test
-    @DisplayName("renameVariableInFunction returns error for null function name")
-    void testRenameVariableInFunction_NullFunctionName() {
-        String result = variableService.renameVariableInFunction(null, "oldVar", "newVar", null);
+    @DisplayName("splitVariable returns error for null function name")
+    void testSplitVariable_NullFunctionName() {
+        String result = variableService.splitVariable(null, "oldVar", "00401000", "newVar");
         assertEquals("No program loaded", result);
     }
 
     @Test
-    @DisplayName("renameVariableInFunction returns error for empty function name")
-    void testRenameVariableInFunction_EmptyFunctionName() {
-        String result = variableService.renameVariableInFunction("", "oldVar", "newVar", null);
+    @DisplayName("splitVariable returns error for empty function name")
+    void testSplitVariable_EmptyFunctionName() {
+        String result = variableService.splitVariable("", "oldVar", "00401000", "newVar");
         assertEquals("No program loaded", result);
     }
 
     @Test
-    @DisplayName("renameVariableInFunction returns error for null old variable name")
-    void testRenameVariableInFunction_NullOldVarName() {
-        String result = variableService.renameVariableInFunction("main", null, "newVar", null);
+    @DisplayName("splitVariable returns error for null variable name")
+    void testSplitVariable_NullVariableName() {
+        String result = variableService.splitVariable("main", null, "00401000", "newVar");
         assertEquals("No program loaded", result);
     }
 
     @Test
-    @DisplayName("renameVariableInFunction returns error for empty old variable name")
-    void testRenameVariableInFunction_EmptyOldVarName() {
-        String result = variableService.renameVariableInFunction("main", "", "newVar", null);
+    @DisplayName("splitVariable returns error for empty variable name")
+    void testSplitVariable_EmptyVariableName() {
+        String result = variableService.splitVariable("main", "", "00401000", "newVar");
         assertEquals("No program loaded", result);
     }
 
     @Test
-    @DisplayName("renameVariableInFunction returns error for null new variable name")
-    void testRenameVariableInFunction_NullNewVarName() {
-        String result = variableService.renameVariableInFunction("main", "oldVar", null, null);
+    @DisplayName("splitVariable returns error for null new name (uses default)")
+    void testSplitVariable_NullNewName() {
+        String result = variableService.splitVariable("main", "oldVar", "00401000", null);
         assertEquals("No program loaded", result);
     }
 
     @Test
-    @DisplayName("renameVariableInFunction returns error for empty new variable name")
-    void testRenameVariableInFunction_EmptyNewVarName() {
-        String result = variableService.renameVariableInFunction("main", "oldVar", "", null);
+    @DisplayName("splitVariable returns error for empty new name (uses default)")
+    void testSplitVariable_EmptyNewName() {
+        String result = variableService.splitVariable("main", "oldVar", "00401000", "");
         assertEquals("No program loaded", result);
     }
 
     @Test
-    @DisplayName("renameVariableInFunction handles split with usage address")
-    void testRenameVariableInFunction_WithUsageAddress() {
-        String result = variableService.renameVariableInFunction("main", "oldVar", "newVar", "0x1000");
+    @DisplayName("splitVariable handles usage address")
+    void testSplitVariable_WithUsageAddress() {
+        String result = variableService.splitVariable("main", "oldVar", "0x1000", "newVar");
         assertEquals("No program loaded", result);
     }
 
     @Test
-    @DisplayName("renameVariableInFunction handles split with invalid usage address")
-    void testRenameVariableInFunction_InvalidUsageAddress() {
-        String result = variableService.renameVariableInFunction("main", "oldVar", "newVar", "invalid");
+    @DisplayName("splitVariable handles invalid usage address")
+    void testSplitVariable_InvalidUsageAddress() {
+        String result = variableService.splitVariable("main", "oldVar", "invalid", "newVar");
         assertEquals("No program loaded", result);
     }
 
@@ -153,34 +160,34 @@ public class VariableServiceTest {
     }
 
     @Test
-    @DisplayName("renameVariableInFunction returns JSON response format")
-    void testRenameVariableInFunction_ResponseFormat() {
-        String result = variableService.renameVariableInFunction("main", "oldVar", "newVar", null);
+    @DisplayName("splitVariable returns JSON response format")
+    void testSplitVariable_ResponseFormat() {
+        String result = variableService.splitVariable("main", "oldVar", "00401000", "newVar");
         // Even with no program loaded, we should get a proper error message
         assertEquals("No program loaded", result);
     }
 
-    // ===== Tests for batchRenameVariables =====
+    // ===== Tests for renameVariables =====
 
     @Test
-    @DisplayName("batchRenameVariables returns error when no program is loaded")
-    void testBatchRenameVariables_NoProgram() {
-        String result = variableService.batchRenameVariables("main",
+    @DisplayName("renameVariables returns error when no program is loaded")
+    void testRenameVariables_NoProgram() {
+        String result = variableService.renameVariables("main",
             java.util.Map.of("local_10", "buffer_size"));
         assertEquals("No program loaded", result);
     }
 
     @Test
-    @DisplayName("batchRenameVariables returns error for null renames")
-    void testBatchRenameVariables_NullRenames() {
-        String result = variableService.batchRenameVariables("main", null);
+    @DisplayName("renameVariables returns error for null renames")
+    void testRenameVariables_NullRenames() {
+        String result = variableService.renameVariables("main", null);
         assertEquals("No program loaded", result);
     }
 
     @Test
-    @DisplayName("batchRenameVariables returns error for empty renames")
-    void testBatchRenameVariables_EmptyRenames() {
-        String result = variableService.batchRenameVariables("main", java.util.Map.of());
+    @DisplayName("renameVariables returns error for empty renames")
+    void testRenameVariables_EmptyRenames() {
+        String result = variableService.renameVariables("main", java.util.Map.of());
         assertEquals("No program loaded", result);
     }
 
@@ -190,46 +197,137 @@ public class VariableServiceTest {
         assertDoesNotThrow(() -> new VariableService(null, null));
     }
 
-    // ===== Tests for batchSetVariableTypes =====
+    // ===== Tests for setVariableTypes =====
 
     @Test
-    @DisplayName("batchSetVariableTypes returns error when no program is loaded")
-    void testBatchSetVariableTypes_NoProgram() {
-        String result = variableService.batchSetVariableTypes("0x1000",
+    @DisplayName("setVariableTypes returns error when no program is loaded")
+    void testSetVariableTypes_NoProgram() {
+        String result = variableService.setVariableTypes("0x1000",
             java.util.Map.of("local_10", "int"));
         assertEquals("No program loaded", result);
     }
 
     @Test
-    @DisplayName("batchSetVariableTypes returns error for null function identifier")
-    void testBatchSetVariableTypes_NullIdentifier() {
-        String result = variableService.batchSetVariableTypes(null,
+    @DisplayName("setVariableTypes returns error for null function identifier")
+    void testSetVariableTypes_NullIdentifier() {
+        String result = variableService.setVariableTypes(null,
             java.util.Map.of("local_10", "int"));
         assertEquals("Function identifier is required", result);
     }
 
     @Test
-    @DisplayName("batchSetVariableTypes returns error for empty function identifier")
-    void testBatchSetVariableTypes_EmptyIdentifier() {
-        String result = variableService.batchSetVariableTypes("",
+    @DisplayName("setVariableTypes returns error for empty function identifier")
+    void testSetVariableTypes_EmptyIdentifier() {
+        String result = variableService.setVariableTypes("",
             java.util.Map.of("local_10", "int"));
         assertEquals("Function identifier is required", result);
     }
 
     @Test
-    @DisplayName("batchSetVariableTypes returns error for null types map")
-    void testBatchSetVariableTypes_NullTypes() {
-        String result = variableService.batchSetVariableTypes("0x1000", null);
+    @DisplayName("setVariableTypes returns error for null types map")
+    void testSetVariableTypes_NullTypes() {
+        String result = variableService.setVariableTypes("0x1000", null);
         assertEquals("No variable types specified", result);
     }
 
     @Test
-    @DisplayName("batchSetVariableTypes returns error for empty types map")
-    void testBatchSetVariableTypes_EmptyTypes() {
-        String result = variableService.batchSetVariableTypes("0x1000", java.util.Map.of());
+    @DisplayName("setVariableTypes returns error for empty types map")
+    void testSetVariableTypes_EmptyTypes() {
+        String result = variableService.setVariableTypes("0x1000", java.util.Map.of());
         assertEquals("No variable types specified", result);
     }
 
-    // Note: Testing with actual Program would require a full Ghidra environment
-    // These tests verify the service handles null/error cases properly
+    // ===== Tests with mocked services (real logic) =====
+
+    @Nested
+    @ExtendWith(MockitoExtension.class)
+    class WithMockedProgram {
+
+        @Mock
+        private ProgramService mockProgramService;
+
+        @Mock
+        private FunctionService mockFunctionService;
+
+        @Mock
+        private Program mockProgram;
+
+        private VariableService svc;
+
+        @BeforeEach
+        void init() {
+            svc = new VariableService(mockProgramService, mockFunctionService);
+        }
+
+        // --- renameVariables ---
+
+        @Test
+        @DisplayName("renameVariables returns error for null renames with loaded program")
+        void testRenameVariables_NullRenames_ProgramLoaded() {
+            when(mockProgramService.getCurrentProgram()).thenReturn(mockProgram);
+            String result = svc.renameVariables("main", null);
+            assertEquals("No renames specified", result);
+        }
+
+        @Test
+        @DisplayName("renameVariables returns error for empty renames with loaded program")
+        void testRenameVariables_EmptyRenames_ProgramLoaded() {
+            when(mockProgramService.getCurrentProgram()).thenReturn(mockProgram);
+            String result = svc.renameVariables("main", java.util.Map.of());
+            assertEquals("No renames specified", result);
+        }
+
+        @Test
+        @DisplayName("renameVariables returns 'Function not found' for unknown function")
+        void testRenameVariables_FunctionNotFound() {
+            when(mockProgramService.getCurrentProgram()).thenReturn(mockProgram);
+            when(mockFunctionService.resolveFunction(mockProgram, "nonexistent")).thenReturn(null);
+
+            String result = svc.renameVariables("nonexistent",
+                java.util.Map.of("local_10", "buffer"));
+            assertEquals("Function not found: nonexistent", result);
+        }
+
+        // --- setVariableTypes ---
+
+        @Test
+        @DisplayName("setVariableTypes returns error for null identifier with loaded program")
+        void testSetVariableTypes_NullIdentifier_ProgramLoaded() {
+            // Validation happens before getCurrentProgram() is called
+            String result = svc.setVariableTypes(null, java.util.Map.of("x", "int"));
+            assertEquals("Function identifier is required", result);
+        }
+
+        @Test
+        @DisplayName("setVariableTypes returns error for empty identifier with loaded program")
+        void testSetVariableTypes_EmptyIdentifier_ProgramLoaded() {
+            String result = svc.setVariableTypes("", java.util.Map.of("x", "int"));
+            assertEquals("Function identifier is required", result);
+        }
+
+        @Test
+        @DisplayName("setVariableTypes returns error for null types with loaded program")
+        void testSetVariableTypes_NullTypes_ProgramLoaded() {
+            String result = svc.setVariableTypes("main", null);
+            assertEquals("No variable types specified", result);
+        }
+
+        @Test
+        @DisplayName("setVariableTypes returns error for empty types with loaded program")
+        void testSetVariableTypes_EmptyTypes_ProgramLoaded() {
+            String result = svc.setVariableTypes("main", java.util.Map.of());
+            assertEquals("No variable types specified", result);
+        }
+
+        @Test
+        @DisplayName("setVariableTypes returns 'Function not found' for unknown function")
+        void testSetVariableTypes_FunctionNotFound() {
+            when(mockProgramService.getCurrentProgram()).thenReturn(mockProgram);
+            when(mockFunctionService.resolveFunction(mockProgram, "nonexistent")).thenReturn(null);
+
+            String result = svc.setVariableTypes("nonexistent",
+                java.util.Map.of("local_10", "int"));
+            assertEquals("Function not found: nonexistent", result);
+        }
+    }
 }
