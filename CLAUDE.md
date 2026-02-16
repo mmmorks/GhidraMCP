@@ -43,28 +43,34 @@ LLM Client → (MCP/stdio) → bridge_mcp_ghidra.py → (HTTP) → GhidraMCPPlug
 **Java plugin entrypoint:** `GhidraMCPPlugin` constructs 9 services and passes them to `ApiHandlerRegistry`, which uses reflection to discover `@McpTool`-annotated methods on all services and registers 40 HTTP endpoints + a `/mcp/tools` metadata endpoint on an embedded `HttpServer` (default port 8080).
 
 **Annotation-driven tool registry** (in `com.lauriewired.mcp.api`):
-- `@McpTool` — marks a service method as an MCP tool (description, POST vs GET)
+- `@McpTool` — marks a service method as an MCP tool (description, POST vs GET, `responseType` for schema generation)
 - `@Param` — annotates each parameter (description, default value)
-- `ToolDef` — runtime tool definition built from reflection; handles `camelCase→snake_case` name conversion, JSON Schema generation, and param parsing
+- `ToolDef` — runtime tool definition built from reflection; delegates to `Json.toSnakeCase()` for name conversion, JSON Schema generation, and param parsing
 - `ParamType` — maps Java types to JSON Schema types (STRING, INTEGER, BOOLEAN, STRING_MAP, LONG_MAP, STRING_PAIR_LIST)
 - `ToolParamDef` — parameter definition record
-- `OutputSchemas` — compile-time JSON Schema constants for per-tool output schemas; used by `/mcp/tools` to emit `outputSchema` for each tool
+- `SchemaGenerator` — generates JSON Schema from Java record types at runtime via victools/jsonschema-generator; used by `/mcp/tools` to emit `outputSchema` for each tool
 
 **Typed output model** (in `com.lauriewired.mcp.model`):
 - `ToolOutput` — sealed interface with `toStructuredJson()` method; permits `TextOutput`, `ListOutput`, `StatusOutput`, `JsonOutput`
 - `TextOutput` — free-form text (decompiled code, hex dumps, analysis results)
-- `ListOutput` — paginated lists of items with defensive copying
+- `ListOutput` — paginated lists of typed record items with defensive copying; serialized via Jackson
 - `StatusOutput` — mutation results (success/failure) with convenience factories
-- `JsonOutput` — already-structured JSON outputs
+- `JsonOutput` — holds a typed `Object` (typically a response record); serialized via Jackson
+
+**Response records** (in `com.lauriewired.mcp.model.response`):
+- ~28 Java records representing structured tool outputs (e.g., `ProgramInfoResult`, `ControlFlowResult`, `SearchMemoryResult`)
+- Nested records for sub-objects (e.g., `ControlFlowResult.Block`, `CallGraphResult.CallGraphNode`)
+- Serialized to snake_case JSON by Jackson's `SNAKE_CASE` naming strategy
+- Used by `SchemaGenerator` to derive `outputSchema` at runtime via reflection
 
 **Service layer** (all in `com.lauriewired.mcp.services`):
 - `ProgramService` — provides current `Program` reference from Ghidra's `PluginTool`; used by all other services
 - `FunctionService` (8 tools), `DataTypeService` (9 tools), `AnalysisService` (5 tools), `MemoryService` (7 tools), `SearchService` (3 tools), `VariableService` (3 tools), `CommentService` (2 tools), `NamespaceService` (2 tools)
 
 **Key utilities** (in `com.lauriewired.mcp.utils`):
+- `Json` — shared Jackson `ObjectMapper` singleton (`NON_NULL`, `SNAKE_CASE`); also provides `Json.toSnakeCase()` as the single source of truth for all camelCase→snake_case conversion
 - `HttpUtils` — parses query params, reads POST bodies, sends JSON envelope responses
 - `GhidraUtils` — address parsing, function lookup helpers
-- `JsonBuilder` — manual JSON string building (no external JSON libraries)
 - `TimeoutHandler` — wraps HTTP handlers with configurable request timeouts (GET only)
 - `ProgramTransaction` — wraps Ghidra `program.startTransaction()`/`endTransaction()` for write operations
 
@@ -76,16 +82,18 @@ LLM Client → (MCP/stdio) → bridge_mcp_ghidra.py → (HTTP) → GhidraMCPPlug
 
 ## Key Patterns
 
-- **Declarative tool registration** — adding a tool means annotating a service method with `@McpTool` + `@Param`. Reflection discovers it, converts Java camelCase names to snake_case, generates JSON Schema, and registers the HTTP handler automatically. The Python bridge picks it up from `/mcp/tools` with zero changes needed.
-- **Structured tool outputs** — all tools return a `ToolOutput` subtype. `ApiHandlerRegistry` calls `toStructuredJson()` to produce machine-readable JSON responses. Per-tool `outputSchema` is defined in `OutputSchemas` and served via `/mcp/tools`.
+- **Declarative tool registration** — adding a tool means annotating a service method with `@McpTool` + `@Param`. Reflection discovers it, converts Java camelCase names to snake_case via `Json.toSnakeCase()`, generates JSON Schema, and registers the HTTP handler automatically. The Python bridge picks it up from `/mcp/tools` with zero changes needed.
+- **Structured tool outputs** — all tools return a `ToolOutput` subtype. `ApiHandlerRegistry` calls `toStructuredJson()` to produce machine-readable JSON responses. Per-tool `outputSchema` is derived at runtime from response record types by `SchemaGenerator` and served via `/mcp/tools`.
+- **Jackson with shaded packages** — Jackson and victools are shaded into `com.lauriewired.shaded.*` via maven-shade-plugin to avoid classpath conflicts in Ghidra's plugin environment. The shared `ObjectMapper` in `Json.java` uses `SNAKE_CASE` naming and `NON_NULL` inclusion.
+- **Response records** — service methods return typed Java records (in `com.lauriewired.mcp.model.response`) wrapped in `JsonOutput` or `ListOutput`. Jackson serializes them with snake_case field names. `SchemaGenerator` derives JSON Schema from the same record types.
 - **All Ghidra state access goes through `ProgramService.getCurrentProgram()`** — services never cache the Program reference.
 - **Write operations** (rename, create struct, set type, etc.) must use `ProgramTransaction` or manual `startTransaction`/`endTransaction`.
-- **No Gson or external JSON libraries** — JSON is built manually with `JsonBuilder` and string formatting to avoid classpath issues in Ghidra's plugin environment.
 - **Pagination** — list endpoints accept `offset`/`limit` query params and return LLM-friendly pagination hints in the response.
 
 ## Dependencies
 
 - **Java 24**, Maven build, Ghidra 11.3.1 JARs in `lib/` (system-scoped)
+- **Jackson 2.18.2** (shaded), **victools jsonschema-generator 4.37.0** (shaded) — relocated to `com.lauriewired.shaded.*`
 - **Python 3.10+**, `mcp>=1.26.0`, `requests>=2`
 - **Test:** JUnit 5.9.2, Mockito 5.21, JaCoCo 0.8.13
 - **Static analysis:** SpotBugs 4.9.8.2, PMD 3.28.0 (both run at `verify` phase)
