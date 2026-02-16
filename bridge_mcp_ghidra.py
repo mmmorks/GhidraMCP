@@ -371,7 +371,9 @@ def split_variable(function_identifier: str, variable_name: str, usage_address: 
     Parameters:
         function_identifier: Function name (e.g., "main") or address (e.g., "00401000", "ram:00401000")
         variable_name: Current variable name to split
-        usage_address: Address where this specific usage occurs (bare hex, no 0x prefix)
+        usage_address: Address where this specific usage occurs (bare hex, no 0x prefix).
+                       These addresses are shown at the start of each line in the
+                       decompiled C output from get_function_code.
         new_name: New name for the variable at this usage (optional; Ghidra auto-generates if empty)
 
     Returns: Status of the split operation

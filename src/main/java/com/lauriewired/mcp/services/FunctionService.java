@@ -10,8 +10,12 @@ import com.lauriewired.mcp.utils.GhidraUtils;
 import com.lauriewired.mcp.utils.HttpUtils;
 import com.lauriewired.mcp.utils.ProgramTransaction;
 
+import ghidra.app.decompiler.ClangLine;
+import ghidra.app.decompiler.ClangToken;
+import ghidra.app.decompiler.ClangTokenGroup;
 import ghidra.app.decompiler.DecompInterface;
 import ghidra.app.decompiler.DecompileResults;
+import ghidra.app.decompiler.PrettyPrinter;
 import ghidra.app.services.CodeViewerService;
 import ghidra.framework.plugintool.PluginTool;
 import ghidra.program.model.address.Address;
@@ -95,10 +99,46 @@ public class FunctionService {
         DecompInterface decomp = new DecompInterface();
         decomp.openProgram(program);
         DecompileResults result = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
-        if (result != null && result.decompileCompleted()) {
+        if (result == null || !result.decompileCompleted()) {
+            return "Decompilation failed";
+        }
+
+        // Use the token tree to get per-line address mappings
+        ClangTokenGroup markup = result.getCCodeMarkup();
+        if (markup == null) {
+            // Fallback to plain text if no markup available
             return result.getDecompiledFunction().getC();
         }
-        return "Decompilation failed";
+
+        PrettyPrinter printer = new PrettyPrinter(func, markup, null);
+        List<ClangLine> lines = printer.getLines();
+
+        // Determine address column width from the function's entry point
+        String sampleAddr = func.getEntryPoint().toString();
+        int addrWidth = sampleAddr.length() + 2; // +2 for spacing
+        String addrFormat = "%-" + addrWidth + "s";
+        String blankPad = " ".repeat(addrWidth);
+
+        StringBuilder sb = new StringBuilder();
+        for (ClangLine line : lines) {
+            // Find the first address on this line from any token
+            Address lineAddr = null;
+            for (ClangToken token : line.getAllTokens()) {
+                lineAddr = token.getMinAddress();
+                if (lineAddr != null) break;
+            }
+
+            // Prefix: address or blank padding
+            if (lineAddr != null) {
+                sb.append(String.format(addrFormat, lineAddr.toString()));
+            } else {
+                sb.append(blankPad);
+            }
+
+            sb.append(PrettyPrinter.getText(line));
+            sb.append('\n');
+        }
+        return sb.toString();
     }
 
     private String getAssembly(Program program, Function func) {

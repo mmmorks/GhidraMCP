@@ -245,6 +245,24 @@ public class FunctionServiceTest {
         String result = functionService.getFunctionCode("main", "asm");
         assertEquals("No program loaded", result);
     }
+
+    @Test
+    @DisplayName("getFunctionCode returns 'Function not found' when function does not exist")
+    void testGetFunctionCode_FunctionNotFound() {
+        setupDefaultMocks();
+
+        when(mockProgram.getAddressFactory()).thenReturn(mockAddressFactory);
+        when(mockAddressFactory.getAddress("nonexistent")).thenReturn(null);
+
+        // Empty function iterator for name lookup fallback
+        FunctionIterator emptyIterator = mock(FunctionIterator.class);
+        when(emptyIterator.iterator()).thenReturn(emptyIterator);
+        when(emptyIterator.hasNext()).thenReturn(false);
+        when(mockFunctionManager.getFunctions(true)).thenReturn(emptyIterator);
+
+        String result = functionService.getFunctionCode("nonexistent", "C");
+        assertEquals("Function not found: nonexistent", result);
+    }
     
     // ===== Happy path tests for getFunctionByAddress =====
     
