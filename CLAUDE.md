@@ -49,7 +49,7 @@ LLM Client → (MCP/stdio) → bridge_mcp_ghidra.py → (HTTP) → GhidraMCPPlug
 - `@McpTool` — marks a service method as an MCP tool (description, POST vs GET, `responseType` for schema generation)
 - `@Param` — annotates each parameter (description, default value)
 - `ToolDef` — runtime tool definition built from reflection; delegates to `Json.toSnakeCase()` for name conversion, JSON Schema generation, and param parsing
-- `ParamType` — maps Java types to JSON Schema types (STRING, INTEGER, BOOLEAN, STRING_MAP, LONG_MAP, STRING_PAIR_LIST)
+- `ParamType` — maps Java types to JSON Schema types (STRING, INTEGER, LONG, BOOLEAN, STRING_MAP, LONG_MAP, STRING_PAIR_LIST)
 - `ToolParamDef` — parameter definition record
 - `SchemaGenerator` — generates JSON Schema from Java record types at runtime via victools/jsonschema-generator; used by `/mcp/tools` to emit `outputSchema` for each tool
 
@@ -58,10 +58,10 @@ LLM Client → (MCP/stdio) → bridge_mcp_ghidra.py → (HTTP) → GhidraMCPPlug
 - `ListOutput` — paginated lists of typed record items with defensive copying; serialized via Jackson
 - `StatusOutput` — mutation results (success/failure) with convenience factories
 - `JsonOutput` — holds a typed `Object` (typically a response record); serialized via Jackson; delegates `toDisplayText()` to `Displayable` if the data record implements it
-- `Displayable` — interface for response records that produce human-readable display text distinct from the structured JSON; implemented by 19 of 28 response records
+- `Displayable` — interface for response records that produce human-readable display text distinct from the structured JSON
 
 **Response records** (in `com.lauriewired.mcp.model.response`):
-- ~28 Java records representing structured tool outputs (e.g., `ProgramInfoResult`, `ControlFlowResult`, `SearchMemoryResult`)
+- Java records representing structured tool outputs (e.g., `ProgramInfoResult`, `ControlFlowResult`, `SearchMemoryResult`)
 - Nested records for sub-objects (e.g., `ControlFlowResult.Block`, `CallGraphResult.CallGraphNode`)
 - Serialized to snake_case JSON by Jackson's `SNAKE_CASE` naming strategy
 - Used by `SchemaGenerator` to derive `outputSchema` at runtime via reflection
@@ -81,7 +81,7 @@ LLM Client → (MCP/stdio) → bridge_mcp_ghidra.py → (HTTP) → GhidraMCPPlug
 - `TelemetryInterceptor` — wraps HTTP handlers; logs go to `~/.ghidra_mcp/telemetry/`
 - `TelemetryLogger` — file-based telemetry logging with `ConcurrentHashMap` for thread-safe metrics
 
-**Python bridge:** `bridge_mcp_ghidra.py` is a generic ~164-line MCP proxy. At startup it fetches tool definitions from `GET /mcp/tools` and dynamically registers them as MCP tools. No per-tool code needed — Java is the single source of truth for tool metadata. Supports `outputSchema` and `readOnlyHint` (GET = read-only, POST = mutation).
+**Python bridge:** `bridge_mcp_ghidra.py` is a generic MCP proxy. At startup it fetches tool definitions from `GET /mcp/tools` and dynamically registers them as MCP tools. No per-tool code needed — Java is the single source of truth for tool metadata. Supports `outputSchema` and `readOnlyHint` (GET = read-only, POST = mutation).
 
 ## Key Patterns
 
