@@ -1,6 +1,7 @@
 package com.lauriewired.mcp.services;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -15,12 +16,21 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.lauriewired.mcp.model.JsonOutput;
+import com.lauriewired.mcp.model.ToolOutput;
+import com.lauriewired.mcp.model.response.FunctionCodeResult;
+
 import ghidra.app.services.ProgramManager;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressFactory;
+import ghidra.program.model.address.AddressSetView;
+import ghidra.program.model.listing.CommentType;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.FunctionIterator;
 import ghidra.program.model.listing.FunctionManager;
+import ghidra.program.model.listing.Instruction;
+import ghidra.program.model.listing.InstructionIterator;
+import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
 
 /**
@@ -384,5 +394,215 @@ public class FunctionServiceTest {
         TestFunctionService serviceWithNullTool = new TestFunctionService((MockablePluginTool) null, new TestProgramService((MockablePluginTool) null));
         String result = serviceWithNullTool.listFunctions(0, 10).toStructuredJson();
         assertTrue(result.contains("\"message\":\"No program loaded\""));
+    }
+
+    // ===== Happy path tests for getFunctionCode assembly mode =====
+
+    private Function setupFunctionWithInstructions() {
+        setupDefaultMocks();
+        when(mockProgram.getAddressFactory()).thenReturn(mockAddressFactory);
+
+        // resolveFunction tries address first, then falls back to name lookup
+        when(mockAddressFactory.getAddress("main")).thenReturn(null);
+
+        Function func = mock(Function.class);
+        when(func.getName()).thenReturn("main");
+
+        Address entryAddr = mock(Address.class);
+        when(func.getEntryPoint()).thenReturn(entryAddr);
+
+        AddressSetView body = mock(AddressSetView.class);
+        Address endAddr = mock(Address.class);
+        when(body.getMaxAddress()).thenReturn(endAddr);
+        when(func.getBody()).thenReturn(body);
+
+        // Wire up function lookup by name
+        FunctionIterator funcIter = mock(FunctionIterator.class);
+        when(funcIter.iterator()).thenReturn(funcIter);
+        when(funcIter.hasNext()).thenReturn(true, false);
+        when(funcIter.next()).thenReturn(func);
+        when(mockFunctionManager.getFunctions(true)).thenReturn(funcIter);
+
+        return func;
+    }
+
+    @Test
+    @DisplayName("getFunctionCode assembly mode returns structured CodeLine list")
+    void testGetFunctionCode_Assembly_Success() {
+        Function func = setupFunctionWithInstructions();
+        Address endAddr = func.getBody().getMaxAddress();
+
+        Listing listing = mock(Listing.class);
+        when(mockProgram.getListing()).thenReturn(listing);
+
+        // Create mock instructions
+        Address addr1 = mock(Address.class);
+        when(addr1.toString()).thenReturn("00401000");
+        when(addr1.compareTo(endAddr)).thenReturn(-1);
+
+        Address addr2 = mock(Address.class);
+        when(addr2.toString()).thenReturn("00401002");
+        when(addr2.compareTo(endAddr)).thenReturn(0);
+
+        Instruction instr1 = mock(Instruction.class);
+        when(instr1.getAddress()).thenReturn(addr1);
+        when(instr1.toString()).thenReturn("push ebp");
+
+        Instruction instr2 = mock(Instruction.class);
+        when(instr2.getAddress()).thenReturn(addr2);
+        when(instr2.toString()).thenReturn("mov ebp,esp");
+
+        InstructionIterator instrIter = mock(InstructionIterator.class);
+        when(instrIter.hasNext()).thenReturn(true, true, false);
+        when(instrIter.next()).thenReturn(instr1, instr2);
+        when(listing.getInstructions(func.getEntryPoint(), true)).thenReturn(instrIter);
+
+        when(listing.getComment(CommentType.EOL, addr1)).thenReturn(null);
+        when(listing.getComment(CommentType.EOL, addr2)).thenReturn(null);
+
+        ToolOutput result = functionService.getFunctionCode("main", "assembly");
+        assertTrue(result instanceof JsonOutput);
+
+        String json = result.toStructuredJson();
+        assertTrue(json.contains("\"function\":\"main\""));
+        assertTrue(json.contains("\"format\":\"assembly\""));
+        assertTrue(json.contains("\"address\":\"00401000\""));
+        assertTrue(json.contains("\"code\":\"push ebp\""));
+        assertTrue(json.contains("\"address\":\"00401002\""));
+        assertTrue(json.contains("\"code\":\"mov ebp,esp\""));
+
+        // Verify structured data
+        FunctionCodeResult data = (FunctionCodeResult) ((JsonOutput) result).data();
+        assertEquals("main", data.function());
+        assertEquals("assembly", data.format());
+        assertEquals(2, data.lines().size());
+        assertEquals("00401000", data.lines().get(0).address());
+        assertEquals("push ebp", data.lines().get(0).code());
+        assertNull(data.lines().get(0).comment());
+        assertEquals("00401002", data.lines().get(1).address());
+        assertEquals("mov ebp,esp", data.lines().get(1).code());
+    }
+
+    @Test
+    @DisplayName("getFunctionCode assembly mode includes EOL comments")
+    void testGetFunctionCode_Assembly_WithComments() {
+        Function func = setupFunctionWithInstructions();
+        Address endAddr = func.getBody().getMaxAddress();
+
+        Listing listing = mock(Listing.class);
+        when(mockProgram.getListing()).thenReturn(listing);
+
+        Address addr1 = mock(Address.class);
+        when(addr1.toString()).thenReturn("00401000");
+        when(addr1.compareTo(endAddr)).thenReturn(-1);
+
+        Instruction instr1 = mock(Instruction.class);
+        when(instr1.getAddress()).thenReturn(addr1);
+        when(instr1.toString()).thenReturn("call 0x00402000");
+
+        InstructionIterator instrIter = mock(InstructionIterator.class);
+        when(instrIter.hasNext()).thenReturn(true, false);
+        when(instrIter.next()).thenReturn(instr1);
+        when(listing.getInstructions(func.getEntryPoint(), true)).thenReturn(instrIter);
+
+        when(listing.getComment(CommentType.EOL, addr1)).thenReturn("call to helper");
+
+        ToolOutput result = functionService.getFunctionCode("main", "asm");
+        FunctionCodeResult data = (FunctionCodeResult) ((JsonOutput) result).data();
+
+        assertEquals("assembly", data.format());
+        assertEquals(1, data.lines().size());
+        assertEquals("call to helper", data.lines().get(0).comment());
+    }
+
+    @Test
+    @DisplayName("getFunctionCode assembly mode preserves instruction order")
+    void testGetFunctionCode_Assembly_PreservesOrder() {
+        Function func = setupFunctionWithInstructions();
+        Address endAddr = func.getBody().getMaxAddress();
+
+        Listing listing = mock(Listing.class);
+        when(mockProgram.getListing()).thenReturn(listing);
+
+        // Create 4 instructions in specific order
+        String[] addresses = {"00401000", "00401002", "00401004", "00401006"};
+        String[] mnemonics = {"push ebp", "mov ebp,esp", "sub esp,0x10", "ret"};
+        Instruction[] instrs = new Instruction[4];
+
+        Instruction prev = null;
+        for (int i = addresses.length - 1; i >= 0; i--) {
+            Address addr = mock(Address.class);
+            when(addr.toString()).thenReturn(addresses[i]);
+            when(addr.compareTo(endAddr)).thenReturn(i < 3 ? -1 : 0);
+
+            instrs[i] = mock(Instruction.class);
+            when(instrs[i].getAddress()).thenReturn(addr);
+            when(instrs[i].toString()).thenReturn(mnemonics[i]);
+            when(listing.getComment(CommentType.EOL, addr)).thenReturn(null);
+        }
+
+        InstructionIterator instrIter = mock(InstructionIterator.class);
+        when(instrIter.hasNext()).thenReturn(true, true, true, true, false);
+        when(instrIter.next()).thenReturn(instrs[0], instrs[1], instrs[2], instrs[3]);
+        when(listing.getInstructions(func.getEntryPoint(), true)).thenReturn(instrIter);
+
+        ToolOutput result = functionService.getFunctionCode("main", "assembly");
+        FunctionCodeResult data = (FunctionCodeResult) ((JsonOutput) result).data();
+
+        assertEquals(4, data.lines().size());
+        for (int i = 0; i < 4; i++) {
+            assertEquals(addresses[i], data.lines().get(i).address());
+            assertEquals(mnemonics[i], data.lines().get(i).code());
+        }
+    }
+
+    @Test
+    @DisplayName("getFunctionCode assembly mode toDisplayText reproduces readable format")
+    void testGetFunctionCode_Assembly_DisplayText() {
+        Function func = setupFunctionWithInstructions();
+        Address endAddr = func.getBody().getMaxAddress();
+
+        Listing listing = mock(Listing.class);
+        when(mockProgram.getListing()).thenReturn(listing);
+
+        Address addr1 = mock(Address.class);
+        when(addr1.toString()).thenReturn("00401000");
+        when(addr1.compareTo(endAddr)).thenReturn(0);
+
+        Instruction instr1 = mock(Instruction.class);
+        when(instr1.getAddress()).thenReturn(addr1);
+        when(instr1.toString()).thenReturn("ret");
+
+        InstructionIterator instrIter = mock(InstructionIterator.class);
+        when(instrIter.hasNext()).thenReturn(true, false);
+        when(instrIter.next()).thenReturn(instr1);
+        when(listing.getInstructions(func.getEntryPoint(), true)).thenReturn(instrIter);
+
+        when(listing.getComment(CommentType.EOL, addr1)).thenReturn("function return");
+
+        ToolOutput result = functionService.getFunctionCode("main", "assembly");
+        String display = result.toDisplayText();
+
+        assertTrue(display.contains("00401000: ret ; function return"));
+    }
+
+    @Test
+    @DisplayName("getFunctionCode assembly mode handles empty function body")
+    void testGetFunctionCode_Assembly_EmptyBody() {
+        Function func = setupFunctionWithInstructions();
+
+        Listing listing = mock(Listing.class);
+        when(mockProgram.getListing()).thenReturn(listing);
+
+        InstructionIterator instrIter = mock(InstructionIterator.class);
+        when(instrIter.hasNext()).thenReturn(false);
+        when(listing.getInstructions(func.getEntryPoint(), true)).thenReturn(instrIter);
+
+        ToolOutput result = functionService.getFunctionCode("main", "assembly");
+        FunctionCodeResult data = (FunctionCodeResult) ((JsonOutput) result).data();
+
+        assertEquals("main", data.function());
+        assertEquals("assembly", data.format());
+        assertEquals(0, data.lines().size());
     }
 }

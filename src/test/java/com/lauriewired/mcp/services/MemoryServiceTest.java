@@ -1,17 +1,27 @@
 package com.lauriewired.mcp.services;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import org.mockito.Mock;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import org.mockito.junit.jupiter.MockitoExtension;
+
+import com.lauriewired.mcp.model.JsonOutput;
+import com.lauriewired.mcp.model.ToolOutput;
+import com.lauriewired.mcp.model.response.ReadMemoryResult;
 
 import ghidra.app.services.ProgramManager;
 import ghidra.program.model.address.Address;
@@ -514,5 +524,181 @@ public class MemoryServiceTest {
         assertTrue(result.contains("unknown_type"));
         verify(mockProgram).endTransaction(1, false);
     }
-    
+
+    // ===== Happy path tests for readMemory =====
+
+    private void setupReadMemoryMocks(byte[] data) throws Exception {
+        when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
+        when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
+        when(mockProgram.getAddressFactory()).thenReturn(mockAddressFactory);
+        when(mockAddressFactory.getAddress("00401000")).thenReturn(mockDataAddr);
+        when(mockDataAddr.toString()).thenReturn("00401000");
+        when(mockProgram.getMemory()).thenReturn(mockMemory);
+        when(mockMemory.getBlock(mockDataAddr)).thenReturn(mockBlock1);
+
+        Address endAddr = mock(Address.class);
+        when(mockDataAddr.add(data.length - 1)).thenReturn(endAddr);
+        when(mockBlock1.contains(endAddr)).thenReturn(true);
+
+        // Mock getBytes to populate the byte array
+        doAnswer(invocation -> {
+            byte[] buf = invocation.getArgument(1);
+            System.arraycopy(data, 0, buf, 0, data.length);
+            return null;
+        }).when(mockMemory).getBytes(eq(mockDataAddr), any(byte[].class));
+
+        // Mock address addition for row addresses
+        when(mockDataAddr.add(0)).thenReturn(mockDataAddr);
+    }
+
+    @Test
+    @DisplayName("readMemory hex format returns structured rows with byte arrays")
+    void testReadMemory_Hex_Success() throws Exception {
+        byte[] data = {0x48, 0x65, 0x6C, 0x6C, 0x6F};
+        setupReadMemoryMocks(data);
+
+        ToolOutput result = testMemoryService.readMemory("00401000", 5, "hex");
+        assertTrue(result instanceof JsonOutput);
+
+        ReadMemoryResult memResult = (ReadMemoryResult) ((JsonOutput) result).data();
+        assertEquals("00401000", memResult.address());
+        assertEquals(5, memResult.size());
+        assertEquals("hex", memResult.format());
+        assertEquals(1, memResult.rows().size());
+
+        ReadMemoryResult.MemoryRow row = memResult.rows().get(0);
+        assertEquals("00401000", row.address());
+        assertEquals(5, row.bytes().size());
+        assertEquals("48", row.bytes().get(0));
+        assertEquals("65", row.bytes().get(1));
+        assertEquals("6C", row.bytes().get(2));
+        assertEquals("6C", row.bytes().get(3));
+        assertEquals("6F", row.bytes().get(4));
+        assertEquals("Hello", row.ascii());
+    }
+
+    @Test
+    @DisplayName("readMemory hex format shows non-printable chars as dots in ASCII")
+    void testReadMemory_Hex_NonPrintableAscii() throws Exception {
+        byte[] data = {0x00, 0x41, 0x1F, 0x7F};
+        setupReadMemoryMocks(data);
+
+        ToolOutput result = testMemoryService.readMemory("00401000", 4, "hex");
+        ReadMemoryResult memResult = (ReadMemoryResult) ((JsonOutput) result).data();
+
+        ReadMemoryResult.MemoryRow row = memResult.rows().get(0);
+        assertEquals(".A..", row.ascii());
+    }
+
+    @Test
+    @DisplayName("readMemory hex format splits into multiple rows at 16 bytes")
+    void testReadMemory_Hex_MultipleRows() throws Exception {
+        byte[] data = new byte[20];
+        for (int i = 0; i < 20; i++) data[i] = (byte) i;
+        setupReadMemoryMocks(data);
+
+        Address row2Addr = mock(Address.class);
+        when(row2Addr.toString()).thenReturn("00401010");
+        when(mockDataAddr.add(16)).thenReturn(row2Addr);
+
+        ToolOutput result = testMemoryService.readMemory("00401000", 20, "hex");
+        ReadMemoryResult memResult = (ReadMemoryResult) ((JsonOutput) result).data();
+
+        assertEquals(2, memResult.rows().size());
+        assertEquals(16, memResult.rows().get(0).bytes().size());
+        assertEquals("00401000", memResult.rows().get(0).address());
+        assertEquals(4, memResult.rows().get(1).bytes().size());
+        assertEquals("00401010", memResult.rows().get(1).address());
+    }
+
+    @Test
+    @DisplayName("readMemory decimal format returns numeric string values")
+    void testReadMemory_Decimal_Success() throws Exception {
+        byte[] data = {0x00, (byte) 0xFF, 0x0A, 0x64};
+        setupReadMemoryMocks(data);
+
+        ToolOutput result = testMemoryService.readMemory("00401000", 4, "decimal");
+        ReadMemoryResult memResult = (ReadMemoryResult) ((JsonOutput) result).data();
+
+        assertEquals("decimal", memResult.format());
+        assertEquals(1, memResult.rows().size());
+
+        ReadMemoryResult.MemoryRow row = memResult.rows().get(0);
+        assertEquals("0", row.bytes().get(0));
+        assertEquals("255", row.bytes().get(1));
+        assertEquals("10", row.bytes().get(2));
+        assertEquals("100", row.bytes().get(3));
+        assertEquals("...\u0064", row.ascii()); // 0x00='.', 0xFF='.', 0x0A='.', 0x64='d'
+    }
+
+    @Test
+    @DisplayName("readMemory binary format returns 8-bit padded binary strings")
+    void testReadMemory_Binary_Success() throws Exception {
+        byte[] data = {0x00, 0x01, (byte) 0xFF, 0x0A};
+        setupReadMemoryMocks(data);
+
+        ToolOutput result = testMemoryService.readMemory("00401000", 4, "binary");
+        ReadMemoryResult memResult = (ReadMemoryResult) ((JsonOutput) result).data();
+
+        assertEquals("binary", memResult.format());
+        assertEquals(1, memResult.rows().size());
+
+        ReadMemoryResult.MemoryRow row = memResult.rows().get(0);
+        assertEquals("00000000", row.bytes().get(0));
+        assertEquals("00000001", row.bytes().get(1));
+        assertEquals("11111111", row.bytes().get(2));
+        assertEquals("00001010", row.bytes().get(3));
+        assertNull(row.ascii());
+    }
+
+    @Test
+    @DisplayName("readMemory ascii format returns individual character strings")
+    void testReadMemory_Ascii_Success() throws Exception {
+        byte[] data = {0x48, 0x69, 0x00, 0x0A, 0x0D, 0x09, (byte) 0x80};
+        setupReadMemoryMocks(data);
+
+        ToolOutput result = testMemoryService.readMemory("00401000", 7, "ascii");
+        ReadMemoryResult memResult = (ReadMemoryResult) ((JsonOutput) result).data();
+
+        assertEquals("ascii", memResult.format());
+        assertEquals(1, memResult.rows().size());
+
+        ReadMemoryResult.MemoryRow row = memResult.rows().get(0);
+        assertEquals("H", row.bytes().get(0));
+        assertEquals("i", row.bytes().get(1));
+        assertEquals("\\0", row.bytes().get(2));
+        assertEquals("\\n", row.bytes().get(3));
+        assertEquals("\\r", row.bytes().get(4));
+        assertEquals("\\t", row.bytes().get(5));
+        assertEquals("\\x80", row.bytes().get(6));
+        assertNull(row.ascii());
+    }
+
+    @Test
+    @DisplayName("readMemory returns error for invalid size")
+    void testReadMemory_InvalidSize() {
+        when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
+        when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
+
+        String result = testMemoryService.readMemory("00401000", 0, "hex").toStructuredJson();
+        assertTrue(result.contains("Size must be between 1 and 1024"));
+
+        String result2 = testMemoryService.readMemory("00401000", 1025, "hex").toStructuredJson();
+        assertTrue(result2.contains("Size must be between 1 and 1024"));
+    }
+
+    @Test
+    @DisplayName("readMemory toDisplayText produces human-readable output")
+    void testReadMemory_DisplayText() throws Exception {
+        byte[] data = {0x48, 0x69};
+        setupReadMemoryMocks(data);
+
+        ToolOutput result = testMemoryService.readMemory("00401000", 2, "hex");
+        String display = result.toDisplayText();
+
+        assertTrue(display.contains("Memory at 00401000 (2 bytes, hex):"));
+        assertTrue(display.contains("00401000:"));
+        assertTrue(display.contains("48"));
+        assertTrue(display.contains("Hi"));
+    }
 }
