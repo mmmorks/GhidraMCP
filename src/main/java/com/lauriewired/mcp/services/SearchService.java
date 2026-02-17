@@ -86,7 +86,7 @@ public class SearchService {
                 final byte[] searchPattern = query.getBytes(StandardCharsets.UTF_8);
                 final SearchSettings settings = new SearchSettings()
                     .withSearchFormat(SearchFormat.STRING);
-                matcher = new ByteMatcher(query, settings) {
+                matcher = new ByteMatcher("String Search", query, settings) {
                     @Override
                     public Iterable<ByteMatcher.ByteMatch> match(final ExtendedByteSequence ebs) {
                         final List<ByteMatch> matches = new ArrayList<>();
@@ -108,7 +108,7 @@ public class SearchService {
 
                             if (found) {
                                 final int offset = i;
-                                matches.add(new ByteMatcher.ByteMatch(offset, searchPattern.length));
+                                matches.add(new ByteMatcher.ByteMatch(offset, searchPattern.length, this));
                             }
                         }
 
@@ -147,7 +147,7 @@ public class SearchService {
                 final boolean[] mask = wildcardMask;
                 final SearchSettings settings = new SearchSettings()
                     .withSearchFormat(SearchFormat.HEX);
-                matcher = new ByteMatcher(query, settings) {
+                matcher = new ByteMatcher("Hex Search", query, settings) {
                     @Override
                     public Iterable<ByteMatcher.ByteMatch> match(final ExtendedByteSequence ebs) {
                         final List<ByteMatch> matches = new ArrayList<>();
@@ -174,7 +174,7 @@ public class SearchService {
 
                             if (found) {
                                 final int offset = i;
-                                matches.add(new ByteMatcher.ByteMatch(offset, pattern.length));
+                                matches.add(new ByteMatcher.ByteMatch(offset, pattern.length, this));
                             }
                         }
 

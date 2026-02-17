@@ -1,6 +1,9 @@
 # Maven target directory
 /target/
 
+# Ghidra JARs (copied from local Ghidra installation)
+/lib/
+
 # Compiled class files
 *.class
 

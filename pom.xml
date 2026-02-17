@@ -11,8 +11,7 @@
   <url>http://maven.apache.org</url>
   
   <properties>
-    <maven.compiler.source>24</maven.compiler.source>
-    <maven.compiler.target>24</maven.compiler.target>
+    <maven.compiler.release>24</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
   </properties>
 
@@ -21,72 +20,72 @@
     <dependency>
       <groupId>ghidra</groupId>
       <artifactId>Generic</artifactId>
-      <version>11.3.1</version>
+      <version>12.0.3</version>
       <scope>system</scope>
       <systemPath>${project.basedir}/lib/Generic.jar</systemPath>
     </dependency>
     <dependency>
       <groupId>ghidra</groupId>
       <artifactId>SoftwareModeling</artifactId>
-      <version>11.3.1</version>
+      <version>12.0.3</version>
       <scope>system</scope>
       <systemPath>${project.basedir}/lib/SoftwareModeling.jar</systemPath>
     </dependency>
     <dependency>
       <groupId>ghidra</groupId>
       <artifactId>Project</artifactId>
-      <version>11.3.1</version>
+      <version>12.0.3</version>
       <scope>system</scope>
       <systemPath>${project.basedir}/lib/Project.jar</systemPath>
     </dependency>
     <dependency>
       <groupId>ghidra</groupId>
       <artifactId>Docking</artifactId>
-      <version>11.3.1</version>
+      <version>12.0.3</version>
       <scope>system</scope>
       <systemPath>${project.basedir}/lib/Docking.jar</systemPath>
     </dependency>
     <dependency>
       <groupId>ghidra</groupId>
       <artifactId>Decompiler</artifactId>
-      <version>11.3.1</version>
+      <version>12.0.3</version>
       <scope>system</scope>
       <systemPath>${project.basedir}/lib/Decompiler.jar</systemPath>
     </dependency>
     <dependency>
       <groupId>ghidra</groupId>
       <artifactId>Utility</artifactId>
-      <version>11.3.1</version>
+      <version>12.0.3</version>
       <scope>system</scope>
       <systemPath>${project.basedir}/lib/Utility.jar</systemPath>
     </dependency>
     <dependency>
       <groupId>ghidra</groupId>
       <artifactId>Base</artifactId>
-      <version>11.3.1</version>
+      <version>12.0.3</version>
       <scope>system</scope>
       <systemPath>${project.basedir}/lib/Base.jar</systemPath>
     </dependency>
     <dependency>
       <groupId>ghidra</groupId>
-      <artifactId>Gui</artifactId>
-      <version>11.3.1</version>
-      <scope>system</scope>
-      <systemPath>${project.basedir}/lib/Gui.jar</systemPath>
-    </dependency>
-    <dependency>
-      <groupId>ghidra</groupId>
       <artifactId>DB</artifactId>
-      <version>11.3.1</version>
+      <version>12.0.3</version>
       <scope>system</scope>
       <systemPath>${project.basedir}/lib/DB.jar</systemPath>
     </dependency>
     <dependency>
       <groupId>ghidra</groupId>
       <artifactId>FileSystem</artifactId>
-      <version>11.3.1</version>
+      <version>12.0.3</version>
       <scope>system</scope>
       <systemPath>${project.basedir}/lib/FileSystem.jar</systemPath>
+    </dependency>
+    <dependency>
+      <groupId>ghidra</groupId>
+      <artifactId>Gui</artifactId>
+      <version>12.0.3</version>
+      <scope>system</scope>
+      <systemPath>${project.basedir}/lib/Gui.jar</systemPath>
     </dependency>
 
     <!-- JUnit 5 dependencies -->
@@ -138,6 +137,7 @@
   </dependencies>
 
   <build>
+    <finalName>GhidraMCP</finalName>
     <plugins>
       <!-- Compile with -parameters for reflection-based param name discovery -->
       <plugin>
@@ -145,8 +145,7 @@
         <artifactId>maven-compiler-plugin</artifactId>
         <version>3.11.0</version>
         <configuration>
-          <source>24</source>
-          <target>24</target>
+          <release>24</release>
           <parameters>true</parameters>
         </configuration>
       </plugin>
@@ -159,8 +158,6 @@
           <archive>
             <manifestFile>src/main/resources/META-INF/MANIFEST.MF</manifestFile>
           </archive>
-          <!-- Set a fixed name for the JAR without version -->
-          <finalName>GhidraMCP</finalName>
           <!-- Exclude the App class -->
           <excludes>
             <exclude>**/App.class</exclude>
@@ -221,6 +218,7 @@
                     <exclude>META-INF/LICENSE</exclude>
                     <exclude>META-INF/NOTICE</exclude>
                     <exclude>module-info.class</exclude>
+                    <exclude>META-INF/versions/9/module-info.class</exclude>
                   </excludes>
                 </filter>
                 <filter>
@@ -229,6 +227,7 @@
                     <exclude>META-INF/MANIFEST.MF</exclude>
                     <exclude>META-INF/LICENSE</exclude>
                     <exclude>module-info.class</exclude>
+                    <exclude>META-INF/versions/9/module-info.class</exclude>
                   </excludes>
                 </filter>
                 <filter>
@@ -237,6 +236,7 @@
                     <exclude>META-INF/MANIFEST.MF</exclude>
                     <exclude>META-INF/LICENSE</exclude>
                     <exclude>module-info.class</exclude>
+                    <exclude>META-INF/versions/9/module-info.class</exclude>
                   </excludes>
                 </filter>
               </filters>
@@ -255,9 +255,6 @@
           <descriptors>
             <descriptor>src/assembly/ghidra-extension.xml</descriptor>
           </descriptors>
-          
-          <!-- The name of the final zip -->
-          <finalName>GhidraMCP-${project.version}</finalName>
           
           <!-- Don't append the assembly ID -->
           <appendAssemblyId>false</appendAssemblyId>

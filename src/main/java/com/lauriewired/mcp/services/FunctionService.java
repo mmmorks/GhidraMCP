@@ -28,6 +28,7 @@ import ghidra.app.decompiler.PrettyPrinter;
 import ghidra.app.services.CodeViewerService;
 import ghidra.framework.plugintool.PluginTool;
 import ghidra.program.model.address.Address;
+import ghidra.program.model.listing.CommentType;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.InstructionIterator;
@@ -171,7 +172,7 @@ public class FunctionService {
             if (instr.getAddress().compareTo(end) > 0) break;
 
             String comment = listing.getComment(
-                ghidra.program.model.listing.CodeUnit.EOL_COMMENT, instr.getAddress());
+                CommentType.EOL, instr.getAddress());
             comment = (comment != null) ? "; " + comment : "";
 
             result.append(String.format("%s: %s %s\n",

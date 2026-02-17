@@ -10,6 +10,7 @@ import com.lauriewired.mcp.utils.ProgramTransaction;
 
 import ghidra.program.model.address.Address;
 import ghidra.program.model.listing.CodeUnit;
+import ghidra.program.model.listing.CommentType;
 import ghidra.program.model.listing.Program;
 import ghidra.util.Msg;
 
@@ -47,15 +48,15 @@ public class CommentService {
         if (type == null || type.isEmpty()) {
             return StatusOutput.error("Error: 'type' parameter is required (pre, post, eol, plate, repeatable)");
         }
-        final int commentType = switch (type.toLowerCase()) {
-            case "pre", "decompiler" -> CodeUnit.PRE_COMMENT;
-            case "post" -> CodeUnit.POST_COMMENT;
-            case "eol", "disassembly" -> CodeUnit.EOL_COMMENT;
-            case "plate" -> CodeUnit.PLATE_COMMENT;
-            case "repeatable" -> CodeUnit.REPEATABLE_COMMENT;
-            default -> -1;
+        final CommentType commentType = switch (type.toLowerCase()) {
+            case "pre", "decompiler" -> CommentType.PRE;
+            case "post" -> CommentType.POST;
+            case "eol", "disassembly" -> CommentType.EOL;
+            case "plate" -> CommentType.PLATE;
+            case "repeatable" -> CommentType.REPEATABLE;
+            default -> null;
         };
-        if (commentType == -1) {
+        if (commentType == null) {
             return StatusOutput.error("Failed to set comment. Valid types: pre, post, eol, plate, repeatable");
         }
         final boolean success = setCommentAtAddress(address, comment, commentType, "Set " + type + " comment");
@@ -65,7 +66,7 @@ public class CommentService {
     /**
      * Set a comment using the specified comment type constant
      */
-    private boolean setCommentAtAddress(final String addressStr, final String comment, final int commentType, final String transactionName) {
+    private boolean setCommentAtAddress(final String addressStr, final String comment, final CommentType commentType, final String transactionName) {
         final Program program = programService.getCurrentProgram();
         if (program == null) return false;
         if (addressStr == null || addressStr.isEmpty() || comment == null) return false;
@@ -105,11 +106,11 @@ public class CommentService {
             return new JsonOutput(new CommentResult(
                     address,
                     new CommentResult.Comments(
-                            codeUnit.getComment(CodeUnit.PRE_COMMENT),
-                            codeUnit.getComment(CodeUnit.POST_COMMENT),
-                            codeUnit.getComment(CodeUnit.EOL_COMMENT),
-                            codeUnit.getComment(CodeUnit.PLATE_COMMENT),
-                            codeUnit.getComment(CodeUnit.REPEATABLE_COMMENT))));
+                            codeUnit.getComment(CommentType.PRE),
+                            codeUnit.getComment(CommentType.POST),
+                            codeUnit.getComment(CommentType.EOL),
+                            codeUnit.getComment(CommentType.PLATE),
+                            codeUnit.getComment(CommentType.REPEATABLE))));
         } catch (Exception e) {
             return StatusOutput.error("Error getting comments: " + e.getMessage());
         }
