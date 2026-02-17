@@ -23,7 +23,7 @@ public final class Json {
      * Convert a camelCase string to snake_case.
      * Single source of truth for naming conversion across the codebase.
      */
-    public static String toSnakeCase(String camel) {
+    public static String toSnakeCase(final String camel) {
         return SNAKE_CASE.translate(camel);
     }
 
@@ -34,7 +34,7 @@ public final class Json {
      * @return JSON string representation
      * @throws RuntimeException if serialization fails
      */
-    public static String serialize(Object value) {
+    public static String serialize(final Object value) {
         try {
             return MAPPER.writeValueAsString(value);
         } catch (JsonProcessingException e) {

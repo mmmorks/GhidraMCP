@@ -19,7 +19,7 @@ public record ProgramInfoResult(
 ) implements Displayable {
     @Override
     public String toDisplayText() {
-        StringBuilder sb = new StringBuilder();
+        final StringBuilder sb = new StringBuilder();
         sb.append("Program: ").append(name).append("\n");
         sb.append("Format: ").append(format).append("\n");
         sb.append("Processor: ").append(processor).append("\n");

@@ -35,7 +35,7 @@ public class TimeoutHandler {
         final AtomicBoolean completed = new AtomicBoolean(false);
         final AtomicBoolean timedOut = new AtomicBoolean(false);
         
-        RequestContext(HttpExchange exchange, Thread handlerThread, String path, long timeoutAt) {
+        RequestContext(final HttpExchange exchange, final Thread handlerThread, final String path, final long timeoutAt) {
             this.exchange = exchange;
             this.handlerThread = handlerThread;
             this.path = path;
@@ -43,13 +43,13 @@ public class TimeoutHandler {
         }
         
         @Override
-        public int compareTo(RequestContext other) {
+        public int compareTo(final RequestContext other) {
             // Earlier timeouts come first
             return Long.compare(this.timeoutAt, other.timeoutAt);
         }
 
         @Override
-        public boolean equals(Object o) {
+        public boolean equals(final Object o) {
             if (this == o) return true;
             if (!(o instanceof RequestContext other)) return false;
             return this.timeoutAt == other.timeoutAt && Objects.equals(this.path, other.path);
@@ -66,7 +66,7 @@ public class TimeoutHandler {
      *
      * @param timeoutSeconds the timeout in seconds (0 or negative means no timeout)
      */
-    public TimeoutHandler(int timeoutSeconds) {
+    public TimeoutHandler(final int timeoutSeconds) {
         this.timeoutNanos = timeoutSeconds * 1_000_000_000L; // Convert to nanoseconds
         this.timeoutQueue = new PriorityQueue<>();
         this.shutdown = new AtomicBoolean(false);
@@ -98,7 +98,7 @@ public class TimeoutHandler {
      * @param delegate the actual handler to wrap
      * @return the wrapped handler
      */
-    public HttpHandler wrap(HttpHandler delegate) {
+    public HttpHandler wrap(final HttpHandler delegate) {
         return new TimeoutWrappedHandler(delegate);
     }
     
@@ -108,12 +108,12 @@ public class TimeoutHandler {
     private class TimeoutWrappedHandler implements HttpHandler {
         private final HttpHandler delegate;
         
-        TimeoutWrappedHandler(HttpHandler delegate) {
+        TimeoutWrappedHandler(final HttpHandler delegate) {
             this.delegate = delegate;
         }
         
         @Override
-        public void handle(HttpExchange exchange) throws IOException {
+        public void handle(final HttpExchange exchange) throws IOException {
             TimeoutHandler.this.handleWithTimeout(exchange, delegate);
         }
     }
@@ -130,14 +130,14 @@ public class TimeoutHandler {
                 synchronized (queueLock) {
                     // Clean up completed requests and find next timeout
                     while (!timeoutQueue.isEmpty()) {
-                        RequestContext context = timeoutQueue.peek();
+                        final RequestContext context = timeoutQueue.peek();
                         if (context.completed.get()) {
                             // Remove completed requests
                             timeoutQueue.poll();
                         } else {
                             // Found next active request
                             nextTimeout = context;
-                            long now = System.nanoTime();
+                            final long now = System.nanoTime();
                             waitTime = Math.max(0, context.timeoutAt - now);
                             break;
                         }
@@ -149,8 +149,8 @@ public class TimeoutHandler {
                         continue;
                     } else if (waitTime > 0) {
                         // Wait until the next timeout
-                        long waitMillis = waitTime / 1_000_000;
-                        int waitNanos = (int) (waitTime % 1_000_000);
+                        final long waitMillis = waitTime / 1_000_000;
+                        final int waitNanos = (int) (waitTime % 1_000_000);
                         queueLock.wait(waitMillis, waitNanos);
                         continue;
                     }
@@ -158,7 +158,7 @@ public class TimeoutHandler {
                 
                 // We have a request that should timeout now
                 if (!nextTimeout.completed.get()) {
-                    long now = System.nanoTime();
+                    final long now = System.nanoTime();
                     if (now >= nextTimeout.timeoutAt) {
                         // Request has timed out
                         nextTimeout.timedOut.set(true);
@@ -196,7 +196,7 @@ public class TimeoutHandler {
     /**
      * Handle a request with timeout enforcement
      */
-    private void handleWithTimeout(HttpExchange exchange, HttpHandler delegate) throws IOException {
+    private void handleWithTimeout(final HttpExchange exchange, final HttpHandler delegate) throws IOException {
         // Only apply timeout to GET requests
         if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
             delegate.handle(exchange);
@@ -209,9 +209,9 @@ public class TimeoutHandler {
             return;
         }
         
-        String requestPath = exchange.getRequestURI().getPath();
-        long timeoutAt = System.nanoTime() + timeoutNanos;
-        RequestContext context = new RequestContext(exchange, Thread.currentThread(), requestPath, timeoutAt);
+        final String requestPath = exchange.getRequestURI().getPath();
+        final long timeoutAt = System.nanoTime() + timeoutNanos;
+        final RequestContext context = new RequestContext(exchange, Thread.currentThread(), requestPath, timeoutAt);
         
         // Add to timeout queue and notify monitor
         synchronized (queueLock) {
@@ -257,8 +257,8 @@ public class TimeoutHandler {
     /**
      * Send a timeout response to the client as JSON
      */
-    private void sendTimeoutResponse(HttpExchange exchange) throws IOException {
-        String errorMsg = String.format("Request timeout - operation took longer than %.1f seconds",
+    private void sendTimeoutResponse(final HttpExchange exchange) throws IOException {
+        final String errorMsg = String.format("Request timeout - operation took longer than %.1f seconds",
             timeoutNanos / 1_000_000_000.0);
         sendJsonError(exchange, 408, errorMsg);
     }
@@ -266,18 +266,18 @@ public class TimeoutHandler {
     /**
      * Send an error response to the client as JSON
      */
-    private void sendErrorResponse(HttpExchange exchange, String message) throws IOException {
+    private void sendErrorResponse(final HttpExchange exchange, final String message) throws IOException {
         sendJsonError(exchange, 500, message);
     }
 
     /**
      * Send a JSON error envelope with the given status code and message.
      */
-    private static void sendJsonError(HttpExchange exchange, int statusCode, String message) throws IOException {
-        java.util.Map<String, Object> envelope = new java.util.LinkedHashMap<>();
+    private static void sendJsonError(final HttpExchange exchange, final int statusCode, final String message) throws IOException {
+        final java.util.Map<String, Object> envelope = new java.util.LinkedHashMap<>();
         envelope.put("status", "error");
         envelope.put("error", message);
-        byte[] bytes = Json.serialize(envelope).getBytes(StandardCharsets.UTF_8);
+        final byte[] bytes = Json.serialize(envelope).getBytes(StandardCharsets.UTF_8);
 
         exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
         exchange.sendResponseHeaders(statusCode, bytes.length);

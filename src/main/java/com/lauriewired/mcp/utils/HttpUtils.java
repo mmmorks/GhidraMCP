@@ -24,8 +24,8 @@ public class HttpUtils {
     /**
      * Parse query parameters from the URL, e.g. ?offset=10&limit=100
      */
-    public static Map<String, String> parseQueryParams(HttpExchange exchange) {
-        var query = exchange.getRequestURI().getRawQuery(); // e.g. offset=10&limit=100
+    public static Map<String, String> parseQueryParams(final HttpExchange exchange) {
+        final var query = exchange.getRequestURI().getRawQuery(); // e.g. offset=10&limit=100
         if (query == null) return Map.of();
         
         return Arrays.stream(query.split("&"))
@@ -42,7 +42,7 @@ public class HttpUtils {
     /**
      * Helper method to decode URL parameters safely
      */
-    private static String decodeUrlParameter(String value) {
+    private static String decodeUrlParameter(final String value) {
         try {
             return URLDecoder.decode(value, StandardCharsets.UTF_8);
         } catch (IllegalArgumentException e) {
@@ -55,9 +55,9 @@ public class HttpUtils {
      * Parse post body params, auto-detecting JSON or form-encoded format.
      * If body starts with '{', parses as JSON; otherwise parses as form-encoded.
      */
-    public static Map<String, String> parsePostParams(HttpExchange exchange) throws IOException {
-        var body = exchange.getRequestBody().readAllBytes();
-        var bodyStr = new String(body, StandardCharsets.UTF_8).trim();
+    public static Map<String, String> parsePostParams(final HttpExchange exchange) throws IOException {
+        final var body = exchange.getRequestBody().readAllBytes();
+        final var bodyStr = new String(body, StandardCharsets.UTF_8).trim();
 
         // Auto-detect JSON bodies
         if (bodyStr.startsWith("{")) {
@@ -70,16 +70,16 @@ public class HttpUtils {
     /**
      * Parse form-encoded body params, e.g. oldName=foo&newName=bar
      */
-    static Map<String, String> parseFormBody(String bodyStr) {
+    static Map<String, String> parseFormBody(final String bodyStr) {
         return Arrays.stream(bodyStr.split("&"))
             .filter(pair -> !pair.isEmpty())
             .map(pair -> {
-                var equalsIndex = pair.indexOf('=');
+                final var equalsIndex = pair.indexOf('=');
                 if (equalsIndex == -1) return null;
 
                 try {
-                    var key = decodeUrlParameter(pair.substring(0, equalsIndex));
-                    var value = equalsIndex < pair.length() - 1 ?
+                    final var key = decodeUrlParameter(pair.substring(0, equalsIndex));
+                    final var value = equalsIndex < pair.length() - 1 ?
                         decodeUrlParameter(pair.substring(equalsIndex + 1)) : "";
                     return Map.entry(key, value);
                 } catch (IllegalArgumentException e) {
@@ -100,28 +100,28 @@ public class HttpUtils {
      * Handles string values (with escaped quotes), numeric/boolean values
      * (converted to strings), and null values (skipped).
      */
-    public static Map<String, String> parseJsonBody(String body) {
-        Map<String, String> result = new java.util.LinkedHashMap<>();
+    public static Map<String, String> parseJsonBody(final String body) {
+        final Map<String, String> result = new java.util.LinkedHashMap<>();
         if (body == null || body.isEmpty()) return result;
 
-        String trimmed = body.trim();
+        final String trimmed = body.trim();
         if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return result;
 
         // Strip outer braces
-        String inner = trimmed.substring(1, trimmed.length() - 1).trim();
+        final String inner = trimmed.substring(1, trimmed.length() - 1).trim();
         if (inner.isEmpty()) return result;
 
         int i = 0;
         while (i < inner.length()) {
             // Find key
-            int qs = inner.indexOf('"', i);
+            final int qs = inner.indexOf('"', i);
             if (qs < 0) break;
-            int qe = findNextUnescapedQuote(inner, qs + 1);
+            final int qe = findNextUnescapedQuote(inner, qs + 1);
             if (qe < 0) break;
-            String key = unescapeJsonValue(inner.substring(qs + 1, qe));
+            final String key = unescapeJsonValue(inner.substring(qs + 1, qe));
 
             // Find colon
-            int colon = inner.indexOf(':', qe + 1);
+            final int colon = inner.indexOf(':', qe + 1);
             if (colon < 0) break;
 
             // Skip whitespace after colon
@@ -129,23 +129,23 @@ public class HttpUtils {
             while (valStart < inner.length() && Character.isWhitespace(inner.charAt(valStart))) valStart++;
             if (valStart >= inner.length()) break;
 
-            char firstChar = inner.charAt(valStart);
+            final char firstChar = inner.charAt(valStart);
 
             if (firstChar == '"') {
                 // String value
-                int valEnd = findNextUnescapedQuote(inner, valStart + 1);
+                final int valEnd = findNextUnescapedQuote(inner, valStart + 1);
                 if (valEnd < 0) break;
                 result.put(key, unescapeJsonValue(inner.substring(valStart + 1, valEnd)));
                 i = valEnd + 1;
             } else if (firstChar == '{' || firstChar == '[') {
                 // Nested object or array — skip entirely (not a flat value)
                 int depth = 1;
-                char open = firstChar;
-                char close = (open == '{') ? '}' : ']';
+                final char open = firstChar;
+                final char close = (open == '{') ? '}' : ']';
                 int pos = valStart + 1;
                 boolean inStr = false;
                 while (pos < inner.length() && depth > 0) {
-                    char c = inner.charAt(pos);
+                    final char c = inner.charAt(pos);
                     if (c == '"' && (pos == 0 || inner.charAt(pos - 1) != '\\')) {
                         inStr = !inStr;
                     } else if (!inStr) {
@@ -179,10 +179,10 @@ public class HttpUtils {
     /**
      * Find the next unescaped double-quote in a string.
      */
-    static int findNextUnescapedQuote(String s, int fromIndex) {
+    static int findNextUnescapedQuote(final String s, final int fromIndex) {
         int i = fromIndex;
         while (i < s.length()) {
-            int q = s.indexOf('"', i);
+            final int q = s.indexOf('"', i);
             if (q < 0) return -1;
             int backslashes = 0;
             int j = q - 1;
@@ -196,13 +196,13 @@ public class HttpUtils {
     /**
      * Unescape a JSON string value.
      */
-    static String unescapeJsonValue(String s) {
+    static String unescapeJsonValue(final String s) {
         if (s == null || s.indexOf('\\') < 0) return s;
-        StringBuilder sb = new StringBuilder(s.length());
+        final StringBuilder sb = new StringBuilder(s.length());
         for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
+            final char c = s.charAt(i);
             if (c == '\\' && i + 1 < s.length()) {
-                char next = s.charAt(i + 1);
+                final char next = s.charAt(i + 1);
                 switch (next) {
                     case '"':  sb.append('"');  i++; break;
                     case '\\': sb.append('\\'); i++; break;
@@ -222,10 +222,10 @@ public class HttpUtils {
     /**
      * Convert a list of strings into one big newline-delimited string, applying offset & limit.
      */
-    public static String paginateList(List<String> items, int offset, int limit) {
+    public static String paginateList(final List<String> items, final int offset, final int limit) {
         if (limit <= 0 || items.isEmpty()) return "";
         
-        var start = Math.max(0, offset);
+        final var start = Math.max(0, offset);
         if (start >= items.size()) return "";
         
         return items.stream()
@@ -237,7 +237,7 @@ public class HttpUtils {
     /**
      * Parse an integer from a string, or return defaultValue if null/invalid.
      */
-    public static int parseIntOrDefault(String val, int defaultValue) {
+    public static int parseIntOrDefault(final String val, final int defaultValue) {
         return Optional.ofNullable(val)
             .map(str -> {
                 try {
@@ -252,7 +252,7 @@ public class HttpUtils {
     /**
      * Escape non-ASCII chars to avoid potential decode issues.
      */
-    public static String escapeNonAscii(String input) {
+    public static String escapeNonAscii(final String input) {
         if (input == null) return "";
         
         return input.chars()
@@ -277,9 +277,9 @@ public class HttpUtils {
     /**
      * Check if a response string represents an error.
      */
-    public static boolean isErrorResponse(String response) {
+    public static boolean isErrorResponse(final String response) {
         if (response == null || response.isEmpty()) return false;
-        for (String prefix : ERROR_PREFIXES) {
+        for (final String prefix : ERROR_PREFIXES) {
             if (response.startsWith(prefix)) return true;
         }
         return false;
@@ -289,11 +289,11 @@ public class HttpUtils {
      * Send a structured HTTP response from a ToolOutput.
      * Routes StatusOutput with success==false to error response; otherwise sends success envelope.
      */
-    public static void sendStructuredResponse(HttpExchange exchange, ToolOutput output) throws IOException {
+    public static void sendStructuredResponse(final HttpExchange exchange, final ToolOutput output) throws IOException {
         if (output instanceof StatusOutput status && !status.success()) {
             sendJsonErrorResponse(exchange, 400, status.message());
         } else {
-            Map<String, Object> envelope = new java.util.LinkedHashMap<>();
+            final Map<String, Object> envelope = new java.util.LinkedHashMap<>();
             envelope.put("status", "success");
             // Parse the structured JSON back to an object so it's embedded inline
             envelope.put("data", Json.mapper().readValue(output.toStructuredJson(), Object.class));
@@ -306,7 +306,7 @@ public class HttpUtils {
      * Send an HTTP response, automatically wrapping in a JSON envelope.
      * Detects error responses and routes to the appropriate JSON method.
      */
-    public static void sendResponse(HttpExchange exchange, String response) throws IOException {
+    public static void sendResponse(final HttpExchange exchange, final String response) throws IOException {
         if (isErrorResponse(response)) {
             sendJsonErrorResponse(exchange, 400, response);
         } else {
@@ -318,11 +318,11 @@ public class HttpUtils {
      * Send a JSON success response: {"status":"success","data":...}
      * If data looks like JSON (starts with { or [), embeds it raw; otherwise quotes as string.
      */
-    public static void sendJsonResponse(HttpExchange exchange, String data) throws IOException {
-        Map<String, Object> envelope = new java.util.LinkedHashMap<>();
+    public static void sendJsonResponse(final HttpExchange exchange, final String data) throws IOException {
+        final Map<String, Object> envelope = new java.util.LinkedHashMap<>();
         envelope.put("status", "success");
         if (data != null && !data.isEmpty()) {
-            String trimmed = data.trim();
+            final String trimmed = data.trim();
             if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
                 envelope.put("data", Json.mapper().readValue(trimmed, Object.class));
             } else {
@@ -337,8 +337,8 @@ public class HttpUtils {
     /**
      * Send a JSON error response: {"status":"error","error":"..."}
      */
-    public static void sendJsonErrorResponse(HttpExchange exchange, int statusCode, String errorMessage) throws IOException {
-        Map<String, Object> envelope = new java.util.LinkedHashMap<>();
+    public static void sendJsonErrorResponse(final HttpExchange exchange, final int statusCode, final String errorMessage) throws IOException {
+        final Map<String, Object> envelope = new java.util.LinkedHashMap<>();
         envelope.put("status", "error");
         envelope.put("error", errorMessage);
         sendRawJson(exchange, statusCode, Json.serialize(envelope));
@@ -347,8 +347,8 @@ public class HttpUtils {
     /**
      * Send a raw JSON string as HTTP response with the given status code.
      */
-    private static void sendRawJson(HttpExchange exchange, int statusCode, String jsonBody) throws IOException {
-        var bytes = jsonBody.getBytes(StandardCharsets.UTF_8);
+    private static void sendRawJson(final HttpExchange exchange, final int statusCode, final String jsonBody) throws IOException {
+        final var bytes = jsonBody.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
         exchange.sendResponseHeaders(statusCode, bytes.length);
         try (var os = exchange.getResponseBody()) {
@@ -361,14 +361,14 @@ public class HttpUtils {
      * Single-pass implementation handling all JSON-required escapes including
      * control characters U+0000–U+001F.
      */
-    public static String escapeJson(String text) {
+    public static String escapeJson(final String text) {
         if (text == null) {
             return null;
         }
 
-        StringBuilder sb = new StringBuilder(text.length() + 16);
+        final StringBuilder sb = new StringBuilder(text.length() + 16);
         for (int i = 0; i < text.length(); i++) {
-            char c = text.charAt(i);
+            final char c = text.charAt(i);
             switch (c) {
                 case '\\': sb.append("\\\\"); break;
                 case '"':  sb.append("\\\""); break;

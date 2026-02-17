@@ -64,7 +64,7 @@ public class DataTypeService {
      *
      * @param programService the program service for accessing the current program
      */
-    public DataTypeService(ProgramService programService) {
+    public DataTypeService(final ProgramService programService) {
         this.programService = programService;
     }
 
@@ -75,23 +75,23 @@ public class DataTypeService {
      * @param limit maximum number of structures to return
      * @return paginated list of structures with pagination metadata
      */
-    public String listStructures(int offset, int limit) {
-        Program program = programService.getCurrentProgram();
+    public String listStructures(final int offset, final int limit) {
+        final Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
 
-        ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
-        List<Structure> structs = new ArrayList<>();
+        final ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
+        final List<Structure> structs = new ArrayList<>();
         // Get all structures from the data type manager
         dtm.getAllStructures().forEachRemaining((struct) -> {
             structs.add(struct);
         });
         Collections.sort(structs, Comparator.comparing(Structure::getName));
-        List<String> lines = new ArrayList<>();
-        for (Structure struct : structs) {
-            StringBuilder sb = new StringBuilder();
+        final List<String> lines = new ArrayList<>();
+        for (final Structure struct : structs) {
+            final StringBuilder sb = new StringBuilder();
             sb.append(struct.getName()).append(": {");
             for (int i = 0; i < struct.getNumComponents(); i++) {
-                DataTypeComponent comp = struct.getComponent(i);
+                final DataTypeComponent comp = struct.getComponent(i);
                 if (i > 0) sb.append(", ");
                 sb.append(comp.getDataType().getName())
                 .append(" ")
@@ -118,51 +118,51 @@ public class DataTypeService {
         Example: update_structure("MyStruct", field_renames={"field0_0x0": "width"},
                                   type_changes={"width": "int"}) """)
     public ToolOutput updateStructure(
-            @Param("Current structure name") String name,
-            @Param(value = "New name for the structure (optional)", defaultValue = "") String newName,
-            @Param(value = "New size in bytes (optional, only grows)", defaultValue = "") Integer size,
-            @Param(value = "Map of old field name to new field name", defaultValue = "") Map<String, String> fieldRenames,
-            @Param(value = "Map of field name to new data type", defaultValue = "") Map<String, String> typeChanges) {
+            @Param("final Current structure name") final String name,
+            @Param(value = "New name for the structure (optional)", defaultValue = "") final String newName,
+            @Param(value = "final New size in bytes (optional, only grows)", defaultValue = "") final Integer size,
+            @Param(value = "Map of old field name to new field name", defaultValue = "") final Map<String, String> fieldRenames,
+            @Param(value = "Map of field name to new data type", defaultValue = "") final Map<String, String> typeChanges) {
         if (name == null || name.isEmpty()) {
             return StatusOutput.error("Structure name is required");
         }
-        Program program = programService.getCurrentProgram();
+        final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
 
         try (var tx = ProgramTransaction.start(program, "Update structure")) {
-            ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
-            DataType dt = findDataTypeByNameInAllCategories(dtm, name);
+            final ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
+            final DataType dt = findDataTypeByNameInAllCategories(dtm, name);
             if (!(dt instanceof Structure)) {
                 return StatusOutput.error("Structure '" + name + "' not found");
             }
-            Structure struct = (Structure) dt;
+            final Structure struct = (Structure) dt;
 
-            List<String> results = new ArrayList<>();
+            final List<String> results = new ArrayList<>();
             int succeeded = 0;
             int failed = 0;
 
             // Build set of existing field names
-            Set<String> existingNames = new HashSet<>();
+            final Set<String> existingNames = new HashSet<>();
             for (int i = 0; i < struct.getNumComponents(); i++) {
-                DataTypeComponent comp = struct.getComponent(i);
-                String fn = comp.getFieldName();
+                final DataTypeComponent comp = struct.getComponent(i);
+                final String fn = comp.getFieldName();
                 if (fn != null) existingNames.add(fn);
             }
 
             // Build reverse lookup: new_name -> old_name from fieldRenames
-            Map<String, String> reverseRenames = new HashMap<>();
+            final Map<String, String> reverseRenames = new HashMap<>();
             if (fieldRenames != null) {
-                for (Map.Entry<String, String> entry : fieldRenames.entrySet()) {
+                for (final Map.Entry<String, String> entry : fieldRenames.entrySet()) {
                     reverseRenames.put(entry.getValue(), entry.getKey());
                 }
             }
 
             // Resolve typeChanges keys to old field names
-            Map<String, String> resolvedTypeChanges = new LinkedHashMap<>();
+            final Map<String, String> resolvedTypeChanges = new LinkedHashMap<>();
             if (typeChanges != null) {
-                for (Map.Entry<String, String> entry : typeChanges.entrySet()) {
-                    String key = entry.getKey();
-                    String resolved = resolveFieldKey(key, reverseRenames, existingNames);
+                for (final Map.Entry<String, String> entry : typeChanges.entrySet()) {
+                    final String key = entry.getKey();
+                    final String resolved = resolveFieldKey(key, reverseRenames, existingNames);
                     if (resolved.startsWith("ERROR:")) {
                         results.add("  " + key + " -> " + resolved.substring(6) + " [FAILED]");
                         failed++;
@@ -174,24 +174,24 @@ public class DataTypeService {
 
             // Apply field renames and type changes
             if (fieldRenames != null) {
-                for (Map.Entry<String, String> entry : fieldRenames.entrySet()) {
-                    String oldFieldName = entry.getKey();
-                    String newFieldName = entry.getValue();
-                    String newTypeName = resolvedTypeChanges.remove(oldFieldName);
+                for (final Map.Entry<String, String> entry : fieldRenames.entrySet()) {
+                    final String oldFieldName = entry.getKey();
+                    final String newFieldName = entry.getValue();
+                    final String newTypeName = resolvedTypeChanges.remove(oldFieldName);
 
-                    int idx = findComponentIndex(struct, oldFieldName);
+                    final int idx = findComponentIndex(struct, oldFieldName);
                     if (idx < 0) {
                         results.add("  " + oldFieldName + " -> not found [FAILED]");
                         failed++;
                         continue;
                     }
 
-                    DataTypeComponent comp = struct.getComponent(idx);
+                    final DataTypeComponent comp = struct.getComponent(idx);
                     DataType fieldType = comp.getDataType();
                     int fieldLen = comp.getLength();
 
                     if (newTypeName != null) {
-                        DataType resolved = resolveDataType(dtm, newTypeName);
+                        final DataType resolved = resolveDataType(dtm, newTypeName);
                         if (resolved != null) {
                             fieldType = resolved;
                             fieldLen = resolved.getLength();
@@ -206,7 +206,7 @@ public class DataTypeService {
                     }
 
                     struct.replace(idx, fieldType, fieldLen, newFieldName, comp.getComment());
-                    StringBuilder msg = new StringBuilder("  " + oldFieldName + " -> renamed to '" + newFieldName + "'");
+                    final StringBuilder msg = new StringBuilder("  " + oldFieldName + " -> renamed to '" + newFieldName + "'");
                     if (newTypeName != null) msg.append(", type changed to '").append(newTypeName).append("'");
                     msg.append(" [OK]");
                     results.add(msg.toString());
@@ -215,19 +215,19 @@ public class DataTypeService {
             }
 
             // Apply remaining type-only changes (not covered by renames)
-            for (Map.Entry<String, String> entry : resolvedTypeChanges.entrySet()) {
-                String fieldName = entry.getKey();
-                String newTypeName = entry.getValue();
+            for (final Map.Entry<String, String> entry : resolvedTypeChanges.entrySet()) {
+                final String fieldName = entry.getKey();
+                final String newTypeName = entry.getValue();
 
-                int idx = findComponentIndex(struct, fieldName);
+                final int idx = findComponentIndex(struct, fieldName);
                 if (idx < 0) {
                     results.add("  " + fieldName + " -> not found [FAILED]");
                     failed++;
                     continue;
                 }
 
-                DataTypeComponent comp = struct.getComponent(idx);
-                DataType resolved = resolveDataType(dtm, newTypeName);
+                final DataTypeComponent comp = struct.getComponent(idx);
+                final DataType resolved = resolveDataType(dtm, newTypeName);
                 if (resolved == null) {
                     results.add("  " + fieldName + " -> type '" + newTypeName + "' not found [FAILED]");
                     failed++;
@@ -259,7 +259,7 @@ public class DataTypeService {
 
             tx.commit();
 
-            UpdateResult result = new UpdateResult(name, results,
+            final UpdateResult result = new UpdateResult(name, results,
                     new UpdateResult.Summary(succeeded, failed));
             return new JsonOutput(result);
         } catch (Exception e) {
@@ -282,49 +282,49 @@ public class DataTypeService {
                              value_renames={"OLD_VAL": "NEW_VAL"},
                              value_changes={"NEW_VAL": 42}) """)
     public ToolOutput updateEnum(
-            @Param("Current enum name") String name,
-            @Param(value = "New name for the enum (optional)", defaultValue = "") String newName,
-            @Param(value = "New size in bytes \u2014 must be 1, 2, 4, or 8 (optional)", defaultValue = "") Integer size,
-            @Param(value = "Map of old value name to new value name", defaultValue = "") Map<String, String> valueRenames,
-            @Param(value = "Map of value name to new numeric value", defaultValue = "") Map<String, Long> valueChanges) {
+            @Param("final Current enum name") final String name,
+            @Param(value = "New name for the enum (optional)", defaultValue = "") final String newName,
+            @Param(value = "final New size in bytes \u2014 must be 1, 2, 4, or 8 (optional)", defaultValue = "") final Integer size,
+            @Param(value = "Map of old value name to new value name", defaultValue = "") final Map<String, String> valueRenames,
+            @Param(value = "Map of value name to new numeric value", defaultValue = "") final Map<String, Long> valueChanges) {
         if (name == null || name.isEmpty()) {
             return StatusOutput.error("Enum name is required");
         }
-        Program program = programService.getCurrentProgram();
+        final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
 
         try (var tx = ProgramTransaction.start(program, "Update enum")) {
-            ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
-            DataType dt = findDataTypeByNameInAllCategories(dtm, name);
+            final ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
+            final DataType dt = findDataTypeByNameInAllCategories(dtm, name);
             if (!(dt instanceof Enum)) {
                 return StatusOutput.error("Enum '" + name + "' not found");
             }
-            Enum enumType = (Enum) dt;
+            final Enum enumType = (Enum) dt;
 
-            List<String> results = new ArrayList<>();
+            final List<String> results = new ArrayList<>();
             int succeeded = 0;
             int failed = 0;
 
             // Build set of existing value names
-            Set<String> existingNames = new HashSet<>();
-            for (String n : enumType.getNames()) {
+            final Set<String> existingNames = new HashSet<>();
+            for (final String n : enumType.getNames()) {
                 existingNames.add(n);
             }
 
             // Build reverse lookup: new_name -> old_name from valueRenames
-            Map<String, String> reverseRenames = new HashMap<>();
+            final Map<String, String> reverseRenames = new HashMap<>();
             if (valueRenames != null) {
-                for (Map.Entry<String, String> entry : valueRenames.entrySet()) {
+                for (final Map.Entry<String, String> entry : valueRenames.entrySet()) {
                     reverseRenames.put(entry.getValue(), entry.getKey());
                 }
             }
 
             // Resolve valueChanges keys to old value names
-            Map<String, Long> resolvedValueChanges = new LinkedHashMap<>();
+            final Map<String, Long> resolvedValueChanges = new LinkedHashMap<>();
             if (valueChanges != null) {
-                for (Map.Entry<String, Long> entry : valueChanges.entrySet()) {
-                    String key = entry.getKey();
-                    String resolved = resolveFieldKey(key, reverseRenames, existingNames);
+                for (final Map.Entry<String, Long> entry : valueChanges.entrySet()) {
+                    final String key = entry.getKey();
+                    final String resolved = resolveFieldKey(key, reverseRenames, existingNames);
                     if (resolved.startsWith("ERROR:")) {
                         results.add("  " + key + " -> " + resolved.substring(6) + " [FAILED]");
                         failed++;
@@ -337,9 +337,9 @@ public class DataTypeService {
             // Phase 1: Gather current values and remove entries that need updating
             // Phase 2: Re-add with new names/values
             if (valueRenames != null) {
-                for (Map.Entry<String, String> entry : valueRenames.entrySet()) {
-                    String oldValName = entry.getKey();
-                    String newValName = entry.getValue();
+                for (final Map.Entry<String, String> entry : valueRenames.entrySet()) {
+                    final String oldValName = entry.getKey();
+                    final String newValName = entry.getValue();
 
                     if (!existingNames.contains(oldValName)) {
                         results.add("  " + oldValName + " -> not found [FAILED]");
@@ -347,14 +347,14 @@ public class DataTypeService {
                         continue;
                     }
 
-                    long currentValue = enumType.getValue(oldValName);
-                    Long newValue = resolvedValueChanges.remove(oldValName);
-                    long finalValue = (newValue != null) ? newValue : currentValue;
+                    final long currentValue = enumType.getValue(oldValName);
+                    final Long newValue = resolvedValueChanges.remove(oldValName);
+                    final long finalValue = (newValue != null) ? newValue : currentValue;
 
                     enumType.remove(oldValName);
                     enumType.add(newValName, finalValue);
 
-                    StringBuilder msg = new StringBuilder("  " + oldValName + " -> renamed to '" + newValName + "'");
+                    final StringBuilder msg = new StringBuilder("  " + oldValName + " -> renamed to '" + newValName + "'");
                     if (newValue != null) msg.append(", value changed to ").append(finalValue);
                     msg.append(" [OK]");
                     results.add(msg.toString());
@@ -363,9 +363,9 @@ public class DataTypeService {
             }
 
             // Apply remaining value-only changes
-            for (Map.Entry<String, Long> entry : resolvedValueChanges.entrySet()) {
-                String valName = entry.getKey();
-                long newValue = entry.getValue();
+            for (final Map.Entry<String, Long> entry : resolvedValueChanges.entrySet()) {
+                final String valName = entry.getKey();
+                final long newValue = entry.getValue();
 
                 if (!existingNames.contains(valName)) {
                     results.add("  " + valName + " -> not found [FAILED]");
@@ -408,7 +408,7 @@ public class DataTypeService {
 
             tx.commit();
 
-            UpdateResult result = new UpdateResult(name, results,
+            final UpdateResult result = new UpdateResult(name, results,
                     new UpdateResult.Summary(succeeded, failed));
             return new JsonOutput(result);
         } catch (Exception e) {
@@ -425,10 +425,10 @@ public class DataTypeService {
      * @param existingNames set of currently existing names
      * @return the resolved old name, or "ERROR:message" if ambiguous or not found
      */
-    String resolveFieldKey(String key, Map<String, String> reverseRenames, Set<String> existingNames) {
-        boolean isExisting = existingNames.contains(key);
-        String oldFromRename = reverseRenames.get(key);
-        boolean isNewName = oldFromRename != null;
+    String resolveFieldKey(final String key, final Map<String, String> reverseRenames, final Set<String> existingNames) {
+        final boolean isExisting = existingNames.contains(key);
+        final String oldFromRename = reverseRenames.get(key);
+        final boolean isNewName = oldFromRename != null;
 
         if (isExisting && isNewName && !key.equals(oldFromRename)) {
             return "ERROR:Ambiguous key '" + key + "': matches existing field '" + key +
@@ -442,14 +442,14 @@ public class DataTypeService {
     /**
      * Find the component index for a field by name, supporting auto-generated names like "field0_0x0".
      */
-    private int findComponentIndex(Structure struct, String fieldName) {
+    private int findComponentIndex(final Structure struct, final String fieldName) {
         if (fieldName.matches("field\\d+_0x[0-9a-fA-F]+")) {
-            int index = Integer.parseInt(fieldName.substring(5, fieldName.indexOf('_')));
+            final int index = Integer.parseInt(fieldName.substring(5, fieldName.indexOf('_')));
             if (index >= 0 && index < struct.getNumComponents()) return index;
             return -1;
         }
         for (int i = 0; i < struct.getNumComponents(); i++) {
-            DataTypeComponent comp = struct.getComponent(i);
+            final DataTypeComponent comp = struct.getComponent(i);
             if (comp.getFieldName() != null && comp.getFieldName().equals(fieldName)) {
                 return i;
             }
@@ -465,13 +465,13 @@ public class DataTypeService {
      * @param typeName name of the data type to find
      * @return the data type if found, null otherwise
      */
-    public DataType findDataTypeByNameInAllCategories(DataTypeManager dtm, String typeName) {
+    public DataType findDataTypeByNameInAllCategories(final DataTypeManager dtm, final String typeName) {
         if (dtm == null || typeName == null || typeName.isEmpty()) {
             return null;
         }
 
         // Try exact match first
-        DataType result = searchByNameInAllCategories(dtm, typeName);
+        final DataType result = searchByNameInAllCategories(dtm, typeName);
         if (result != null) {
             return result;
         }
@@ -483,11 +483,11 @@ public class DataTypeService {
     /**
      * Helper method to search for a data type by name in all categories
      */
-    private DataType searchByNameInAllCategories(DataTypeManager dtm, String name) {
+    private DataType searchByNameInAllCategories(final DataTypeManager dtm, final String name) {
         // Get all data types from the manager
-        Iterator<DataType> allTypes = dtm.getAllDataTypes();
+        final Iterator<DataType> allTypes = dtm.getAllDataTypes();
         while (allTypes.hasNext()) {
-            DataType dt = allTypes.next();
+            final DataType dt = allTypes.next();
             // Check if the name matches exactly (case-sensitive)
             if (dt.getName().equals(name)) {
                 return dt;
@@ -508,30 +508,30 @@ public class DataTypeService {
      * @param typeName name of the data type to resolve
      * @return resolved data type or default type if not found
      */
-    public DataType resolveDataType(DataTypeManager dtm, String typeName) {
+    public DataType resolveDataType(final DataTypeManager dtm, final String typeName) {
         if (dtm == null || typeName == null || typeName.isEmpty()) {
             return null;
         }
 
         // First try to find exact match in all categories
-        DataType dataType = findDataTypeByNameInAllCategories(dtm, typeName);
+        final DataType dataType = findDataTypeByNameInAllCategories(dtm, typeName);
         if (dataType != null) {
             return dataType;
         }
 
         // Check for array syntax like "type[size]"
-        Matcher arrayMatcher = ARRAY_PATTERN.matcher(typeName);
+        final Matcher arrayMatcher = ARRAY_PATTERN.matcher(typeName);
         if (arrayMatcher.matches()) {
-            String baseTypeName = arrayMatcher.group(1);
-            String sizeStr = arrayMatcher.group(2);
+            final String baseTypeName = arrayMatcher.group(1);
+            final String sizeStr = arrayMatcher.group(2);
 
             try {
-                int arraySize = Integer.parseInt(sizeStr);
+                final int arraySize = Integer.parseInt(sizeStr);
                 if (arraySize > 0 && arraySize <= 1000000) { // Reasonable size limits
                     // Recursively resolve the base type
-                    DataType baseType = resolveDataType(dtm, baseTypeName);
+                    final DataType baseType = resolveDataType(dtm, baseTypeName);
                     if (baseType != null) {
-                        ArrayDataType arrayType = new ArrayDataType(baseType, arraySize, baseType.getLength(), dtm);
+                        final ArrayDataType arrayType = new ArrayDataType(baseType, arraySize, baseType.getLength(), dtm);
                         return arrayType;
                     }
                 }
@@ -542,7 +542,7 @@ public class DataTypeService {
 
         // Check for Windows-style pointer types (PXXX)
         if (typeName.startsWith("P") && typeName.length() > 1) {
-            String baseTypeName = typeName.substring(1);
+            final String baseTypeName = typeName.substring(1);
 
             // Special case for PVOID
             if (baseTypeName.equals("VOID")) {
@@ -550,7 +550,7 @@ public class DataTypeService {
             }
 
             // Try to find the base type
-            DataType baseType = findDataTypeByNameInAllCategories(dtm, baseTypeName);
+            final DataType baseType = findDataTypeByNameInAllCategories(dtm, baseTypeName);
             if (baseType != null) {
                 return new ghidra.program.model.data.PointerDataType(baseType);
             }
@@ -593,7 +593,7 @@ public class DataTypeService {
             }
             default -> {
                 // Try as a direct path
-                DataType directType = dtm.getDataType("/" + typeName);
+                final DataType directType = dtm.getDataType("/" + typeName);
                 if (directType != null) {
                     return directType;
                 }
@@ -612,8 +612,8 @@ public class DataTypeService {
      * @param categoryPath category path for the structure (e.g., "/MyStructures")
      * @return status message
      */
-    public String createStructure(String structName, int size, String categoryPath) {
-        ToolOutput result = createStructure(structName, size, categoryPath, null);
+    public String createStructure(final String structName, final int size, final String categoryPath) {
+        final ToolOutput result = createStructure(structName, size, categoryPath, null);
         return (result instanceof StatusOutput s) ? s.message() : result.toStructuredJson();
     }
 
@@ -630,20 +630,20 @@ public class DataTypeService {
 
         Example: create_structure("POINT", 0, "", [["x", "int"], ["y", "int"]]) """)
     public ToolOutput createStructure(
-            @Param("Name of the structure to create") String name,
-            @Param(value = "Size in bytes (0 for auto-size based on fields)", defaultValue = "0") int size,
-            @Param(value = "Category path like \"/MyStructures\" (empty for root)", defaultValue = "") String categoryPath,
-            @Param(value = "Optional list of [field_name, data_type] pairs to add immediately", defaultValue = "") List<String[]> fields) {
-        Program program = programService.getCurrentProgram();
+            @Param("Name of the structure to create") final String name,
+            @Param(value = "Size in bytes (0 for auto-size based on fields)", defaultValue = "0") final int size,
+            @Param(value = "Category path like \"/MyStructures\" (empty for root)", defaultValue = "") final String categoryPath,
+            @Param(value = "Optional list of [field_name, data_type] pairs to add immediately", defaultValue = "") final List<String[]> fields) {
+        final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
         if (name == null || name.isEmpty()) {
             return StatusOutput.error("Structure name is required");
         }
 
         try (var tx = ProgramTransaction.start(program, "Create structure")) {
-            ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
+            final ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
 
-            DataType existing = findDataTypeByNameInAllCategories(dtm, name);
+            final DataType existing = findDataTypeByNameInAllCategories(dtm, name);
             if (existing != null && existing instanceof Structure) {
                 return StatusOutput.error("Structure '" + name + "' already exists");
             }
@@ -653,15 +653,15 @@ public class DataTypeService {
                 catPath = new CategoryPath(categoryPath);
             }
 
-            StructureDataType struct = new StructureDataType(catPath, name, size, dtm);
+            final StructureDataType struct = new StructureDataType(catPath, name, size, dtm);
 
             // Add inline fields if provided
             if (fields != null && !fields.isEmpty()) {
-                for (String[] field : fields) {
+                for (final String[] field : fields) {
                     if (field.length < 2) continue;
-                    String fieldName = field[0];
-                    String fieldTypeName = field[1];
-                    DataType fieldType = resolveDataType(dtm, fieldTypeName);
+                    final String fieldName = field[0];
+                    final String fieldTypeName = field[1];
+                    final DataType fieldType = resolveDataType(dtm, fieldTypeName);
                     if (fieldType == null) {
                         return StatusOutput.error("Failed to resolve field type '" + fieldTypeName +
                                "' for field '" + fieldName + "'");
@@ -670,7 +670,7 @@ public class DataTypeService {
                 }
             }
 
-            DataType addedType = dtm.addDataType(struct, null);
+            final DataType addedType = dtm.addDataType(struct, null);
 
             tx.commit();
             String msg = "Structure '" + name + "' created successfully at " +
@@ -696,29 +696,29 @@ public class DataTypeService {
 
         Example: add_structure_field("MY_STRUCT", "count", "int") -> "Field 'count' added to structure 'MY_STRUCT'" """)
     public ToolOutput addStructureField(
-            @Param("Name of the structure to modify") String structName,
-            @Param("Name for the new field") String fieldName,
-            @Param("Data type like \"int\", \"char\", \"DWORD\", or another struct name") String fieldType,
-            @Param(value = "Size in bytes for fixed-size types (-1 for default)", defaultValue = "-1") int fieldSize,
-            @Param(value = "Offset in structure to insert at (-1 to append)", defaultValue = "-1") int offset,
-            @Param(value = "Optional comment for the field", defaultValue = "") String comment) {
-        Program program = programService.getCurrentProgram();
+            @Param("Name of the structure to modify") final String structName,
+            @Param("Name for the new field") final String fieldName,
+            @Param("Data type like \"int\", \"char\", \"DWORD\", or another struct name") final String fieldType,
+            @Param(value = "Size in bytes for fixed-size types (-1 for default)", defaultValue = "-1") final int fieldSize,
+            @Param(value = "Offset in structure to insert at (-1 to append)", defaultValue = "-1") final int offset,
+            @Param(value = "final Optional comment for the field", defaultValue = "") final String comment) {
+        final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
         if (structName == null || fieldType == null) {
             return StatusOutput.error("Structure name and field type are required");
         }
 
         try (var tx = ProgramTransaction.start(program, "Add structure field")) {
-            ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
+            final ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
 
-            DataType dt = findDataTypeByNameInAllCategories(dtm, structName);
+            final DataType dt = findDataTypeByNameInAllCategories(dtm, structName);
             if (!(dt instanceof Structure)) {
                 return StatusOutput.error("Structure '" + structName + "' not found");
             }
 
-            Structure struct = (Structure) dt;
+            final Structure struct = (Structure) dt;
 
-            DataType fieldDataType = resolveDataType(dtm, fieldType);
+            final DataType fieldDataType = resolveDataType(dtm, fieldType);
             if (fieldDataType == null) {
                 return StatusOutput.error("Failed to resolve data type: " + fieldType);
             }
@@ -746,8 +746,8 @@ public class DataTypeService {
      * @param categoryPath category path for the enum (e.g., "/MyEnums")
      * @return status message
      */
-    public String createEnum(String enumName, int size, String categoryPath) {
-        ToolOutput result = createEnum(enumName, size, categoryPath, null);
+    public String createEnum(final String enumName, final int size, final String categoryPath) {
+        final ToolOutput result = createEnum(enumName, size, categoryPath, null);
         return (result instanceof StatusOutput s) ? s.message() : result.toStructuredJson();
     }
 
@@ -764,10 +764,10 @@ public class DataTypeService {
 
         Example: create_enum("FILE_FLAGS", 4, "", {"FLAG_READ": 1, "FLAG_WRITE": 2}) """)
     public ToolOutput createEnum(
-            @Param("Name of the enum to create") String name,
-            @Param(value = "Size in bytes - must be 1, 2, 4, or 8 (default: 4)", defaultValue = "4") int size,
-            @Param(value = "Category path like \"/MyEnums\" (empty for root)", defaultValue = "") String categoryPath,
-            @Param(value = "Optional dictionary mapping value names to numeric values", defaultValue = "") Map<String, Long> values) {
+            @Param("Name of the enum to create") final String name,
+            @Param(value = "Size in bytes - must be 1, 2, 4, or 8 (default: 4)", defaultValue = "4") final int size,
+            @Param(value = "Category path like \"/MyEnums\" (empty for root)", defaultValue = "") final String categoryPath,
+            @Param(value = "final Optional dictionary mapping value names to numeric values", defaultValue = "") final Map<String, Long> values) {
         if (name == null || name.isEmpty()) {
             return StatusOutput.error("Enum name is required");
         }
@@ -775,13 +775,13 @@ public class DataTypeService {
             return StatusOutput.error("Enum size must be 1, 2, 4, or 8 bytes");
         }
 
-        Program program = programService.getCurrentProgram();
+        final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
 
         try (var tx = ProgramTransaction.start(program, "Create enum")) {
-            ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
+            final ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
 
-            DataType existing = findDataTypeByNameInAllCategories(dtm, name);
+            final DataType existing = findDataTypeByNameInAllCategories(dtm, name);
             if (existing != null && existing instanceof Enum) {
                 return StatusOutput.error("Enum '" + name + "' already exists");
             }
@@ -791,16 +791,16 @@ public class DataTypeService {
                 catPath = new CategoryPath(categoryPath);
             }
 
-            EnumDataType enumType = new EnumDataType(catPath, name, size, dtm);
+            final EnumDataType enumType = new EnumDataType(catPath, name, size, dtm);
 
             // Add inline values if provided
             if (values != null && !values.isEmpty()) {
-                for (var entry : values.entrySet()) {
+                for (final var entry : values.entrySet()) {
                     enumType.add(entry.getKey(), entry.getValue());
                 }
             }
 
-            DataType addedType = dtm.addDataType(enumType, null);
+            final DataType addedType = dtm.addDataType(enumType, null);
 
             tx.commit();
             String msg = "Enum '" + name + "' created successfully at " +
@@ -826,19 +826,19 @@ public class DataTypeService {
 
         Example: add_enum_value("MY_FLAGS", "FLAG_ENABLED", 0x01) -> "Value 'FLAG_ENABLED' (1) added to enum 'MY_FLAGS'" """)
     public ToolOutput addEnumValue(
-            @Param("Name of the enum to modify") String enumName,
-            @Param("Name for the enum constant") String valueName,
-            @Param("Numeric value for the constant") long value) {
-        Program program = programService.getCurrentProgram();
+            @Param("Name of the enum to modify") final String enumName,
+            @Param("Name for the enum constant") final String valueName,
+            @Param("final Numeric value for the constant") final long value) {
+        final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
         if (enumName == null || valueName == null) {
             return StatusOutput.error("Enum name and value name are required");
         }
 
         try (var tx = ProgramTransaction.start(program, "Add enum value")) {
-            ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
+            final ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
 
-            DataType dt = findDataTypeByNameInAllCategories(dtm, enumName);
+            final DataType dt = findDataTypeByNameInAllCategories(dtm, enumName);
             if (dt instanceof Enum enumType) {
                 enumType.add(valueName, value);
                 tx.commit();
@@ -860,17 +860,17 @@ public class DataTypeService {
      * @param limit maximum number of enums to return
      * @return paginated list of enums with pagination metadata
      */
-    public String listEnums(int offset, int limit) {
-        Program program = programService.getCurrentProgram();
+    public String listEnums(final int offset, final int limit) {
+        final Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
 
-        ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
-        List<Enum> enums = new ArrayList<>();
+        final ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
+        final List<Enum> enums = new ArrayList<>();
 
         // Get all enums from the data type manager
-        Iterator<DataType> allTypes = dtm.getAllDataTypes();
+        final Iterator<DataType> allTypes = dtm.getAllDataTypes();
         while (allTypes.hasNext()) {
-            DataType dt = allTypes.next();
+            final DataType dt = allTypes.next();
             if (dt instanceof Enum enumDataType) {
                 enums.add(enumDataType);
             }
@@ -878,12 +878,12 @@ public class DataTypeService {
 
         Collections.sort(enums, Comparator.comparing(Enum::getName));
 
-        List<String> lines = new ArrayList<>();
-        for (Enum enumType : enums) {
-            StringBuilder sb = new StringBuilder();
+        final List<String> lines = new ArrayList<>();
+        for (final Enum enumType : enums) {
+            final StringBuilder sb = new StringBuilder();
             sb.append(enumType.getName()).append(" (").append(enumType.getLength()).append(" bytes): {");
 
-            String[] names = enumType.getNames();
+            final String[] names = enumType.getNames();
             for (int i = 0; i < names.length; i++) {
                 if (i > 0) sb.append(", ");
                 sb.append(names[i]).append("=").append(enumType.getValue(names[i]));
@@ -901,20 +901,20 @@ public class DataTypeService {
      * @param structureName name of the structure to get details for
      * @return detailed structure information
      */
-    public String getStructureDetails(String structureName) {
-        Program program = programService.getCurrentProgram();
+    public String getStructureDetails(final String structureName) {
+        final Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
         if (structureName == null || structureName.isEmpty()) return "Structure name is required";
 
-        ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
+        final ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
 
         // Find the structure by name
         DataType dataType = dtm.getDataType("/" + structureName);
         if (dataType == null) {
             // Try searching in all categories
-            Iterator<DataType> allTypes = dtm.getAllDataTypes();
+            final Iterator<DataType> allTypes = dtm.getAllDataTypes();
             while (allTypes.hasNext()) {
-                DataType dt = allTypes.next();
+                final DataType dt = allTypes.next();
                 if (dt.getName().equals(structureName) && dt instanceof Structure) {
                     dataType = dt;
                     break;
@@ -926,8 +926,8 @@ public class DataTypeService {
             return "Structure not found: " + structureName;
         }
 
-        Structure struct = (Structure) dataType;
-        StringBuilder result = new StringBuilder();
+        final Structure struct = (Structure) dataType;
+        final StringBuilder result = new StringBuilder();
 
         // Structure header information
         result.append("Structure: ").append(struct.getName()).append("\n");
@@ -939,11 +939,11 @@ public class DataTypeService {
         result.append("\nFields:\n");
 
         // List all fields
-        DataTypeComponent[] components = struct.getComponents();
+        final DataTypeComponent[] components = struct.getComponents();
         if (components.length == 0) {
             result.append("  (no fields defined)\n");
         } else {
-            for (DataTypeComponent comp : components) {
+            for (final DataTypeComponent comp : components) {
                 result.append(String.format("  [%04X] %s: %s (%d bytes)",
                     comp.getOffset(),
                     comp.getFieldName() != null ? comp.getFieldName() : "(unnamed)",
@@ -958,11 +958,11 @@ public class DataTypeService {
         }
 
         // Show undefined components if any
-        DataTypeComponent[] definedComponents = struct.getDefinedComponents();
+        final DataTypeComponent[] definedComponents = struct.getDefinedComponents();
         if (definedComponents.length < components.length) {
             result.append("\nUndefined regions:\n");
             int lastEnd = 0;
-            for (DataTypeComponent comp : definedComponents) {
+            for (final DataTypeComponent comp : definedComponents) {
                 if (comp.getOffset() > lastEnd) {
                     result.append(String.format("  [%04X-%04X] undefined (%d bytes)\n",
                         lastEnd, comp.getOffset() - 1, comp.getOffset() - lastEnd));
@@ -984,20 +984,20 @@ public class DataTypeService {
      * @param enumName name of the enum to get details for
      * @return detailed enum information
      */
-    public String getEnumDetails(String enumName) {
-        Program program = programService.getCurrentProgram();
+    public String getEnumDetails(final String enumName) {
+        final Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
         if (enumName == null || enumName.isEmpty()) return "Enum name is required";
 
-        ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
+        final ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
 
         // Find the enum by name
         DataType dataType = dtm.getDataType("/" + enumName);
         if (dataType == null) {
             // Try searching in all categories
-            Iterator<DataType> allTypes = dtm.getAllDataTypes();
+            final Iterator<DataType> allTypes = dtm.getAllDataTypes();
             while (allTypes.hasNext()) {
-                DataType dt = allTypes.next();
+                final DataType dt = allTypes.next();
                 if (dt.getName().equals(enumName) && dt instanceof Enum) {
                     dataType = dt;
                     break;
@@ -1009,8 +1009,8 @@ public class DataTypeService {
             return "Enum not found: " + enumName;
         }
 
-        Enum enumType = (Enum) dataType;
-        StringBuilder result = new StringBuilder();
+        final Enum enumType = (Enum) dataType;
+        final StringBuilder result = new StringBuilder();
 
         // Enum header information
         result.append("Enum: ").append(enumType.getName()).append("\n");
@@ -1020,9 +1020,9 @@ public class DataTypeService {
         result.append("\nValues:\n");
 
         // List all values sorted by numeric value
-        String[] names = enumType.getNames();
-        List<Map.Entry<String, Long>> entries = new ArrayList<>();
-        for (String name : names) {
+        final String[] names = enumType.getNames();
+        final List<Map.Entry<String, Long>> entries = new ArrayList<>();
+        for (final String name : names) {
             entries.add(Map.entry(name, enumType.getValue(name)));
         }
         entries.sort(Map.Entry.comparingByValue());
@@ -1030,7 +1030,7 @@ public class DataTypeService {
         if (entries.isEmpty()) {
             result.append("  (no values defined)\n");
         } else {
-            for (Map.Entry<String, Long> entry : entries) {
+            for (final Map.Entry<String, Long> entry : entries) {
                 result.append(String.format("  %s = 0x%X (%d)\n",
                     entry.getKey(),
                     entry.getValue(),
@@ -1047,20 +1047,20 @@ public class DataTypeService {
      * @param structureName name of the structure
      * @return list of structure fields with detailed information
      */
-    public String listStructureFields(String structureName) {
-        Program program = programService.getCurrentProgram();
+    public String listStructureFields(final String structureName) {
+        final Program program = programService.getCurrentProgram();
         if (program == null) return "No program loaded";
         if (structureName == null || structureName.isEmpty()) return "Structure name is required";
 
-        ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
+        final ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
 
         // Find the structure by name
         DataType dataType = dtm.getDataType("/" + structureName);
         if (dataType == null) {
             // Try searching in all categories
-            Iterator<DataType> allTypes = dtm.getAllDataTypes();
+            final Iterator<DataType> allTypes = dtm.getAllDataTypes();
             while (allTypes.hasNext()) {
-                DataType dt = allTypes.next();
+                final DataType dt = allTypes.next();
                 if (dt.getName().equals(structureName) && dt instanceof Structure) {
                     dataType = dt;
                     break;
@@ -1072,16 +1072,16 @@ public class DataTypeService {
             return "Structure not found: " + structureName;
         }
 
-        Structure struct = (Structure) dataType;
-        DataTypeComponent[] components = struct.getComponents();
+        final Structure struct = (Structure) dataType;
+        final DataTypeComponent[] components = struct.getComponents();
 
         if (components.length == 0) {
             return "Structure " + structureName + " has no fields defined";
         }
 
-        List<String> fields = new ArrayList<>();
-        for (DataTypeComponent comp : components) {
-            StringBuilder fieldInfo = new StringBuilder(String.format("Offset: 0x%04X, Name: %s, Type: %s, Size: %d bytes",
+        final List<String> fields = new ArrayList<>();
+        for (final DataTypeComponent comp : components) {
+            final StringBuilder fieldInfo = new StringBuilder(String.format("Offset: 0x%04X, Name: %s, Type: %s, Size: %d bytes",
                 comp.getOffset(),
                 comp.getFieldName() != null ? comp.getFieldName() : "(unnamed)",
                 comp.getDataType().getName(),
@@ -1104,25 +1104,25 @@ public class DataTypeService {
 
         Example: list_data_types("struct", 0, 5) -> ['[struct] POINT: {int x, int y}', ...] """)
     public ToolOutput listDataTypes(
-            @Param(value = "Filter by type \u2014 \"all\" (default), \"struct\", or \"enum\"", defaultValue = "all") String kind,
-            @Param(value = "Starting index for pagination (0-based)", defaultValue = "0") int offset,
-            @Param(value = "Maximum data types to return", defaultValue = "100") int limit) {
-        Program program = programService.getCurrentProgram();
+            @Param(value = "Filter by type \u2014 \"all\" (default), \"struct\", or \"enum\"", defaultValue = "all") final String kind,
+            @Param(value = "Starting index for pagination (0-based)", defaultValue = "0") final int offset,
+            @Param(value = "Maximum data types to return", defaultValue = "100") final int limit) {
+        final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
 
-        String normalizedKind = (kind == null || kind.isEmpty()) ? "all" : kind.toLowerCase();
+        final String normalizedKind = (kind == null || kind.isEmpty()) ? "all" : kind.toLowerCase();
 
-        ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
-        List<DataTypeItem> items = new ArrayList<>();
+        final ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
+        final List<DataTypeItem> items = new ArrayList<>();
 
         if ("all".equals(normalizedKind) || "struct".equals(normalizedKind)) {
-            List<Structure> structs = new ArrayList<>();
+            final List<Structure> structs = new ArrayList<>();
             dtm.getAllStructures().forEachRemaining(structs::add);
             Collections.sort(structs, Comparator.comparing(Structure::getName));
-            for (Structure struct : structs) {
-                StringBuilder summary = new StringBuilder("{");
+            for (final Structure struct : structs) {
+                final StringBuilder summary = new StringBuilder("{");
                 for (int i = 0; i < struct.getNumComponents(); i++) {
-                    DataTypeComponent comp = struct.getComponent(i);
+                    final DataTypeComponent comp = struct.getComponent(i);
                     if (i > 0) summary.append(", ");
                     summary.append(comp.getDataType().getName())
                            .append(" ")
@@ -1134,18 +1134,18 @@ public class DataTypeService {
         }
 
         if ("all".equals(normalizedKind) || "enum".equals(normalizedKind)) {
-            List<Enum> enums = new ArrayList<>();
-            Iterator<DataType> allTypes = dtm.getAllDataTypes();
+            final List<Enum> enums = new ArrayList<>();
+            final Iterator<DataType> allTypes = dtm.getAllDataTypes();
             while (allTypes.hasNext()) {
-                DataType dt = allTypes.next();
+                final DataType dt = allTypes.next();
                 if (dt instanceof Enum enumDataType) {
                     enums.add(enumDataType);
                 }
             }
             Collections.sort(enums, Comparator.comparing(Enum::getName));
-            for (Enum enumType : enums) {
-                StringBuilder summary = new StringBuilder("{");
-                String[] names = enumType.getNames();
+            for (final Enum enumType : enums) {
+                final StringBuilder summary = new StringBuilder("{");
+                final String[] names = enumType.getNames();
                 for (int i = 0; i < names.length; i++) {
                     if (i > 0) summary.append(", ");
                     summary.append(names[i]).append("=").append(enumType.getValue(names[i]));
@@ -1168,13 +1168,13 @@ public class DataTypeService {
 
         Example: get_data_type("POINT") -> "Structure: POINT\\nSize: 8 bytes\\nFields:\\n  [0000] x: int..." """)
     public ToolOutput getDataType(
-            @Param("Name of the data type to examine (e.g., \"POINT\", \"FILE_FLAGS\")") String name) {
-        Program program = programService.getCurrentProgram();
+            @Param("Name of the data type to examine (e.g., \"POINT\", \"FILE_FLAGS\")") final String name) {
+        final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
         if (name == null || name.isEmpty()) return StatusOutput.error("Data type name is required");
 
-        ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
-        DataType dataType = findDataTypeByNameInAllCategories(dtm, name);
+        final ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
+        final DataType dataType = findDataTypeByNameInAllCategories(dtm, name);
         if (dataType == null) {
             return StatusOutput.error("Data type not found: " + name);
         }
@@ -1184,7 +1184,7 @@ public class DataTypeService {
         } else if (dataType instanceof Enum enumType) {
             return new JsonOutput(formatEnumResult(enumType));
         } else {
-            DataTypeDetailResult result = new DataTypeDetailResult(
+            final DataTypeDetailResult result = new DataTypeDetailResult(
                     dataType.getClass().getSimpleName(),
                     dataType.getName(),
                     dataType.getLength(),
@@ -1195,9 +1195,9 @@ public class DataTypeService {
         }
     }
 
-    private DataTypeDetailResult formatStructureResult(Structure struct) {
-        List<DataTypeDetailResult.Field> fields = new ArrayList<>();
-        for (DataTypeComponent comp : struct.getComponents()) {
+    private DataTypeDetailResult formatStructureResult(final Structure struct) {
+        final List<DataTypeDetailResult.Field> fields = new ArrayList<>();
+        for (final DataTypeComponent comp : struct.getComponents()) {
             fields.add(new DataTypeDetailResult.Field(
                     comp.getOffset(),
                     comp.getFieldName() != null ? comp.getFieldName() : "(unnamed)",
@@ -1215,16 +1215,16 @@ public class DataTypeService {
                 null);
     }
 
-    private DataTypeDetailResult formatEnumResult(Enum enumType) {
-        String[] names = enumType.getNames();
-        List<Map.Entry<String, Long>> entries = new ArrayList<>();
-        for (String n : names) {
+    private DataTypeDetailResult formatEnumResult(final Enum enumType) {
+        final String[] names = enumType.getNames();
+        final List<Map.Entry<String, Long>> entries = new ArrayList<>();
+        for (final String n : names) {
             entries.add(Map.entry(n, enumType.getValue(n)));
         }
         entries.sort(Map.Entry.comparingByValue());
 
-        List<DataTypeDetailResult.Value> values = new ArrayList<>();
-        for (Map.Entry<String, Long> entry : entries) {
+        final List<DataTypeDetailResult.Value> values = new ArrayList<>();
+        for (final Map.Entry<String, Long> entry : entries) {
             values.add(new DataTypeDetailResult.Value(entry.getKey(), entry.getValue()));
         }
 
@@ -1267,12 +1267,12 @@ public class DataTypeService {
      * @param b second data type
      * @return true if the types match
      */
-    private boolean dataTypesMatch(DataType a, DataType b) {
+    private boolean dataTypesMatch(final DataType a, final DataType b) {
         if (a == null || b == null) return false;
         if (a == b) return true;
 
-        UniversalID idA = a.getUniversalID();
-        UniversalID idB = b.getUniversalID();
+        final UniversalID idA = a.getUniversalID();
+        final UniversalID idB = b.getUniversalID();
 
         // User-defined types have non-null UIDs — compare by UID
         if (idA != null && idB != null) {
@@ -1298,25 +1298,25 @@ public class DataTypeService {
 
         Example: find_data_type_usage("POINT") -> ['Data: origin @ 00402000 (type: POINT)', ...] """)
     public ToolOutput findDataTypeUsage(
-            @Param("Name of the data type to search for (e.g., \"POINT\", \"MyStruct\")") String typeName,
+            @Param("Name of the data type to search for (e.g., \"POINT\", \"MyStruct\")") final String typeName,
             @Param(value = "Optional field name to restrict search to", defaultValue = "") String fieldName,
-            @Param(value = "Starting index for pagination (0-based)", defaultValue = "0") int offset,
-            @Param(value = "Maximum results to return", defaultValue = "100") int limit) {
-        Program program = programService.getCurrentProgram();
+            @Param(value = "Starting index for pagination (0-based)", defaultValue = "0") final int offset,
+            @Param(value = "Maximum results to return", defaultValue = "100") final int limit) {
+        final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
         if (typeName == null || typeName.isEmpty()) return StatusOutput.error("Type name is required");
 
         // Normalize empty field name to null
         if (fieldName != null && fieldName.isEmpty()) fieldName = null;
 
-        ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
-        DataType targetType = findDataTypeByNameInAllCategories(dtm, typeName);
+        final ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
+        final DataType targetType = findDataTypeByNameInAllCategories(dtm, typeName);
         if (targetType == null) {
             return StatusOutput.error("Data type not found: " + typeName);
         }
 
         // Unwrap the target so we compare base-to-base
-        DataType targetBase = getBaseDataType(targetType);
+        final DataType targetBase = getBaseDataType(targetType);
 
         // If a field name is given, validate it exists in the composite type
         int fieldOffset = -1;
@@ -1325,21 +1325,21 @@ public class DataTypeService {
                 return StatusOutput.error("Field search requires a composite (struct/union) type, but " +
                         typeName + " is " + targetBase.getClass().getSimpleName());
             }
-            Composite composite = (Composite) targetBase;
-            DataTypeComponent fieldComp = findFieldByName(composite, fieldName);
+            final Composite composite = (Composite) targetBase;
+            final DataTypeComponent fieldComp = findFieldByName(composite, fieldName);
             if (fieldComp == null) {
                 return StatusOutput.error("Field '" + fieldName + "' not found in " + typeName);
             }
             fieldOffset = fieldComp.getOffset();
         }
 
-        List<DataTypeUsageItem> results = new ArrayList<>();
-        Listing listing = program.getListing();
+        final List<DataTypeUsageItem> results = new ArrayList<>();
+        final Listing listing = program.getListing();
 
         // --- 1. Search defined data ---
-        Iterator<Data> dataIter = listing.getDefinedData(true);
+        final Iterator<Data> dataIter = listing.getDefinedData(true);
         while (dataIter.hasNext()) {
-            Data data = dataIter.next();
+            final Data data = dataIter.next();
             collectDataTypeMatches(results, data, targetBase, fieldName, fieldOffset);
         }
 
@@ -1348,12 +1348,12 @@ public class DataTypeService {
         // types still matter (the whole composite is used), but we skip them to
         // match Ghidra's FieldMatcher behaviour which only reports field-level hits.
         if (fieldName == null || fieldName.isEmpty()) {
-            FunctionIterator funcIter = listing.getFunctions(true);
+            final FunctionIterator funcIter = listing.getFunctions(true);
             while (funcIter.hasNext()) {
-                Function func = funcIter.next();
+                final Function func = funcIter.next();
 
                 // Check return type
-                DataType retBase = getBaseDataType(func.getReturnType());
+                final DataType retBase = getBaseDataType(func.getReturnType());
                 if (dataTypesMatch(retBase, targetBase)) {
                     results.add(new DataTypeUsageItem(
                             "Return type",
@@ -1364,10 +1364,10 @@ public class DataTypeService {
                 }
 
                 // Check all variables (parameters + locals)
-                for (Variable var : func.getAllVariables()) {
-                    DataType varBase = getBaseDataType(var.getDataType());
+                for (final Variable var : func.getAllVariables()) {
+                    final DataType varBase = getBaseDataType(var.getDataType());
                     if (dataTypesMatch(varBase, targetBase)) {
-                        String varKind = (var instanceof Parameter) ? "Param" : "Local";
+                        final String varKind = (var instanceof Parameter) ? "Param" : "Local";
                         results.add(new DataTypeUsageItem(
                                 varKind + " variable",
                                 func.getEntryPoint().toString(),
@@ -1380,7 +1380,7 @@ public class DataTypeService {
         }
 
         if (results.isEmpty()) {
-            String target = fieldName != null && !fieldName.isEmpty()
+            final String target = fieldName != null && !fieldName.isEmpty()
                     ? typeName + "." + fieldName
                     : typeName;
             return StatusOutput.error("No usages found for data type: " + target);
@@ -1397,9 +1397,9 @@ public class DataTypeService {
      * @param name      the field name to find
      * @return the matching component, or null if not found
      */
-    private DataTypeComponent findFieldByName(Composite composite, String name) {
-        for (DataTypeComponent comp : composite.getComponents()) {
-            String compName = comp.getFieldName();
+    private DataTypeComponent findFieldByName(final Composite composite, final String name) {
+        for (final DataTypeComponent comp : composite.getComponents()) {
+            final String compName = comp.getFieldName();
             if (compName != null && compName.equals(name)) {
                 return comp;
             }
@@ -1419,13 +1419,13 @@ public class DataTypeService {
      * @param fieldName   optional field name filter (null to match any)
      * @param fieldOffset byte offset of the field within the composite (-1 if no filter)
      */
-    private void collectDataTypeMatches(List<DataTypeUsageItem> results, Data data,
-            DataType targetBase, String fieldName, int fieldOffset) {
-        DataType base = getBaseDataType(data.getDataType());
+    private void collectDataTypeMatches(final List<DataTypeUsageItem> results, final Data data,
+            final DataType targetBase, final String fieldName, final int fieldOffset) {
+        final DataType base = getBaseDataType(data.getDataType());
 
         // Direct match at top level (only when not filtering by field)
         if (fieldOffset < 0 && dataTypesMatch(base, targetBase)) {
-            String label = data.getLabel();
+            final String label = data.getLabel();
             results.add(new DataTypeUsageItem(
                     "Data",
                     data.getMinAddress().toString(),
@@ -1436,9 +1436,9 @@ public class DataTypeService {
         }
 
         // Recurse into sub-components (struct fields, etc.)
-        int numComponents = data.getNumComponents();
+        final int numComponents = data.getNumComponents();
         for (int i = 0; i < numComponents; i++) {
-            Data child = data.getComponent(i);
+            final Data child = data.getComponent(i);
             if (child == null) continue;
 
             // Skip array sub-elements for performance — only check the first element
@@ -1449,20 +1449,20 @@ public class DataTypeService {
 
             // Field-specific filtering: only report components at the matching offset/name
             if (fieldOffset >= 0) {
-                String childFieldName = child.getFieldName();
-                boolean nameMatch = childFieldName != null && childFieldName.equals(fieldName);
-                boolean offsetMatch = child.getParentOffset() == fieldOffset;
+                final String childFieldName = child.getFieldName();
+                final boolean nameMatch = childFieldName != null && childFieldName.equals(fieldName);
+                final boolean offsetMatch = child.getParentOffset() == fieldOffset;
                 if (!(nameMatch || offsetMatch)) {
                     continue;
                 }
             }
 
-            DataType childBase = getBaseDataType(child.getDataType());
+            final DataType childBase = getBaseDataType(child.getDataType());
             if (dataTypesMatch(childBase, targetBase) || fieldOffset >= 0) {
-                String label = data.getLabel();
-                String parentName = label != null ? label : "(unnamed)";
-                String childField = child.getFieldName();
-                String fieldDesc = childField != null ? childField : ("offset_0x" +
+                final String label = data.getLabel();
+                final String parentName = label != null ? label : "(unnamed)";
+                final String childField = child.getFieldName();
+                final String fieldDesc = childField != null ? childField : ("offset_0x" +
                         Integer.toHexString(child.getParentOffset()));
                 results.add(new DataTypeUsageItem(
                         "Data",

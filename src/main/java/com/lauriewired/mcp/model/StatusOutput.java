@@ -8,12 +8,12 @@ import com.lauriewired.mcp.utils.Json;
 public record StatusOutput(boolean success, String message) implements ToolOutput {
 
     /** Convenience factory for a successful result. */
-    public static StatusOutput ok(String message) {
+    public static StatusOutput ok(final String message) {
         return new StatusOutput(true, message);
     }
 
     /** Convenience factory for an error result. */
-    public static StatusOutput error(String message) {
+    public static StatusOutput error(final String message) {
         return new StatusOutput(false, message);
     }
 

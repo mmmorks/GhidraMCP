@@ -1,7 +1,6 @@
 package com.lauriewired.mcp.services;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -59,7 +58,7 @@ public class AnalysisService {
      * @param programService the program service for accessing the current program
      * @param functionService the function service for resolving function identifiers
      */
-    public AnalysisService(ProgramService programService, FunctionService functionService) {
+    public AnalysisService(final ProgramService programService, final FunctionService functionService) {
         this.programService = programService;
         this.functionService = functionService;
     }
@@ -76,33 +75,33 @@ public class AnalysisService {
 
         Example: analyze_control_flow("main") -> "Control Flow Analysis for function:..." """)
     public ToolOutput analyzeControlFlow(
-            @Param("Function name (e.g., \"main\") or address (e.g., \"00401000\", \"ram:00401000\")") String functionIdentifier) {
-        Program program = programService.getCurrentProgram();
+            @Param("Function name (e.g., \"main\") or address (e.g., \"00401000\", \"ram:00401000\")") final String functionIdentifier) {
+        final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
         if (functionIdentifier == null || functionIdentifier.isEmpty()) return StatusOutput.error("Function identifier is required");
 
         try {
-            Function func = functionService.resolveFunction(program, functionIdentifier);
+            final Function func = functionService.resolveFunction(program, functionIdentifier);
             if (func == null) return StatusOutput.error("Function not found: " + functionIdentifier);
 
-            BasicBlockModel bbModel = new BasicBlockModel(program);
-            AddressSet functionBody = new AddressSet(func.getBody());
-            CodeBlockIterator blockIterator = bbModel.getCodeBlocksContaining(functionBody, new ConsoleTaskMonitor());
+            final BasicBlockModel bbModel = new BasicBlockModel(program);
+            final AddressSet functionBody = new AddressSet(func.getBody());
+            final CodeBlockIterator blockIterator = bbModel.getCodeBlocksContaining(functionBody, new ConsoleTaskMonitor());
 
-            List<CodeBlock> blocks = new ArrayList<>();
+            final List<CodeBlock> blocks = new ArrayList<>();
             while (blockIterator.hasNext()) {
                 blocks.add(blockIterator.next());
             }
             blocks.sort(Comparator.comparing(CodeBlock::getFirstStartAddress));
 
-            List<ControlFlowResult.Block> blockRecords = new ArrayList<>();
+            final List<ControlFlowResult.Block> blockRecords = new ArrayList<>();
 
-            for (CodeBlock block : blocks) {
+            for (final CodeBlock block : blocks) {
                 // Build successors list
-                List<ControlFlowResult.Successor> successors = new ArrayList<>();
-                CodeBlockReferenceIterator destIter = block.getDestinations(new ConsoleTaskMonitor());
+                final List<ControlFlowResult.Successor> successors = new ArrayList<>();
+                final CodeBlockReferenceIterator destIter = block.getDestinations(new ConsoleTaskMonitor());
                 while (destIter.hasNext()) {
-                    CodeBlockReference ref = destIter.next();
+                    final CodeBlockReference ref = destIter.next();
                     String flowType = "Unknown";
                     if (ref.getFlowType().isJump()) {
                         flowType = ref.getFlowType().isConditional() ? "Conditional Jump" : "Unconditional Jump";
@@ -119,11 +118,11 @@ public class AnalysisService {
                 }
 
                 // Build instructions list
-                List<ControlFlowResult.Instruction> instrList = new ArrayList<>();
-                Listing listing = program.getListing();
-                InstructionIterator instructions = listing.getInstructions(block, true);
+                final List<ControlFlowResult.Instruction> instrList = new ArrayList<>();
+                final Listing listing = program.getListing();
+                final InstructionIterator instructions = listing.getInstructions(block, true);
                 while (instructions.hasNext()) {
-                    Instruction instr = instructions.next();
+                    final Instruction instr = instructions.next();
                     instrList.add(new ControlFlowResult.Instruction(
                             instr.getAddress().toString(),
                             instr.toString()));
@@ -138,7 +137,7 @@ public class AnalysisService {
                         instrList));
             }
 
-            ControlFlowResult result = new ControlFlowResult(
+            final ControlFlowResult result = new ControlFlowResult(
                     func.getName(),
                     func.getEntryPoint().toString(),
                     blockRecords);
@@ -159,72 +158,72 @@ public class AnalysisService {
 
         Example: analyze_data_flow("main", "local_10") -> "Data Flow Analysis..." """)
     public ToolOutput analyzeDataFlow(
-            @Param("Function name (e.g., \"main\") or address (e.g., \"00401000\", \"ram:00401000\")") String functionIdentifier,
-            @Param("Variable name to track") String variable) {
-        Program program = programService.getCurrentProgram();
+            @Param("Function name (e.g., \"main\") or address (e.g., \"00401000\", \"ram:00401000\")") final String functionIdentifier,
+            @Param("Variable name to track") final String variable) {
+        final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
         if (functionIdentifier == null || functionIdentifier.isEmpty()) return StatusOutput.error("Function identifier is required");
         if (variable == null || variable.isEmpty()) return StatusOutput.error("Variable name is required");
 
         try {
-            Function func = functionService.resolveFunction(program, functionIdentifier);
+            final Function func = functionService.resolveFunction(program, functionIdentifier);
             if (func == null) return StatusOutput.error("Function not found: " + functionIdentifier);
 
-            DecompileResults decompResults = GhidraUtils.decompileFunction(func, program);
+            final DecompileResults decompResults = GhidraUtils.decompileFunction(func, program);
             if (decompResults == null) {
                 return StatusOutput.error("Could not decompile function for data flow analysis");
             }
 
-            HighFunction highFunc = decompResults.getHighFunction();
+            final HighFunction highFunc = decompResults.getHighFunction();
             if (highFunc == null) {
                 return StatusOutput.error("No high function available for data flow analysis");
             }
 
-            ghidra.program.model.pcode.HighSymbol targetSymbol =
+            final ghidra.program.model.pcode.HighSymbol targetSymbol =
                 GhidraUtils.findVariableByName(highFunc, variable);
 
             if (targetSymbol == null) {
                 return StatusOutput.error("Variable '" + variable + "' not found in function");
             }
 
-            HighVariable highVar = targetSymbol.getHighVariable();
+            final HighVariable highVar = targetSymbol.getHighVariable();
             if (highVar == null) {
                 return StatusOutput.error("No high variable found for '" + variable + "'");
             }
 
             // Build storage info
-            Varnode[] instances = highVar.getInstances();
-            StringBuilder storage = new StringBuilder();
+            final Varnode[] instances = highVar.getInstances();
+            final StringBuilder storage = new StringBuilder();
             for (int i = 0; i < instances.length; i++) {
                 if (i > 0) storage.append(", ");
                 storage.append(instances[i].getAddress());
             }
 
             // Track definitions and uses
-            Map<Address, String[]> defUseMap = new HashMap<>();
-            for (Varnode instance : instances) {
-                PcodeOp defOp = instance.getDef();
+            final Map<Address, String[]> defUseMap = new HashMap<>();
+            for (final Varnode instance : instances) {
+                final PcodeOp defOp = instance.getDef();
                 if (defOp != null) {
-                    Address defAddr = defOp.getSeqnum().getTarget();
+                    final Address defAddr = defOp.getSeqnum().getTarget();
                     defUseMap.put(defAddr, new String[]{"DEFINE", defOp.getMnemonic()});
                 }
-                Iterator<PcodeOp> descendants = instance.getDescendants();
+                final Iterator<PcodeOp> descendants = instance.getDescendants();
                 while (descendants.hasNext()) {
-                    PcodeOp useOp = descendants.next();
-                    Address useAddr = useOp.getSeqnum().getTarget();
+                    final PcodeOp useOp = descendants.next();
+                    final Address useAddr = useOp.getSeqnum().getTarget();
                     defUseMap.put(useAddr, new String[]{"USE", useOp.getMnemonic()});
                 }
             }
 
-            List<Address> sortedAddrs = new ArrayList<>(defUseMap.keySet());
+            final List<Address> sortedAddrs = new ArrayList<>(defUseMap.keySet());
             sortedAddrs.sort(Comparator.naturalOrder());
 
-            Listing listing = program.getListing();
-            List<DataFlowResult.Reference> references = new ArrayList<>();
-            for (Address opAddr : sortedAddrs) {
-                Instruction instr = listing.getInstructionAt(opAddr);
+            final Listing listing = program.getListing();
+            final List<DataFlowResult.Reference> references = new ArrayList<>();
+            for (final Address opAddr : sortedAddrs) {
+                final Instruction instr = listing.getInstructionAt(opAddr);
                 if (instr != null) {
-                    String[] entry = defUseMap.get(opAddr);
+                    final String[] entry = defUseMap.get(opAddr);
                     references.add(new DataFlowResult.Reference(
                             opAddr.toString(),
                             entry[0],
@@ -233,7 +232,7 @@ public class AnalysisService {
                 }
             }
 
-            DataFlowResult result = new DataFlowResult(
+            final DataFlowResult result = new DataFlowResult(
                     func.getName(),
                     new DataFlowResult.Variable(
                             highVar.getName(),
@@ -258,35 +257,35 @@ public class AnalysisService {
             get_call_graph("process_data", direction="callers") -> who calls process_data
             get_call_graph("00401000", depth=3, direction="callees") -> what does this function call """)
     public ToolOutput getCallGraph(
-            @Param("Function name (e.g., \"main\") or address (e.g., \"00401000\", \"ram:00401000\")") String functionIdentifier,
+            @Param("Function name (e.g., \"main\") or address (e.g., \"00401000\", \"ram:00401000\")") final String functionIdentifier,
             @Param(value = "Maximum depth to traverse (1-5, default: 2)", defaultValue = "2") int depth,
-            @Param(value = "\"callers\" for upstream only, \"callees\" for downstream only, \"both\" for full hierarchy (default: \"both\")", defaultValue = "both") String direction) {
-        Program program = programService.getCurrentProgram();
+            @Param(value = "\"callers\" for upstream only, \"callees\" for downstream only, \"both\" for full hierarchy (default: \"both\")", defaultValue = "both") final String direction) {
+        final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
         if (functionIdentifier == null || functionIdentifier.isEmpty())
             return StatusOutput.error("Function identifier is required");
 
         depth = Math.min(Math.max(depth, 1), 5);
 
-        Function targetFunc = functionService.resolveFunction(program, functionIdentifier);
+        final Function targetFunc = functionService.resolveFunction(program, functionIdentifier);
         if (targetFunc == null) return StatusOutput.error("Function not found: " + functionIdentifier);
 
-        String dir = (direction == null || direction.isEmpty()) ? "both" : direction.toLowerCase();
+        final String dir = (direction == null || direction.isEmpty()) ? "both" : direction.toLowerCase();
 
         List<CallGraphResult.CallGraphNode> callerNodes = null;
         List<CallGraphResult.CallGraphNode> calleeNodes = null;
 
         if ("callers".equals(dir) || "both".equals(dir)) {
-            Set<Function> visited = new HashSet<>();
+            final Set<Function> visited = new HashSet<>();
             callerNodes = buildCallerHierarchy(targetFunc, visited, 0, depth);
         }
 
         if ("callees".equals(dir) || "both".equals(dir)) {
-            Set<Function> visited = new HashSet<>();
+            final Set<Function> visited = new HashSet<>();
             calleeNodes = buildCalleeHierarchy(targetFunc, visited, 0, depth);
         }
 
-        CallGraphResult result = new CallGraphResult(
+        final CallGraphResult result = new CallGraphResult(
                 targetFunc.getName(),
                 targetFunc.getEntryPoint().toString(),
                 depth,
@@ -297,30 +296,30 @@ public class AnalysisService {
     }
 
     /** Build callees hierarchy and return as a list of CallGraphNode records. */
-    private List<CallGraphResult.CallGraphNode> buildCalleeHierarchy(Function func,
-                                     Set<Function> visited, int currentDepth, int maxDepth) {
-        List<CallGraphResult.CallGraphNode> nodes = new ArrayList<>();
+    private List<CallGraphResult.CallGraphNode> buildCalleeHierarchy(final Function func,
+                                     final Set<Function> visited, final int currentDepth, final int maxDepth) {
+        final List<CallGraphResult.CallGraphNode> nodes = new ArrayList<>();
         if (visited.contains(func) || currentDepth >= maxDepth) return nodes;
         visited.add(func);
 
-        Set<Function> calledFunctions = new HashSet<>();
-        ReferenceManager refMgr = func.getProgram().getReferenceManager();
-        AddressIterator addrIter = func.getBody().getAddresses(true);
+        final Set<Function> calledFunctions = new HashSet<>();
+        final ReferenceManager refMgr = func.getProgram().getReferenceManager();
+        final AddressIterator addrIter = func.getBody().getAddresses(true);
         while (addrIter.hasNext()) {
-            Address fromAddr = addrIter.next();
-            for (Reference ref : refMgr.getReferencesFrom(fromAddr)) {
+            final Address fromAddr = addrIter.next();
+            for (final Reference ref : refMgr.getReferencesFrom(fromAddr)) {
                 if (ref.getReferenceType().isCall()) {
-                    Function calledFunc = func.getProgram().getFunctionManager().getFunctionAt(ref.getToAddress());
+                    final Function calledFunc = func.getProgram().getFunctionManager().getFunctionAt(ref.getToAddress());
                     if (calledFunc != null) calledFunctions.add(calledFunc);
                 }
             }
         }
 
-        List<Function> sorted = new ArrayList<>(calledFunctions);
+        final List<Function> sorted = new ArrayList<>(calledFunctions);
         sorted.sort(Comparator.comparing(Function::getName));
 
-        for (Function calledFunc : sorted) {
-            List<CallGraphResult.CallGraphNode> childCallees = buildCalleeHierarchy(calledFunc, visited, currentDepth + 1, maxDepth);
+        for (final Function calledFunc : sorted) {
+            final List<CallGraphResult.CallGraphNode> childCallees = buildCalleeHierarchy(calledFunc, visited, currentDepth + 1, maxDepth);
             nodes.add(new CallGraphResult.CallGraphNode(
                     calledFunc.getName(),
                     calledFunc.getEntryPoint().toString(),
@@ -331,26 +330,26 @@ public class AnalysisService {
     }
 
     /** Build callers hierarchy and return as a list of CallGraphNode records. */
-    private List<CallGraphResult.CallGraphNode> buildCallerHierarchy(Function func,
-                                           Set<Function> visited, int currentDepth, int maxDepth) {
-        List<CallGraphResult.CallGraphNode> nodes = new ArrayList<>();
+    private List<CallGraphResult.CallGraphNode> buildCallerHierarchy(final Function func,
+                                           final Set<Function> visited, final int currentDepth, final int maxDepth) {
+        final List<CallGraphResult.CallGraphNode> nodes = new ArrayList<>();
         if (visited.contains(func) || currentDepth >= maxDepth) return nodes;
         visited.add(func);
 
-        Set<Function> callers = new HashSet<>();
-        ReferenceManager refMgr = func.getProgram().getReferenceManager();
-        for (Reference ref : refMgr.getReferencesTo(func.getEntryPoint())) {
+        final Set<Function> callers = new HashSet<>();
+        final ReferenceManager refMgr = func.getProgram().getReferenceManager();
+        for (final Reference ref : refMgr.getReferencesTo(func.getEntryPoint())) {
             if (ref.getReferenceType().isCall()) {
-                Function callerFunc = func.getProgram().getFunctionManager().getFunctionContaining(ref.getFromAddress());
+                final Function callerFunc = func.getProgram().getFunctionManager().getFunctionContaining(ref.getFromAddress());
                 if (callerFunc != null && !callerFunc.equals(func)) callers.add(callerFunc);
             }
         }
 
-        List<Function> sorted = new ArrayList<>(callers);
+        final List<Function> sorted = new ArrayList<>(callers);
         sorted.sort(Comparator.comparing(Function::getName));
 
-        for (Function caller : sorted) {
-            List<CallGraphResult.CallGraphNode> childCallers = buildCallerHierarchy(caller, visited, currentDepth + 1, maxDepth);
+        for (final Function caller : sorted) {
+            final List<CallGraphResult.CallGraphNode> childCallers = buildCallerHierarchy(caller, visited, currentDepth + 1, maxDepth);
             nodes.add(new CallGraphResult.CallGraphNode(
                     caller.getName(),
                     caller.getEntryPoint().toString(),
@@ -370,14 +369,14 @@ public class AnalysisService {
         Example: list_references("00401000") -> ['00400f50 -> 00401000 (from CALL in main)', ...] """,
         outputType = ListOutput.class, responseType = ReferenceToItem.class)
     public ToolOutput listReferences(
-            @Param("Target address (e.g., \"00401000\" or \"ram:00401000\")") String address,
-            @Param(value = "Starting index for pagination (0-based)", defaultValue = "0") int offset,
-            @Param(value = "Maximum references to return", defaultValue = "100") int limit) {
-        Program program = programService.getCurrentProgram();
+            @Param("final Target address (e.g., \"00401000\" or \"ram:00401000\")") final String address,
+            @Param(value = "Starting index for pagination (0-based)", defaultValue = "0") final int offset,
+            @Param(value = "Maximum references to return", defaultValue = "100") final int limit) {
+        final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
         if (address == null) return StatusOutput.error("Address or name is required");
 
-        List<ReferenceToItem> refs = new ArrayList<>();
+        final List<ReferenceToItem> refs = new ArrayList<>();
         try {
             // Try to get the address directly first (if addressStr is a hex address)
             Address addr = program.getAddressFactory().getAddress(address);
@@ -391,15 +390,15 @@ public class AnalysisService {
                 return StatusOutput.error("Could not resolve address for " + address);
             }
 
-            ReferenceManager refMgr = program.getReferenceManager();
+            final ReferenceManager refMgr = program.getReferenceManager();
 
             // Get references to this address
-            for (Reference ref : refMgr.getReferencesTo(addr)) {
-                Address fromAddr = ref.getFromAddress();
-                ghidra.program.model.symbol.RefType refType = ref.getReferenceType();
+            for (final Reference ref : refMgr.getReferencesTo(addr)) {
+                final Address fromAddr = ref.getFromAddress();
+                final ghidra.program.model.symbol.RefType refType = ref.getReferenceType();
 
-                Function func = program.getFunctionManager().getFunctionContaining(fromAddr);
-                String funcName = func != null ? func.getName() : "not in function";
+                final Function func = program.getFunctionManager().getFunctionContaining(fromAddr);
+                final String funcName = func != null ? func.getName() : "not in function";
 
                 refs.add(new ReferenceToItem(
                         fromAddr.toString(),
@@ -431,14 +430,14 @@ public class AnalysisService {
         Example: list_references_from("main") -> "00401000 -> 00401234 (strlen) [CALL]" """,
         outputType = ListOutput.class, responseType = ReferenceFromItem.class)
     public ToolOutput listReferencesFrom(
-            @Param("Source address or symbol name (e.g., \"00401000\" or \"main\")") String address,
-            @Param(value = "Starting index for pagination (default: 0)", defaultValue = "0") int offset,
-            @Param(value = "Maximum number of references to return (default: 100)", defaultValue = "100") int limit) {
-        Program program = programService.getCurrentProgram();
+            @Param("final Source address or symbol name (e.g., \"00401000\" or \"main\")") final String address,
+            @Param(value = "Starting index for pagination (default: 0)", defaultValue = "0") final int offset,
+            @Param(value = "Maximum number of references to return (default: 100)", defaultValue = "100") final int limit) {
+        final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
         if (address == null) return StatusOutput.error("Address or name is required");
 
-        List<ReferenceFromItem> refs = new ArrayList<>();
+        final List<ReferenceFromItem> refs = new ArrayList<>();
         try {
             // Try to get the address directly first (if addressStr is a hex address)
             Address addr = program.getAddressFactory().getAddress(address);
@@ -452,18 +451,18 @@ public class AnalysisService {
                 return StatusOutput.error("Could not resolve address for " + address);
             }
 
-            ReferenceManager refMgr = program.getReferenceManager();
+            final ReferenceManager refMgr = program.getReferenceManager();
 
             // Get references from this address
-            for (Reference ref : refMgr.getReferencesFrom(addr)) {
-                Address toAddr = ref.getToAddress();
-                ghidra.program.model.symbol.RefType refType = ref.getReferenceType();
+            for (final Reference ref : refMgr.getReferencesFrom(addr)) {
+                final Address toAddr = ref.getToAddress();
+                final ghidra.program.model.symbol.RefType refType = ref.getReferenceType();
 
-                Symbol destSymbol = program.getSymbolTable().getPrimarySymbol(toAddr);
-                String destName = destSymbol != null ? destSymbol.getName() : "unnamed";
+                final Symbol destSymbol = program.getSymbolTable().getPrimarySymbol(toAddr);
+                final String destName = destSymbol != null ? destSymbol.getName() : "unnamed";
 
-                Function func = program.getFunctionManager().getFunctionContaining(toAddr);
-                String funcName = func != null ? func.getName() : "not in function";
+                final Function func = program.getFunctionManager().getFunctionContaining(toAddr);
+                final String funcName = func != null ? func.getName() : "not in function";
 
                 refs.add(new ReferenceFromItem(
                         addr.toString(),

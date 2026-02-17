@@ -18,7 +18,7 @@ public record DataTypeDetailResult(
 
     @Override
     public String toDisplayText() {
-        StringBuilder sb = new StringBuilder();
+        final StringBuilder sb = new StringBuilder();
 
         if ("Structure".equals(kind)) {
             sb.append("Structure: ").append(name).append("\n");
@@ -30,7 +30,7 @@ public record DataTypeDetailResult(
             if (fields == null || fields.isEmpty()) {
                 sb.append("  (no fields defined)\n");
             } else {
-                for (Field f : fields) {
+                for (final Field f : fields) {
                     sb.append(String.format("  [%04X] %s: %s (%d bytes)",
                         f.offset(),
                         f.name() != null ? f.name() : "(unnamed)",
@@ -52,7 +52,7 @@ public record DataTypeDetailResult(
             if (values == null || values.isEmpty()) {
                 sb.append("  (no values defined)\n");
             } else {
-                for (Value v : values) {
+                for (final Value v : values) {
                     sb.append(String.format("  %s = 0x%X (%d)\n", v.name(), v.value(), v.value()));
                 }
             }

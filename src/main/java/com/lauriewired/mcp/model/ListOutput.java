@@ -23,16 +23,16 @@ public record ListOutput(List<?> items, int totalItems, int offset, int limit) i
     /**
      * Factory method that slices a full list into a paginated ListOutput.
      */
-    public static ListOutput paginate(List<?> allItems, int offset, int limit) {
+    public static ListOutput paginate(final List<?> allItems, final int offset, final int limit) {
         if (allItems == null || allItems.isEmpty()) {
             return new ListOutput(List.of(), 0, offset, limit);
         }
-        int start = Math.max(0, offset);
+        final int start = Math.max(0, offset);
         if (start >= allItems.size()) {
             return new ListOutput(List.of(), allItems.size(), offset, limit);
         }
-        int end = Math.min(start + limit, allItems.size());
-        List<?> page = allItems.subList(start, end);
+        final int end = Math.min(start + limit, allItems.size());
+        final List<?> page = allItems.subList(start, end);
         return new ListOutput(List.copyOf(page), allItems.size(), offset, limit);
     }
 
@@ -49,20 +49,20 @@ public record ListOutput(List<?> items, int totalItems, int offset, int limit) i
                 : "No results found.";
         }
 
-        StringBuilder sb = new StringBuilder();
+        final StringBuilder sb = new StringBuilder();
         for (int i = 0; i < items.size(); i++) {
             if (i > 0) sb.append("\n");
             sb.append(String.valueOf(items.get(i)));
         }
 
-        int startItem = offset + 1;
-        int endItem = offset + items.size();
+        final int startItem = offset + 1;
+        final int endItem = offset + items.size();
 
         sb.append("\n--- PAGINATION INFO ---\n");
         sb.append(String.format("Showing items %d-%d of %d total items\n", startItem, endItem, totalItems));
 
         if (hasMore()) {
-            int nextOffset = offset + limit;
+            final int nextOffset = offset + limit;
             sb.append(String.format("To see more results, call this API again with offset=%d&limit=%d\n",
                 nextOffset, limit));
             sb.append(String.format("Remaining items: %d\n", totalItems - endItem));

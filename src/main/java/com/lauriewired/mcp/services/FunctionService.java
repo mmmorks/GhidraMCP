@@ -53,7 +53,7 @@ public class FunctionService {
      * @param tool the plugin tool
      * @param programService the program service for accessing the current program
      */
-    public FunctionService(PluginTool tool, ProgramService programService) {
+    public FunctionService(final PluginTool tool, final ProgramService programService) {
         this.tool = tool;
         this.programService = programService;
     }
@@ -69,13 +69,13 @@ public class FunctionService {
         Example: list_functions(0, 10) -> ['main', 'printf', 'malloc', ..., '--- PAGINATION INFO ---', ...] """,
         outputType = ListOutput.class, responseType = FunctionItem.class)
     public ToolOutput listFunctions(
-            @Param(value = "Starting index for pagination (0-based)", defaultValue = "0") int offset,
-            @Param(value = "Maximum function names to return", defaultValue = "100") int limit) {
-        Program program = programService.getCurrentProgram();
+            @Param(value = "Starting index for pagination (0-based)", defaultValue = "0") final int offset,
+            @Param(value = "Maximum function names to return", defaultValue = "100") final int limit) {
+        final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
 
-        List<FunctionItem> items = new ArrayList<>();
-        for (Function f : program.getFunctionManager().getFunctions(true)) {
+        final List<FunctionItem> items = new ArrayList<>();
+        for (final Function f : program.getFunctionManager().getFunctions(true)) {
             items.add(new FunctionItem(f.getName()));
         }
 
@@ -94,17 +94,17 @@ public class FunctionService {
             get_function_code("00401000", "assembly") -> assembly listing
             get_function_code("FUN_00401000", "pcode") -> PCode output """)
     public ToolOutput getFunctionCode(
-            @Param("Function name (e.g., \"main\") or address (e.g., \"00401000\", \"ram:00401000\")") String functionIdentifier,
-            @Param(value = "Output format - \"C\" for decompiled pseudocode (default), \"assembly\"/\"asm\" for disassembly listing, or \"pcode\" for Ghidra's intermediate representation", defaultValue = "C") String mode) {
-        Program program = programService.getCurrentProgram();
+            @Param("Function name (e.g., \"main\") or address (e.g., \"00401000\", \"ram:00401000\")") final String functionIdentifier,
+            @Param(value = "Output format - \"C\" for decompiled pseudocode (default), \"assembly\"/\"asm\" for disassembly listing, or \"pcode\" for Ghidra's intermediate representation", defaultValue = "C") final String mode) {
+        final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
         if (functionIdentifier == null || functionIdentifier.isEmpty()) return StatusOutput.error("Function identifier is required");
 
-        Function func = resolveFunction(program, functionIdentifier);
+        final Function func = resolveFunction(program, functionIdentifier);
         if (func == null) return StatusOutput.error("Function not found: " + functionIdentifier);
 
         // Normalize mode
-        String normalizedMode = (mode == null || mode.isEmpty()) ? "c" : mode.toLowerCase().trim();
+        final String normalizedMode = (mode == null || mode.isEmpty()) ? "c" : mode.toLowerCase().trim();
 
         return new TextOutput(switch (normalizedMode) {
             case "assembly", "asm", "disassembly" -> getAssembly(program, func);
@@ -113,35 +113,35 @@ public class FunctionService {
         });
     }
 
-    private String getDecompiledC(Program program, Function func) {
-        DecompInterface decomp = new DecompInterface();
+    private String getDecompiledC(final Program program, final Function func) {
+        final DecompInterface decomp = new DecompInterface();
         decomp.openProgram(program);
-        DecompileResults result = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
+        final DecompileResults result = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
         if (result == null || !result.decompileCompleted()) {
             return "Decompilation failed";
         }
 
         // Use the token tree to get per-line address mappings
-        ClangTokenGroup markup = result.getCCodeMarkup();
+        final ClangTokenGroup markup = result.getCCodeMarkup();
         if (markup == null) {
             // Fallback to plain text if no markup available
             return result.getDecompiledFunction().getC();
         }
 
-        PrettyPrinter printer = new PrettyPrinter(func, markup, null);
-        List<ClangLine> lines = printer.getLines();
+        final PrettyPrinter printer = new PrettyPrinter(func, markup, null);
+        final List<ClangLine> lines = printer.getLines();
 
         // Determine address column width from the function's entry point
-        String sampleAddr = func.getEntryPoint().toString();
-        int addrWidth = sampleAddr.length() + 2; // +2 for spacing
-        String addrFormat = "%-" + addrWidth + "s";
-        String blankPad = " ".repeat(addrWidth);
+        final String sampleAddr = func.getEntryPoint().toString();
+        final int addrWidth = sampleAddr.length() + 2; // +2 for spacing
+        final String addrFormat = "%-" + addrWidth + "s";
+        final String blankPad = " ".repeat(addrWidth);
 
-        StringBuilder sb = new StringBuilder();
-        for (ClangLine line : lines) {
+        final StringBuilder sb = new StringBuilder();
+        for (final ClangLine line : lines) {
             // Find the first address on this line from any token
             Address lineAddr = null;
-            for (ClangToken token : line.getAllTokens()) {
+            for (final ClangToken token : line.getAllTokens()) {
                 lineAddr = token.getMinAddress();
                 if (lineAddr != null) break;
             }
@@ -159,15 +159,15 @@ public class FunctionService {
         return sb.toString();
     }
 
-    private String getAssembly(Program program, Function func) {
-        StringBuilder result = new StringBuilder();
-        Listing listing = program.getListing();
-        Address start = func.getEntryPoint();
-        Address end = func.getBody().getMaxAddress();
+    private String getAssembly(final Program program, final Function func) {
+        final StringBuilder result = new StringBuilder();
+        final Listing listing = program.getListing();
+        final Address start = func.getEntryPoint();
+        final Address end = func.getBody().getMaxAddress();
 
-        InstructionIterator instructions = listing.getInstructions(start, true);
+        final InstructionIterator instructions = listing.getInstructions(start, true);
         while (instructions.hasNext()) {
-            Instruction instr = instructions.next();
+            final Instruction instr = instructions.next();
             if (instr.getAddress().compareTo(end) > 0) break;
 
             String comment = listing.getComment(
@@ -180,20 +180,20 @@ public class FunctionService {
         return result.toString();
     }
 
-    private String getPcode(Program program, Function func) {
-        DecompInterface decomp = new DecompInterface();
+    private String getPcode(final Program program, final Function func) {
+        final DecompInterface decomp = new DecompInterface();
         decomp.openProgram(program);
-        DecompileResults result = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
+        final DecompileResults result = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
         if (result == null || !result.decompileCompleted()) {
             return "Decompilation failed";
         }
 
-        var highFunction = result.getHighFunction();
+        final var highFunction = result.getHighFunction();
         if (highFunction == null) return "No high function available";
 
-        StringBuilder sb = new StringBuilder();
+        final StringBuilder sb = new StringBuilder();
         sb.append("PCode for ").append(func.getName()).append(":\n");
-        var iter = highFunction.getPcodeOps();
+        final var iter = highFunction.getPcodeOps();
         while (iter.hasNext()) {
             sb.append(iter.next().toString()).append("\n");
         }
@@ -216,20 +216,20 @@ public class FunctionService {
             rename_function("main", "entry_point") """,
         outputType = StatusOutput.class, responseType = StatusOutput.class)
     public ToolOutput renameFunction(
-            @Param("Current function name or address") String functionIdentifier,
-            @Param("New function name to assign") String newName) {
-        Program program = programService.getCurrentProgram();
+            @Param("Current function name or address") final String functionIdentifier,
+            @Param("New function name to assign") final String newName) {
+        final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
         if (functionIdentifier == null || functionIdentifier.isEmpty()) return StatusOutput.error("Function identifier is required");
         if (newName == null || newName.isEmpty()) return StatusOutput.error("New name is required");
 
-        Function func = resolveFunction(program, functionIdentifier);
+        final Function func = resolveFunction(program, functionIdentifier);
         if (func == null) {
             return StatusOutput.error("Function not found: " + functionIdentifier);
         }
 
         try (var tx = ProgramTransaction.start(program, "Rename function")) {
-            String oldName = func.getName();
+            final String oldName = func.getName();
             func.setName(newName, SourceType.USER_DEFINED);
             tx.commit();
             return StatusOutput.ok("Renamed '" + oldName + "' to '" + newName + "' at " + func.getEntryPoint());
@@ -248,14 +248,14 @@ public class FunctionService {
 
         Example: get_function_by_address("00401000") -> "Function: main at 00401000..." """)
     public ToolOutput getFunctionByAddress(
-            @Param("Address to look up (e.g., \"00401000\" or \"ram:00401000\")") String address) {
-        Program program = programService.getCurrentProgram();
+            @Param("Address to look up (e.g., \"00401000\" or \"ram:00401000\")") final String address) {
+        final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
         if (address == null || address.isEmpty()) return StatusOutput.error("Address is required");
 
         try {
-            Address addr = program.getAddressFactory().getAddress(address);
-            Function func = GhidraUtils.getFunctionForAddress(program, addr);
+            final Address addr = program.getAddressFactory().getAddress(address);
+            final Function func = GhidraUtils.getFunctionForAddress(program, addr);
 
             if (func == null) return StatusOutput.error("No function found at address " + address);
 
@@ -283,10 +283,10 @@ public class FunctionService {
     public ToolOutput getCurrentAddress() {
         if (tool == null) return StatusOutput.error("No tool available");
 
-        CodeViewerService service = tool.getService(CodeViewerService.class);
+        final CodeViewerService service = tool.getService(CodeViewerService.class);
         if (service == null) return StatusOutput.error("Code viewer service not available");
 
-        ProgramLocation location = service.getCurrentLocation();
+        final ProgramLocation location = service.getCurrentLocation();
         if (location == null) return StatusOutput.error("No current location");
         return new JsonOutput(new CurrentAddressResult(location.getAddress().toString()));
     }
@@ -304,16 +304,16 @@ public class FunctionService {
     public ToolOutput getCurrentFunction() {
         if (tool == null) return StatusOutput.error("No tool available");
 
-        CodeViewerService service = tool.getService(CodeViewerService.class);
+        final CodeViewerService service = tool.getService(CodeViewerService.class);
         if (service == null) return StatusOutput.error("Code viewer service not available");
 
-        ProgramLocation location = service.getCurrentLocation();
+        final ProgramLocation location = service.getCurrentLocation();
         if (location == null) return StatusOutput.error("No current location");
 
-        Program program = programService.getCurrentProgram();
+        final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
 
-        Function func = program.getFunctionManager().getFunctionContaining(location.getAddress());
+        final Function func = program.getFunctionManager().getFunctionContaining(location.getAddress());
         if (func == null) return StatusOutput.error("No function at current location: " + location.getAddress());
 
         return new JsonOutput(new CurrentFunctionResult(
@@ -330,16 +330,16 @@ public class FunctionService {
      * @param identifier a function name or address string
      * @return the resolved Function, or null if not found
      */
-    public Function resolveFunction(Program program, String identifier) {
+    public Function resolveFunction(final Program program, final String identifier) {
         if (program == null || identifier == null || identifier.isEmpty()) {
             return null;
         }
 
         // Try as address first
         try {
-            Address addr = program.getAddressFactory().getAddress(identifier);
+            final Address addr = program.getAddressFactory().getAddress(identifier);
             if (addr != null) {
-                Function func = GhidraUtils.getFunctionForAddress(program, addr);
+                final Function func = GhidraUtils.getFunctionForAddress(program, addr);
                 if (func != null) {
                     return func;
                 }
@@ -349,7 +349,7 @@ public class FunctionService {
         }
 
         // Fall back to name lookup
-        for (Function func : program.getFunctionManager().getFunctions(true)) {
+        for (final Function func : program.getFunctionManager().getFunctions(true)) {
             if (func.getName().equals(identifier)) {
                 return func;
             }
@@ -367,16 +367,16 @@ public class FunctionService {
         Example: search_functions_by_name("init") -> ['initialize @ 00401000', ...] """,
         outputType = ListOutput.class, responseType = FunctionSearchItem.class)
     public ToolOutput searchFunctionsByName(
-            @Param("Substring to search for in function names") String query,
-            @Param(value = "Starting index for pagination (0-based)", defaultValue = "0") int offset,
-            @Param(value = "Maximum matches to return", defaultValue = "100") int limit) {
-        Program program = programService.getCurrentProgram();
+            @Param("Substring to search for in function names") final String query,
+            @Param(value = "Starting index for pagination (0-based)", defaultValue = "0") final int offset,
+            @Param(value = "Maximum matches to return", defaultValue = "100") final int limit) {
+        final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
         if (query == null || query.isEmpty()) return StatusOutput.error("Search term is required");
 
-        List<FunctionSearchItem> matches = new ArrayList<>();
-        for (Function func : program.getFunctionManager().getFunctions(true)) {
-            String name = func.getName();
+        final List<FunctionSearchItem> matches = new ArrayList<>();
+        for (final Function func : program.getFunctionManager().getFunctions(true)) {
+            final String name = func.getName();
             if (name.toLowerCase().contains(query.toLowerCase())) {
                 matches.add(new FunctionSearchItem(name, func.getEntryPoint().toString()));
             }
@@ -399,10 +399,10 @@ public class FunctionService {
         Example: set_function_prototype("00401000", "int process_data(char *buffer, size_t length)") """,
         outputType = StatusOutput.class, responseType = StatusOutput.class)
     public ToolOutput setFunctionPrototype(
-            @Param("Function name (e.g., \"main\") or address (e.g., \"00401000\", \"ram:00401000\")") String functionIdentifier,
-            @Param("C-style function signature (e.g., \"int main(int argc, char **argv)\")") String prototype) {
+            @Param("Function name (e.g., \"main\") or address (e.g., \"00401000\", \"ram:00401000\")") final String functionIdentifier,
+            @Param("C-style function signature (e.g., \"int main(int argc, char **argv)\")") final String prototype) {
         // Input validation
-        Program program = programService.getCurrentProgram();
+        final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
         if (functionIdentifier == null || functionIdentifier.isEmpty()) {
             return StatusOutput.error("Function identifier is required");
@@ -412,19 +412,19 @@ public class FunctionService {
         }
 
         try {
-            Function func = resolveFunction(program, functionIdentifier);
+            final Function func = resolveFunction(program, functionIdentifier);
             if (func == null) {
-                String msg = "Function not found: " + functionIdentifier;
+                final String msg = "Function not found: " + functionIdentifier;
                 Msg.error(this, msg);
                 return StatusOutput.error("Failed to set function prototype: " + msg);
             }
 
-            Address addr = func.getEntryPoint();
+            final Address addr = func.getEntryPoint();
             Msg.info(this, "Setting prototype for function " + func.getName() + ": " + prototype);
             return parseFunctionSignatureAndApply(program, addr, prototype);
 
         } catch (Exception e) {
-            String msg = "Error setting function prototype: " + e.getMessage();
+            final String msg = "Error setting function prototype: " + e.getMessage();
             Msg.error(this, msg, e);
             return StatusOutput.error("Failed to set function prototype: " + msg);
         }
@@ -434,41 +434,41 @@ public class FunctionService {
      * Parse and apply the function signature with error handling
      */
     @SuppressWarnings("UseSpecificCatch")
-    private StatusOutput parseFunctionSignatureAndApply(Program program, Address addr, String prototype) {
+    private StatusOutput parseFunctionSignatureAndApply(final Program program, final Address addr, final String prototype) {
         try (var tx = ProgramTransaction.start(program, "Set function prototype")) {
-            ghidra.program.model.data.DataTypeManager dtm = program.getDataTypeManager();
+            final ghidra.program.model.data.DataTypeManager dtm = program.getDataTypeManager();
 
-            ghidra.app.services.DataTypeManagerService dtms =
+            final ghidra.app.services.DataTypeManagerService dtms =
                 tool.getService(ghidra.app.services.DataTypeManagerService.class);
 
-            ghidra.app.util.parser.FunctionSignatureParser parser =
+            final ghidra.app.util.parser.FunctionSignatureParser parser =
                 new ghidra.app.util.parser.FunctionSignatureParser(dtm, dtms);
 
-            ghidra.program.model.data.FunctionDefinitionDataType sig = parser.parse(null, prototype);
+            final ghidra.program.model.data.FunctionDefinitionDataType sig = parser.parse(null, prototype);
 
             if (sig == null) {
-                String msg = "Failed to parse function prototype";
+                final String msg = "Failed to parse function prototype";
                 Msg.error(this, msg);
                 return StatusOutput.error("Failed to set function prototype: " + msg);
             }
 
-            ghidra.app.cmd.function.ApplyFunctionSignatureCmd cmd =
+            final ghidra.app.cmd.function.ApplyFunctionSignatureCmd cmd =
                 new ghidra.app.cmd.function.ApplyFunctionSignatureCmd(
                     addr, sig, SourceType.USER_DEFINED);
 
-            boolean cmdResult = cmd.applyTo(program, new ConsoleTaskMonitor());
+            final boolean cmdResult = cmd.applyTo(program, new ConsoleTaskMonitor());
 
             if (cmdResult) {
                 tx.commit();
                 Msg.info(this, "Successfully applied function signature");
                 return StatusOutput.ok("Function prototype set successfully");
             } else {
-                String msg = "Command failed: " + cmd.getStatusMsg();
+                final String msg = "Command failed: " + cmd.getStatusMsg();
                 Msg.error(this, msg);
                 return StatusOutput.error("Failed to set function prototype: " + msg);
             }
         } catch (Exception e) {
-            String msg = "Error applying function signature: " + e.getMessage();
+            final String msg = "Error applying function signature: " + e.getMessage();
             Msg.error(this, msg, e);
             return StatusOutput.error("Failed to set function prototype: " + msg);
         }

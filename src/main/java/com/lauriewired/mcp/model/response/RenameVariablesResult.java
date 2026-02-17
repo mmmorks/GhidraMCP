@@ -7,9 +7,9 @@ import com.lauriewired.mcp.model.Displayable;
 public record RenameVariablesResult(String status, String function, Map<String, String> renamed, int count) implements Displayable {
     @Override
     public String toDisplayText() {
-        StringBuilder sb = new StringBuilder();
+        final StringBuilder sb = new StringBuilder();
         sb.append(status).append(" in ").append(function).append("\n");
-        for (var entry : renamed.entrySet()) {
+        for (final var entry : renamed.entrySet()) {
             sb.append("  ").append(entry.getKey()).append(" -> ").append(entry.getValue()).append("\n");
         }
         sb.append("Count: ").append(count);

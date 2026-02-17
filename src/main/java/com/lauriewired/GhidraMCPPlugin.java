@@ -55,7 +55,7 @@ public class GhidraMCPPlugin extends Plugin {
      * 
      * @param tool the plugin tool
      */
-    public GhidraMCPPlugin(PluginTool tool) {
+    public GhidraMCPPlugin(final PluginTool tool) {
         super(tool);
         Msg.info(GhidraMCPPlugin.class, "GhidraMCPPlugin loading...");
         
@@ -137,7 +137,7 @@ public class GhidraMCPPlugin extends Plugin {
         // Flush any residual domain object events so Ghidra doesn't report
         // open transactions on exit
         if (programService != null) {
-            ghidra.program.model.listing.Program program = programService.getCurrentProgram();
+            final ghidra.program.model.listing.Program program = programService.getCurrentProgram();
             if (program != null) {
                 program.flushEvents();
             }

@@ -14,7 +14,7 @@ public record AddressDataTypeResult(
 ) implements Displayable {
     @Override
     public String toDisplayText() {
-        StringBuilder sb = new StringBuilder();
+        final StringBuilder sb = new StringBuilder();
         sb.append("Data type at ").append(address).append(":\n");
         sb.append("  Type: ").append(category).append("\n");
         if (mnemonic != null) {

@@ -326,7 +326,7 @@
         <artifactId>maven-pmd-plugin</artifactId>
         <version>3.28.0</version>
         <configuration>
-          <failOnViolation>false</failOnViolation>
+          <failOnViolation>true</failOnViolation>
           <printFailingErrors>true</printFailingErrors>
           <targetJdk>24</targetJdk>
           <rulesets>

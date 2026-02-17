@@ -13,10 +13,10 @@ public record SearchMemoryResult(String query, int matchCount, List<MemoryMatch>
             return "No matches found for query: " + query;
         }
 
-        StringBuilder sb = new StringBuilder();
+        final StringBuilder sb = new StringBuilder();
         for (int i = 0; i < matches.size(); i++) {
             if (i > 0) sb.append("\n");
-            MemoryMatch m = matches.get(i);
+            final MemoryMatch m = matches.get(i);
             sb.append("Match at: ").append(m.address());
             if (m.block() != null) {
                 sb.append(" (").append(m.block()).append(")");

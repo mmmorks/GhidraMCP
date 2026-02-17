@@ -24,7 +24,7 @@ public class ProgramTransaction implements AutoCloseable {
     private boolean commitRequested;
     private boolean closed;
 
-    private ProgramTransaction(Program program, int transactionId) {
+    private ProgramTransaction(final Program program, final int transactionId) {
         this.program = program;
         this.transactionId = transactionId;
     }
@@ -36,8 +36,8 @@ public class ProgramTransaction implements AutoCloseable {
      * @param name    human-readable transaction name for undo history
      * @return a new {@code ProgramTransaction} that must be closed
      */
-    public static ProgramTransaction start(Program program, String name) {
-        int id = program.startTransaction(name);
+    public static ProgramTransaction start(final Program program, final String name) {
+        final int id = program.startTransaction(name);
         return new ProgramTransaction(program, id);
     }
 

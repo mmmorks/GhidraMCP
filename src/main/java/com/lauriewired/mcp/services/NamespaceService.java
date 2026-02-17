@@ -28,7 +28,7 @@ public class NamespaceService {
      *
      * @param programService the program service for accessing the current program
      */
-    public NamespaceService(ProgramService programService) {
+    public NamespaceService(final ProgramService programService) {
         this.programService = programService;
     }
 
@@ -42,13 +42,13 @@ public class NamespaceService {
         Example: list_symbols(0, 5) -> ['main -> 00401000', 'gVar1 -> 00410010', ...] """,
         outputType = ListOutput.class, responseType = SymbolItem.class)
     public ToolOutput listSymbols(
-            @Param(value = "Starting index for pagination (0-based)", defaultValue = "0") int offset,
-            @Param(value = "Maximum symbols to return", defaultValue = "100") int limit) {
-        Program program = programService.getCurrentProgram();
+            @Param(value = "Starting index for pagination (0-based)", defaultValue = "0") final int offset,
+            @Param(value = "Maximum symbols to return", defaultValue = "100") final int limit) {
+        final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
 
-        List<SymbolItem> items = new ArrayList<>();
-        for (Symbol symbol : program.getSymbolTable().getAllSymbols(false)) {
+        final List<SymbolItem> items = new ArrayList<>();
+        for (final Symbol symbol : program.getSymbolTable().getAllSymbols(false)) {
             items.add(new SymbolItem(symbol.getName(), symbol.getAddress().toString()));
         }
         return ListOutput.paginate(items, offset, limit);
@@ -65,16 +65,16 @@ public class NamespaceService {
 
         Example: get_symbol_address("main") -> "00401000" """)
     public ToolOutput getSymbolAddress(
-            @Param("Symbol name (case-sensitive, exact match required)") String symbolName) {
-        Program program = programService.getCurrentProgram();
+            @Param("Symbol name (case-sensitive, exact match required)") final String symbolName) {
+        final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
         if (symbolName == null || symbolName.isEmpty()) return StatusOutput.error("Symbol name is required");
 
-        SymbolTable symbolTable = program.getSymbolTable();
-        SymbolIterator symbolIterator = symbolTable.getSymbols(symbolName);
+        final SymbolTable symbolTable = program.getSymbolTable();
+        final SymbolIterator symbolIterator = symbolTable.getSymbols(symbolName);
 
         if (symbolIterator.hasNext()) {
-            Symbol symbol = symbolIterator.next();
+            final Symbol symbol = symbolIterator.next();
             return new JsonOutput(new SymbolAddressResult(symbolName, symbol.getAddress().toString()));
         } else {
             return StatusOutput.error("Symbol not found");

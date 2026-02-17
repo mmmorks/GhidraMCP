@@ -39,6 +39,10 @@
   <rule ref="category/java/performance.xml/StringInstantiation"/>
   <rule ref="category/java/performance.xml/UseStringBufferForStringAppends"/>
 
+  <!-- Immutability: prefer final for locals and parameters -->
+  <rule ref="category/java/codestyle.xml/LocalVariableCouldBeFinal"/>
+  <rule ref="category/java/codestyle.xml/MethodArgumentCouldBeFinal"/>
+
   <!-- Unnecessary code / LLM cruft -->
   <rule ref="category/java/codestyle.xml/UnnecessaryImport"/>
   <rule ref="category/java/codestyle.xml/UnnecessaryReturn"/>

@@ -67,10 +67,10 @@ public class TelemetryLogger {
         public final long responseSize;
         public final Map<String, Object> metadata;
 
-        public TelemetryEvent(String sessionId, String eventType, String toolName, String endpoint,
-                            Map<String, Object> parameters, boolean success, String errorType,
-                            String errorMessage, long durationMs, long requestSize, long responseSize,
-                            Map<String, Object> metadata) {
+        public TelemetryEvent(final String sessionId, final String eventType, final String toolName, final String endpoint,
+                            final Map<String, Object> parameters, final boolean success, final String errorType,
+                            final String errorMessage, final long durationMs, final long requestSize, final long responseSize,
+                            final Map<String, Object> metadata) {
             this.timestamp = TIMESTAMP_FORMAT.format(LocalDateTime.now(ZoneId.of("UTC")));
             this.sessionId = sessionId;
             this.eventType = eventType;
@@ -91,7 +91,7 @@ public class TelemetryLogger {
         this(DEFAULT_TELEMETRY_DIR);
     }
 
-    public TelemetryLogger(String telemetryDirPath) {
+    public TelemetryLogger(final String telemetryDirPath) {
         this.telemetryDir = Paths.get(telemetryDirPath);
         this.toolMetrics = new ConcurrentHashMap<>();
         this.sessionRequestCount = new AtomicLong(0);
@@ -121,19 +121,19 @@ public class TelemetryLogger {
     /**
      * Log the start of a tool invocation
      */
-    public long logToolStart(String toolName, String endpoint, Map<String, Object> parameters) {
-        long startTime = System.currentTimeMillis();
+    public long logToolStart(final String toolName, final String endpoint, final Map<String, Object> parameters) {
+        final long startTime = System.currentTimeMillis();
         sessionRequestCount.incrementAndGet();
 
-        ToolMetrics metrics = toolMetrics.computeIfAbsent(toolName, k -> new ToolMetrics());
+        final ToolMetrics metrics = toolMetrics.computeIfAbsent(toolName, k -> new ToolMetrics());
         metrics.invocationCount.incrementAndGet();
 
         // Log the start event
-        Map<String, Object> metadata = new ConcurrentHashMap<>();
+        final Map<String, Object> metadata = new ConcurrentHashMap<>();
         metadata.put("sessionRequestNumber", sessionRequestCount.get());
         metadata.put("totalInvocations", metrics.invocationCount.get());
 
-        TelemetryEvent event = new TelemetryEvent(
+        final TelemetryEvent event = new TelemetryEvent(
             sessionId,
             "TOOL_START",
             toolName,
@@ -155,25 +155,25 @@ public class TelemetryLogger {
     /**
      * Log successful tool completion
      */
-    public void logToolSuccess(String toolName, String endpoint, long startTime,
-                              String response, Map<String, Object> additionalMetadata) {
-        long duration = System.currentTimeMillis() - startTime;
+    public void logToolSuccess(final String toolName, final String endpoint, final long startTime,
+                              final String response, final Map<String, Object> additionalMetadata) {
+        final long duration = System.currentTimeMillis() - startTime;
 
-        ToolMetrics metrics = toolMetrics.get(toolName);
+        final ToolMetrics metrics = toolMetrics.get(toolName);
         if (metrics != null) {
             metrics.successCount.incrementAndGet();
             metrics.totalDurationMs.addAndGet(duration);
             updateMinMax(metrics, duration);
         }
 
-        Map<String, Object> metadata = new ConcurrentHashMap<>();
+        final Map<String, Object> metadata = new ConcurrentHashMap<>();
         metadata.put("successRate", calculateSuccessRate(toolName));
         metadata.put("avgDuration", calculateAvgDuration(toolName));
         if (additionalMetadata != null) {
             metadata.putAll(additionalMetadata);
         }
 
-        TelemetryEvent event = new TelemetryEvent(
+        final TelemetryEvent event = new TelemetryEvent(
             sessionId,
             "TOOL_SUCCESS",
             toolName,
@@ -194,22 +194,22 @@ public class TelemetryLogger {
     /**
      * Log tool failure
      */
-    public void logToolFailure(String toolName, String endpoint, long startTime,
-                              String errorType, String errorMessage, Map<String, Object> context) {
-        long duration = System.currentTimeMillis() - startTime;
+    public void logToolFailure(final String toolName, final String endpoint, final long startTime,
+                              final String errorType, final String errorMessage, final Map<String, Object> context) {
+        final long duration = System.currentTimeMillis() - startTime;
 
-        ToolMetrics metrics = toolMetrics.get(toolName);
+        final ToolMetrics metrics = toolMetrics.get(toolName);
         if (metrics != null) {
             metrics.failureCount.incrementAndGet();
             metrics.totalDurationMs.addAndGet(duration);
             updateMinMax(metrics, duration);
 
             // Track error types
-            String errorKey = errorType != null ? errorType : "UNKNOWN_ERROR";
+            final String errorKey = errorType != null ? errorType : "UNKNOWN_ERROR";
             metrics.errorCounts.computeIfAbsent(errorKey, k -> new AtomicLong(0)).incrementAndGet();
         }
 
-        Map<String, Object> metadata = new ConcurrentHashMap<>();
+        final Map<String, Object> metadata = new ConcurrentHashMap<>();
         metadata.put("successRate", calculateSuccessRate(toolName));
         metadata.put("failureRate", calculateFailureRate(toolName));
         metadata.put("errorTypeCount", metrics != null ? metrics.errorCounts.get(errorType) : 0);
@@ -217,7 +217,7 @@ public class TelemetryLogger {
             metadata.putAll(context);
         }
 
-        TelemetryEvent event = new TelemetryEvent(
+        final TelemetryEvent event = new TelemetryEvent(
             sessionId,
             "TOOL_FAILURE",
             toolName,
@@ -238,8 +238,8 @@ public class TelemetryLogger {
     /**
      * Log session-level events
      */
-    public void logSessionEvent(String eventType, Map<String, Object> metadata) {
-        Map<String, Object> sessionMetadata = new ConcurrentHashMap<>();
+    public void logSessionEvent(final String eventType, final Map<String, Object> metadata) {
+        final Map<String, Object> sessionMetadata = new ConcurrentHashMap<>();
         sessionMetadata.put("sessionDuration", System.currentTimeMillis() - sessionStartTime);
         sessionMetadata.put("totalRequests", sessionRequestCount.get());
         sessionMetadata.put("uniqueToolsUsed", toolMetrics.size());
@@ -248,7 +248,7 @@ public class TelemetryLogger {
             sessionMetadata.putAll(metadata);
         }
 
-        TelemetryEvent event = new TelemetryEvent(
+        final TelemetryEvent event = new TelemetryEvent(
             sessionId,
             eventType,
             null,
@@ -270,18 +270,18 @@ public class TelemetryLogger {
      * Generate daily summary report
      */
     public void generateDailySummary() {
-        Map<String, Object> summary = new ConcurrentHashMap<>();
+        final Map<String, Object> summary = new ConcurrentHashMap<>();
         summary.put("date", DATE_FORMAT.format(LocalDateTime.now()));
         summary.put("sessionId", sessionId);
         summary.put("totalRequests", sessionRequestCount.get());
         summary.put("sessionDurationMs", System.currentTimeMillis() - sessionStartTime);
 
-        Map<String, Object> toolSummaries = new ConcurrentHashMap<>();
-        for (Map.Entry<String, ToolMetrics> entry : toolMetrics.entrySet()) {
-            String toolName = entry.getKey();
-            ToolMetrics metrics = entry.getValue();
+        final Map<String, Object> toolSummaries = new ConcurrentHashMap<>();
+        for (final Map.Entry<String, ToolMetrics> entry : toolMetrics.entrySet()) {
+            final String toolName = entry.getKey();
+            final ToolMetrics metrics = entry.getValue();
 
-            Map<String, Object> toolSummary = new ConcurrentHashMap<>();
+            final Map<String, Object> toolSummary = new ConcurrentHashMap<>();
             toolSummary.put("invocations", metrics.invocationCount.get());
             toolSummary.put("successes", metrics.successCount.get());
             toolSummary.put("failures", metrics.failureCount.get());
@@ -297,9 +297,9 @@ public class TelemetryLogger {
         summary.put("tools", toolSummaries);
 
         // Write summary to separate file with pretty printing
-        Path summaryFile = telemetryDir.resolve("summary_" + DATE_FORMAT.format(LocalDateTime.now()) + ".json");
+        final Path summaryFile = telemetryDir.resolve("summary_" + DATE_FORMAT.format(LocalDateTime.now()) + ".json");
         try {
-            String json = toJsonPretty(summary);
+            final String json = toJsonPretty(summary);
             Files.write(summaryFile.toFile().toPath(), (json + "\n").getBytes(StandardCharsets.UTF_8),
                        StandardOpenOption.CREATE, StandardOpenOption.APPEND);
             Msg.info(TelemetryLogger.class, "Daily summary written to: " + summaryFile);
@@ -318,12 +318,12 @@ public class TelemetryLogger {
 
     // --- JSON serialization (no external dependencies) ---
 
-    private void writeEvent(TelemetryEvent event) {
-        String date = DATE_FORMAT.format(LocalDateTime.now());
-        Path logFile = telemetryDir.resolve(LOG_FILE_PREFIX + date + ".jsonl");
+    private void writeEvent(final TelemetryEvent event) {
+        final String date = DATE_FORMAT.format(LocalDateTime.now());
+        final Path logFile = telemetryDir.resolve(LOG_FILE_PREFIX + date + ".jsonl");
 
         try {
-            String jsonLine = eventToJson(event) + "\n";
+            final String jsonLine = eventToJson(event) + "\n";
             Files.write(logFile, jsonLine.getBytes(StandardCharsets.UTF_8),
                        StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         } catch (IOException e) {
@@ -331,8 +331,8 @@ public class TelemetryLogger {
         }
     }
 
-    private String eventToJson(TelemetryEvent event) {
-        StringBuilder sb = new StringBuilder();
+    private String eventToJson(final TelemetryEvent event) {
+        final StringBuilder sb = new StringBuilder();
         sb.append('{');
         appendJsonString(sb, "timestamp", event.timestamp); sb.append(',');
         appendJsonString(sb, "sessionId", event.sessionId); sb.append(',');
@@ -351,7 +351,7 @@ public class TelemetryLogger {
         return sb.toString();
     }
 
-    private static void appendJsonString(StringBuilder sb, String key, String value) {
+    private static void appendJsonString(final StringBuilder sb, final String key, final String value) {
         sb.append('"').append(escapeJson(key)).append("\":");
         if (value == null) {
             sb.append("null");
@@ -360,7 +360,7 @@ public class TelemetryLogger {
         }
     }
 
-    private static void appendJsonMap(StringBuilder sb, String key, Map<String, Object> map) {
+    private static void appendJsonMap(final StringBuilder sb, final String key, final Map<String, Object> map) {
         sb.append('"').append(escapeJson(key)).append("\":");
         if (map == null) {
             sb.append("null");
@@ -369,11 +369,11 @@ public class TelemetryLogger {
         }
     }
 
-    private static String mapToJson(Map<?, ?> map) {
-        StringBuilder sb = new StringBuilder();
+    private static String mapToJson(final Map<?, ?> map) {
+        final StringBuilder sb = new StringBuilder();
         sb.append('{');
         boolean first = true;
-        for (Map.Entry<?, ?> entry : map.entrySet()) {
+        for (final Map.Entry<?, ?> entry : map.entrySet()) {
             if (!first) sb.append(',');
             first = false;
             sb.append('"').append(escapeJson(String.valueOf(entry.getKey()))).append("\":");
@@ -383,7 +383,7 @@ public class TelemetryLogger {
         return sb.toString();
     }
 
-    private static String valueToJson(Object value) {
+    private static String valueToJson(final Object value) {
         if (value == null) return "null";
         if (value instanceof String s) return "\"" + escapeJson(s) + "\"";
         if (value instanceof Number) return value.toString();
@@ -393,21 +393,21 @@ public class TelemetryLogger {
         return "\"" + escapeJson(value.toString()) + "\"";
     }
 
-    static String toJsonPretty(Map<?, ?> map) {
+    static String toJsonPretty(final Map<?, ?> map) {
         return toJsonPretty(map, 0);
     }
 
-    private static String toJsonPretty(Map<?, ?> map, int indent) {
-        StringBuilder sb = new StringBuilder();
-        String pad = "  ".repeat(indent + 1);
-        String closePad = "  ".repeat(indent);
+    private static String toJsonPretty(final Map<?, ?> map, final int indent) {
+        final StringBuilder sb = new StringBuilder();
+        final String pad = "  ".repeat(indent + 1);
+        final String closePad = "  ".repeat(indent);
         sb.append("{\n");
         boolean first = true;
-        for (Map.Entry<?, ?> entry : map.entrySet()) {
+        for (final Map.Entry<?, ?> entry : map.entrySet()) {
             if (!first) sb.append(",\n");
             first = false;
             sb.append(pad).append('"').append(escapeJson(String.valueOf(entry.getKey()))).append("\": ");
-            Object val = entry.getValue();
+            final Object val = entry.getValue();
             if (val instanceof Map<?, ?> m) {
                 sb.append(toJsonPretty(m, indent + 1));
             } else {
@@ -418,7 +418,7 @@ public class TelemetryLogger {
         return sb.toString();
     }
 
-    private static String escapeJson(String s) {
+    private static String escapeJson(final String s) {
         if (s == null) return "";
         return s.replace("\\", "\\\\")
                 .replace("\"", "\\\"")
@@ -435,36 +435,36 @@ public class TelemetryLogger {
                Integer.toHexString(ThreadLocalRandom.current().nextInt());
     }
 
-    private void updateMinMax(ToolMetrics metrics, long duration) {
+    private void updateMinMax(final ToolMetrics metrics, final long duration) {
         metrics.minDurationMs.updateAndGet(min -> Math.min(min, duration));
         metrics.maxDurationMs.updateAndGet(max -> Math.max(max, duration));
     }
 
-    private double calculateSuccessRate(String toolName) {
-        ToolMetrics metrics = toolMetrics.get(toolName);
+    private double calculateSuccessRate(final String toolName) {
+        final ToolMetrics metrics = toolMetrics.get(toolName);
         if (metrics == null || metrics.invocationCount.get() == 0) {
             return 0.0;
         }
         return (double) metrics.successCount.get() / metrics.invocationCount.get();
     }
 
-    private double calculateFailureRate(String toolName) {
-        ToolMetrics metrics = toolMetrics.get(toolName);
+    private double calculateFailureRate(final String toolName) {
+        final ToolMetrics metrics = toolMetrics.get(toolName);
         if (metrics == null || metrics.invocationCount.get() == 0) {
             return 0.0;
         }
         return (double) metrics.failureCount.get() / metrics.invocationCount.get();
     }
 
-    private double calculateAvgDuration(String toolName) {
-        ToolMetrics metrics = toolMetrics.get(toolName);
+    private double calculateAvgDuration(final String toolName) {
+        final ToolMetrics metrics = toolMetrics.get(toolName);
         if (metrics == null || metrics.invocationCount.get() == 0) {
             return 0.0;
         }
         return (double) metrics.totalDurationMs.get() / metrics.invocationCount.get();
     }
 
-    private long estimateSize(Object obj) {
+    private long estimateSize(final Object obj) {
         if (obj == null) return 0;
         if (obj instanceof String string) {
             return string.length();

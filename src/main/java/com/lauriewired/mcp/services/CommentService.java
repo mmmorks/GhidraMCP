@@ -24,7 +24,7 @@ public class CommentService {
      *
      * @param programService the program service for accessing the current program
      */
-    public CommentService(ProgramService programService) {
+    public CommentService(final ProgramService programService) {
         this.programService = programService;
     }
 
@@ -41,13 +41,13 @@ public class CommentService {
             set_comment("00401000", "--- Main Entry ---", "plate") """,
         outputType = StatusOutput.class, responseType = StatusOutput.class)
     public ToolOutput setComment(
-            @Param("Target address (e.g., \"00401000\" or \"ram:00401000\")") String address,
-            @Param("Comment text to set") String comment,
-            @Param("Comment type: \"pre\"/\"decompiler\", \"eol\"/\"disassembly\", \"post\", \"plate\", \"repeatable\"") String type) {
+            @Param("final Target address (e.g., \"00401000\" or \"ram:00401000\")") final String address,
+            @Param("Comment text to set") final String comment,
+            @Param("final Comment type: \"pre\"/\"decompiler\", \"eol\"/\"disassembly\", \"post\", \"plate\", \"repeatable\"") final String type) {
         if (type == null || type.isEmpty()) {
             return StatusOutput.error("Error: 'type' parameter is required (pre, post, eol, plate, repeatable)");
         }
-        int commentType = switch (type.toLowerCase()) {
+        final int commentType = switch (type.toLowerCase()) {
             case "pre", "decompiler" -> CodeUnit.PRE_COMMENT;
             case "post" -> CodeUnit.POST_COMMENT;
             case "eol", "disassembly" -> CodeUnit.EOL_COMMENT;
@@ -58,20 +58,20 @@ public class CommentService {
         if (commentType == -1) {
             return StatusOutput.error("Failed to set comment. Valid types: pre, post, eol, plate, repeatable");
         }
-        boolean success = setCommentAtAddress(address, comment, commentType, "Set " + type + " comment");
+        final boolean success = setCommentAtAddress(address, comment, commentType, "Set " + type + " comment");
         return success ? StatusOutput.ok("Comment set successfully") : StatusOutput.error("Failed to set comment. Valid types: pre, post, eol, plate, repeatable");
     }
 
     /**
      * Set a comment using the specified comment type constant
      */
-    private boolean setCommentAtAddress(String addressStr, String comment, int commentType, String transactionName) {
-        Program program = programService.getCurrentProgram();
+    private boolean setCommentAtAddress(final String addressStr, final String comment, final int commentType, final String transactionName) {
+        final Program program = programService.getCurrentProgram();
         if (program == null) return false;
         if (addressStr == null || addressStr.isEmpty() || comment == null) return false;
 
         try (var tx = ProgramTransaction.start(program, transactionName)) {
-            Address addr = program.getAddressFactory().getAddress(addressStr);
+            final Address addr = program.getAddressFactory().getAddress(addressStr);
             program.getListing().setComment(addr, commentType, comment);
             tx.commit();
             return true;
@@ -90,16 +90,16 @@ public class CommentService {
 
         Example: get_comment("00401000") -> "Pre Comment (Decompiler): Initialize system..." """)
     public ToolOutput getComment(
-            @Param("Address to get comments from (e.g., \"00401000\")") String address) {
-        Program program = programService.getCurrentProgram();
+            @Param("Address to get comments from (e.g., \"00401000\")") final String address) {
+        final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
         if (address == null || address.isEmpty()) return StatusOutput.error("Address is required");
 
         try {
-            Address addr = program.getAddressFactory().getAddress(address);
+            final Address addr = program.getAddressFactory().getAddress(address);
             if (addr == null) return StatusOutput.error("Invalid address: " + address);
 
-            CodeUnit codeUnit = program.getListing().getCodeUnitAt(addr);
+            final CodeUnit codeUnit = program.getListing().getCodeUnitAt(addr);
             if (codeUnit == null) return StatusOutput.error("No code unit at address: " + address);
 
             return new JsonOutput(new CommentResult(

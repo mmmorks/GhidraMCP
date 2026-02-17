@@ -18,14 +18,14 @@ public record SearchDecompiledResult(String query, int matchCount, List<Decompil
             return "No matches found for pattern: " + query;
         }
 
-        StringBuilder sb = new StringBuilder();
+        final StringBuilder sb = new StringBuilder();
         for (int i = 0; i < matches.size(); i++) {
             if (i > 0) sb.append("\n");
-            DecompiledMatch match = matches.get(i);
+            final DecompiledMatch match = matches.get(i);
             sb.append(String.format("Function: %s at %s\n", match.function(), match.address()));
             sb.append("----------------------------------------\n");
 
-            for (String line : match.context()) {
+            for (final String line : match.context()) {
                 sb.append(line).append("\n");
             }
             sb.append("\n");

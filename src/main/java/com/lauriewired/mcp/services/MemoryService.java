@@ -50,7 +50,7 @@ public class MemoryService {
      *
      * @param programService the program service for accessing the current program
      */
-    public MemoryService(ProgramService programService) {
+    public MemoryService(final ProgramService programService) {
         this.programService = programService;
         this.dataTypeService = null;
     }
@@ -61,7 +61,7 @@ public class MemoryService {
      * @param programService the program service for accessing the current program
      * @param dataTypeService the data type service for resolving data types
      */
-    public MemoryService(ProgramService programService, DataTypeService dataTypeService) {
+    public MemoryService(final ProgramService programService, final DataTypeService dataTypeService) {
         this.programService = programService;
         this.dataTypeService = dataTypeService;
     }
@@ -77,13 +77,13 @@ public class MemoryService {
         Example: get_memory_layout() -> ['.text: 00401000 - 00410000', '.data: 00411000 - 00412000', ...] """,
         outputType = ListOutput.class, responseType = MemorySegmentItem.class)
     public ToolOutput getMemoryLayout(
-            @Param(value = "Starting index for pagination (0-based)", defaultValue = "0") int offset,
-            @Param(value = "Maximum segments to return", defaultValue = "100") int limit) {
-        Program program = programService.getCurrentProgram();
+            @Param(value = "Starting index for pagination (0-based)", defaultValue = "0") final int offset,
+            @Param(value = "Maximum segments to return", defaultValue = "100") final int limit) {
+        final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
 
-        List<MemorySegmentItem> items = new ArrayList<>();
-        for (MemoryBlock block : program.getMemory().getBlocks()) {
+        final List<MemorySegmentItem> items = new ArrayList<>();
+        for (final MemoryBlock block : program.getMemory().getBlocks()) {
             items.add(new MemorySegmentItem(block.getName(), block.getStart().toString(), block.getEnd().toString()));
         }
         return ListOutput.paginate(items, offset, limit);
@@ -101,19 +101,19 @@ public class MemoryService {
         Example: list_data_items(0, 3) -> ['00410000: hello_msg = "Hello, World!"', ...] """,
         outputType = ListOutput.class, responseType = DataItem.class)
     public ToolOutput listDataItems(
-            @Param(value = "Starting index for pagination (0-based)", defaultValue = "0") int offset,
-            @Param(value = "Maximum data items to return", defaultValue = "100") int limit) {
-        Program program = programService.getCurrentProgram();
+            @Param(value = "Starting index for pagination (0-based)", defaultValue = "0") final int offset,
+            @Param(value = "Maximum data items to return", defaultValue = "100") final int limit) {
+        final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
 
-        List<DataItem> items = new ArrayList<>();
-        for (MemoryBlock block : program.getMemory().getBlocks()) {
-            DataIterator it = program.getListing().getDefinedData(block.getStart(), true);
+        final List<DataItem> items = new ArrayList<>();
+        for (final MemoryBlock block : program.getMemory().getBlocks()) {
+            final DataIterator it = program.getListing().getDefinedData(block.getStart(), true);
             while (it.hasNext()) {
-                Data data = it.next();
+                final Data data = it.next();
                 if (block.contains(data.getAddress())) {
-                    String label = data.getLabel() != null ? data.getLabel() : "(unnamed)";
-                    String valRepr = data.getDefaultValueRepresentation();
+                    final String label = data.getLabel() != null ? data.getLabel() : "(unnamed)";
+                    final String valRepr = data.getDefaultValueRepresentation();
                     items.add(new DataItem(
                             data.getAddress().toString(),
                             HttpUtils.escapeNonAscii(label),
@@ -137,13 +137,13 @@ public class MemoryService {
         Example: rename_data("00402000", "config_table") """,
         outputType = StatusOutput.class, responseType = StatusOutput.class)
     public ToolOutput renameData(
-            @Param("Data address (e.g., \"00401000\" or \"ram:00401000\")") String address,
-            @Param("New name to assign") String newName) {
-        Program program = programService.getCurrentProgram();
+            @Param("final Data address (e.g., \"00401000\" or \"ram:00401000\")") final String address,
+            @Param("New name to assign") final String newName) {
+        final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("Rename failed");
 
         try (var tx = ProgramTransaction.start(program, "Rename data")) {
-            Address addr = program.getAddressFactory().getAddress(address);
+            final Address addr = program.getAddressFactory().getAddress(address);
             if (addr == null) {
                 Msg.error(this, "Invalid address: " + address);
                 return StatusOutput.error("Rename failed");
@@ -154,8 +154,8 @@ public class MemoryService {
                 return StatusOutput.error("Rename failed");
             }
 
-            SymbolTable symTable = program.getSymbolTable();
-            Symbol symbol = symTable.getPrimarySymbol(addr);
+            final SymbolTable symTable = program.getSymbolTable();
+            final Symbol symbol = symTable.getPrimarySymbol(addr);
 
             if (symbol != null) {
                 symbol.setName(newName, SourceType.USER_DEFINED);
@@ -184,21 +184,21 @@ public class MemoryService {
         Example: set_address_data_type("00402000", "POINT") -> "Data type 'POINT' set at address 00402000" """,
         outputType = StatusOutput.class, responseType = StatusOutput.class)
     public ToolOutput setAddressDataType(
-            @Param("Memory address (e.g., \"00401000\" or \"ram:00401000\")") String address,
-            @Param("Data type name (\"int\", \"char[20]\", \"POINT\", etc.)") String dataType,
-            @Param(value = "Whether to clear existing data at the address first", defaultValue = "false") boolean clearExisting) {
-        Program program = programService.getCurrentProgram();
+            @Param("final Memory address (e.g., \"00401000\" or \"ram:00401000\")") final String address,
+            @Param("Data type name (\"int\", \"char[20]\", \"POINT\", etc.)") final String dataType,
+            @Param(value = "Whether to clear existing data at the address first", defaultValue = "false") final boolean clearExisting) {
+        final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
         if (dataTypeService == null) return StatusOutput.error("DataTypeService not available");
 
         try (var tx = ProgramTransaction.start(program, "Set memory data type")) {
-            Address addr = program.getAddressFactory().getAddress(address);
+            final Address addr = program.getAddressFactory().getAddress(address);
             if (addr == null) {
                 return StatusOutput.error("Invalid address: " + address);
             }
 
-            DataTypeManager dtm = program.getDataTypeManager();
-            DataType resolvedDataType = dataTypeService.resolveDataType(dtm, dataType);
+            final DataTypeManager dtm = program.getDataTypeManager();
+            final DataType resolvedDataType = dataTypeService.resolveDataType(dtm, dataType);
 
             if (resolvedDataType == null) {
                 if (dataType.matches(".*\\[\\d+\\]$")) {
@@ -210,28 +210,28 @@ public class MemoryService {
                 }
             }
 
-            Listing listing = program.getListing();
+            final Listing listing = program.getListing();
 
             if (clearExisting) {
                 int sizeNeeded = resolvedDataType.getLength();
                 if (sizeNeeded <= 0) {
                     sizeNeeded = 1;
                 }
-                Address endAddr = addr.add(sizeNeeded - 1);
+                final Address endAddr = addr.add(sizeNeeded - 1);
                 listing.clearCodeUnits(addr, endAddr, false);
             }
 
             try {
-                Data newData = listing.createData(addr, resolvedDataType);
+                final Data newData = listing.createData(addr, resolvedDataType);
                 tx.commit();
                 return StatusOutput.ok(String.format("Data type '%s' (%d bytes) set at address %s",
                     resolvedDataType.getName(),
                     newData.getLength(),
                     addr.toString()));
             } catch (CodeUnitInsertionException e) {
-                String errorMsg = e.getMessage();
+                final String errorMsg = e.getMessage();
                 if (errorMsg.contains("Conflicting")) {
-                    CodeUnit cu = listing.getCodeUnitAt(addr);
+                    final CodeUnit cu = listing.getCodeUnitAt(addr);
                     if (cu instanceof Instruction) {
                         return StatusOutput.error("Failed to set data type: Instructions exist at address. " +
                                "Use clear_existing=true to overwrite instructions.");
@@ -268,30 +268,30 @@ public class MemoryService {
 
         Example: read_memory("00401000", 32, "hex") -> Memory dump with hex values """)
     public ToolOutput readMemory(
-            @Param("Memory address to read from (e.g., \"00401000\")") String address,
-            @Param(value = "Number of bytes to read (1-1024, default: 16)", defaultValue = "16") int size,
-            @Param(value = "Output format - \"hex\", \"decimal\", \"binary\", or \"ascii\" (default: \"hex\")", defaultValue = "hex") String format) {
-        Program program = programService.getCurrentProgram();
+            @Param("final Memory address to read from (e.g., \"00401000\")") final String address,
+            @Param(value = "Number of bytes to read (1-1024, default: 16)", defaultValue = "16") final int size,
+            @Param(value = "final Output format - \"hex\", \"decimal\", \"binary\", or \"ascii\" (default: \"hex\")", defaultValue = "hex") final String format) {
+        final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
         if (address == null || address.isEmpty()) return StatusOutput.error("Address is required");
         if (size <= 0 || size > 1024) return StatusOutput.error("Size must be between 1 and 1024 bytes");
 
         try {
-            Address addr = program.getAddressFactory().getAddress(address);
+            final Address addr = program.getAddressFactory().getAddress(address);
             if (addr == null) return StatusOutput.error("Invalid address: " + address);
 
-            Memory memory = program.getMemory();
-            MemoryBlock block = memory.getBlock(addr);
+            final Memory memory = program.getMemory();
+            final MemoryBlock block = memory.getBlock(addr);
             if (block == null) return StatusOutput.error("No memory block at address: " + address);
 
             // Check if we can read the requested size
-            Address endAddr = addr.add(size - 1);
+            final Address endAddr = addr.add(size - 1);
             if (!block.contains(endAddr)) {
                 return StatusOutput.error(String.format("Requested size %d exceeds memory block boundary", size));
             }
 
             // Read the bytes
-            byte[] bytes = new byte[size];
+            final byte[] bytes = new byte[size];
             try {
                 memory.getBytes(addr, bytes);
             } catch (MemoryAccessException e) {
@@ -299,7 +299,7 @@ public class MemoryService {
             }
 
             // Format the output based on requested format
-            String content = switch (format.toLowerCase()) {
+            final String content = switch (format.toLowerCase()) {
                 case "decimal" -> formatBytesAsDecimal(bytes, addr);
                 case "binary" -> formatBytesAsBinary(bytes, addr);
                 case "ascii" -> formatBytesAsAscii(bytes, addr);
@@ -323,17 +323,17 @@ public class MemoryService {
 
         Example: get_memory_permissions("00401000") -> "Block: .text, Permissions: R-X" """)
     public ToolOutput getMemoryPermissions(
-            @Param("Memory address to check (e.g., \"00401000\")") String address) {
-        Program program = programService.getCurrentProgram();
+            @Param("final Memory address to check (e.g., \"00401000\")") final String address) {
+        final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
         if (address == null || address.isEmpty()) return StatusOutput.error("Address is required");
 
         try {
-            Address addr = program.getAddressFactory().getAddress(address);
+            final Address addr = program.getAddressFactory().getAddress(address);
             if (addr == null) return StatusOutput.error("Invalid address: " + address);
 
-            Memory memory = program.getMemory();
-            MemoryBlock block = memory.getBlock(addr);
+            final Memory memory = program.getMemory();
+            final MemoryBlock block = memory.getBlock(addr);
             if (block == null) return StatusOutput.error("No memory block at address: " + address);
 
             return new JsonOutput(new MemoryPermissionsResult(
@@ -363,19 +363,19 @@ public class MemoryService {
 
         Example: get_address_data_type("00402000") -> "Type: DWORD, Value: 0x12345678" """)
     public ToolOutput getAddressDataType(
-            @Param("Memory address to check (e.g., \"00401000\")") String address) {
-        Program program = programService.getCurrentProgram();
+            @Param("final Memory address to check (e.g., \"00401000\")") final String address) {
+        final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
         if (address == null || address.isEmpty()) return StatusOutput.error("Address is required");
 
         try {
-            Address addr = program.getAddressFactory().getAddress(address);
+            final Address addr = program.getAddressFactory().getAddress(address);
             if (addr == null) return StatusOutput.error("Invalid address: " + address);
 
-            Listing listing = program.getListing();
+            final Listing listing = program.getListing();
 
             // Check if there's an instruction at this address
-            Instruction instr = listing.getInstructionAt(addr);
+            final Instruction instr = listing.getInstructionAt(addr);
             if (instr != null) {
                 return new JsonOutput(new AddressDataTypeResult(
                         addr.toString(), "Instruction",
@@ -384,10 +384,10 @@ public class MemoryService {
             }
 
             // Check if there's defined data at this address
-            Data data = listing.getDefinedDataAt(addr);
+            final Data data = listing.getDefinedDataAt(addr);
             if (data != null) {
-                DataType dt = data.getDataType();
-                Symbol symbol = program.getSymbolTable().getPrimarySymbol(addr);
+                final DataType dt = data.getDataType();
+                final Symbol symbol = program.getSymbolTable().getPrimarySymbol(addr);
                 return new JsonOutput(new AddressDataTypeResult(
                         addr.toString(), "Defined Data",
                         null, null,
@@ -397,11 +397,11 @@ public class MemoryService {
             }
 
             // Check if it's undefined data
-            Data undefinedData = listing.getDataAt(addr);
+            final Data undefinedData = listing.getDataAt(addr);
             if (undefinedData != null) {
                 String value;
                 try {
-                    byte b = program.getMemory().getByte(addr);
+                    final byte b = program.getMemory().getByte(addr);
                     value = String.format("0x%02X", b & 0xFF);
                 } catch (MemoryAccessException e) {
                     value = null;
@@ -420,8 +420,8 @@ public class MemoryService {
     }
 
     // Helper methods for formatting bytes
-    private String formatBytesAsHex(byte[] bytes, Address startAddr) {
-        StringBuilder sb = new StringBuilder();
+    private String formatBytesAsHex(final byte[] bytes, final Address startAddr) {
+        final StringBuilder sb = new StringBuilder();
         for (int i = 0; i < bytes.length; i += 16) {
             sb.append(String.format("%s: ", startAddr.add(i)));
             for (int j = 0; j < 16 && (i + j) < bytes.length; j++) {
@@ -432,7 +432,7 @@ public class MemoryService {
             }
             sb.append(" | ");
             for (int j = 0; j < 16 && (i + j) < bytes.length; j++) {
-                char c = (char)(bytes[i + j] & 0xFF);
+                final char c = (char)(bytes[i + j] & 0xFF);
                 if (c >= 32 && c < 127) {
                     sb.append(c);
                 } else {
@@ -444,8 +444,8 @@ public class MemoryService {
         return sb.toString();
     }
 
-    private String formatBytesAsDecimal(byte[] bytes, Address startAddr) {
-        StringBuilder sb = new StringBuilder();
+    private String formatBytesAsDecimal(final byte[] bytes, final Address startAddr) {
+        final StringBuilder sb = new StringBuilder();
         for (int i = 0; i < bytes.length; i++) {
             if (i % 8 == 0) {
                 if (i > 0) sb.append("\n");
@@ -457,8 +457,8 @@ public class MemoryService {
         return sb.toString();
     }
 
-    private String formatBytesAsBinary(byte[] bytes, Address startAddr) {
-        StringBuilder sb = new StringBuilder();
+    private String formatBytesAsBinary(final byte[] bytes, final Address startAddr) {
+        final StringBuilder sb = new StringBuilder();
         for (int i = 0; i < bytes.length; i++) {
             if (i % 4 == 0) {
                 if (i > 0) sb.append("\n");
@@ -471,11 +471,11 @@ public class MemoryService {
         return sb.toString();
     }
 
-    private String formatBytesAsAscii(byte[] bytes, Address startAddr) {
-        StringBuilder sb = new StringBuilder();
+    private String formatBytesAsAscii(final byte[] bytes, final Address startAddr) {
+        final StringBuilder sb = new StringBuilder();
         sb.append(String.format("ASCII at %s:\n", startAddr));
-        for (byte b : bytes) {
-            char c = (char)(b & 0xFF);
+        for (final byte b : bytes) {
+            final char c = (char)(b & 0xFF);
             if (c >= 32 && c < 127) {
                 sb.append(c);
             } else if (c == '\n') {

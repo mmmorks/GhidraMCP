@@ -9,9 +9,9 @@ public record UpdateResult(String name, List<String> results, Summary summary) i
 
     @Override
     public String toDisplayText() {
-        StringBuilder sb = new StringBuilder();
+        final StringBuilder sb = new StringBuilder();
         sb.append("Updated '").append(name).append("':\n");
-        for (String r : results) {
+        for (final String r : results) {
             sb.append(r).append("\n");
         }
         sb.append("Summary: ").append(summary.succeeded()).append(" succeeded, ")

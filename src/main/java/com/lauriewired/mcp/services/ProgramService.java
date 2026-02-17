@@ -22,7 +22,7 @@ public class ProgramService {
      *
      * @param tool the plugin tool from Ghidra
      */
-    public ProgramService(PluginTool tool) {
+    public ProgramService(final PluginTool tool) {
         this.tool = tool;
     }
 
@@ -36,7 +36,7 @@ public class ProgramService {
             return null;
         }
 
-        ProgramManager pm = tool.getService(ProgramManager.class);
+        final ProgramManager pm = tool.getService(ProgramManager.class);
         return pm != null ? pm.getCurrentProgram() : null;
     }
 
@@ -51,12 +51,12 @@ public class ProgramService {
 
         Example: get_program_info() -> "Program: firmware.bin\\nFormat: ELF\\nProcessor: ARM..." """)
     public ToolOutput getProgramInfo() {
-        Program program = getCurrentProgram();
+        final Program program = getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
 
         // Entry point
-        AddressIterator entryPoints = program.getSymbolTable().getExternalEntryPointIterator();
-        String entryPoint = entryPoints.hasNext() ? entryPoints.next().toString() : null;
+        final AddressIterator entryPoints = program.getSymbolTable().getExternalEntryPointIterator();
+        final String entryPoint = entryPoints.hasNext() ? entryPoints.next().toString() : null;
 
         return new JsonOutput(new ProgramInfoResult(
                 program.getName(),

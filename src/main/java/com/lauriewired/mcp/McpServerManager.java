@@ -34,7 +34,7 @@ public class McpServerManager {
      *
      * @param tool the plugin tool
      */
-    public McpServerManager(PluginTool tool) {
+    public McpServerManager(final PluginTool tool) {
         this.tool = tool;
         registerOptions();
     }
@@ -43,7 +43,7 @@ public class McpServerManager {
      * Register configuration options for the HTTP server
      */
     private void registerOptions() {
-        Options options = tool.getOptions(OPTION_CATEGORY_NAME);
+        final Options options = tool.getOptions(OPTION_CATEGORY_NAME);
         options.registerOption(PORT_OPTION_NAME, DEFAULT_PORT,
             null, // No help location for now
             "The network port number the embedded HTTP server will listen on. " +
@@ -68,9 +68,9 @@ public class McpServerManager {
      */
     public boolean startServer() throws IOException {
         // Read the configured options
-        Options options = tool.getOptions(OPTION_CATEGORY_NAME);
-        int port = options.getInt(PORT_OPTION_NAME, DEFAULT_PORT);
-        int threadPoolSize = options.getInt(THREAD_POOL_SIZE_OPTION_NAME, DEFAULT_THREAD_POOL_SIZE);
+        final Options options = tool.getOptions(OPTION_CATEGORY_NAME);
+        final int port = options.getInt(PORT_OPTION_NAME, DEFAULT_PORT);
+        final int threadPoolSize = options.getInt(THREAD_POOL_SIZE_OPTION_NAME, DEFAULT_THREAD_POOL_SIZE);
         
         // Stop existing server if running (e.g., if plugin is reloaded)
         if (server != null) {
@@ -82,12 +82,12 @@ public class McpServerManager {
         server = HttpServer.create(new InetSocketAddress(port), 0);
         
         // Create a thread pool executor for handling concurrent requests
-        ThreadFactory threadFactory = new ThreadFactory() {
+        final ThreadFactory threadFactory = new ThreadFactory() {
             private final AtomicInteger threadNumber = new AtomicInteger(1);
             
             @Override
-            public Thread newThread(Runnable r) {
-                Thread thread = new Thread(r, "GhidraMCP-HTTP-Worker-" + threadNumber.getAndIncrement());
+            public Thread newThread(final Runnable r) {
+                final Thread thread = new Thread(r, "GhidraMCP-HTTP-Worker-" + threadNumber.getAndIncrement());
                 thread.setDaemon(true); // Daemon threads will not prevent JVM shutdown
                 return thread;
             }
@@ -173,7 +173,7 @@ public class McpServerManager {
      * @return the request timeout in seconds
      */
     public int getRequestTimeoutSeconds() {
-        Options options = tool.getOptions(OPTION_CATEGORY_NAME);
+        final Options options = tool.getOptions(OPTION_CATEGORY_NAME);
         return options.getInt(REQUEST_TIMEOUT_OPTION_NAME, DEFAULT_REQUEST_TIMEOUT_SECONDS);
     }
 }

@@ -29,7 +29,7 @@ public class GhidraUtils {
      * Gets a function at the given address or containing the address
      * @return the function or null if not found
      */
-    public static Function getFunctionForAddress(Program program, Address addr) {
+    public static Function getFunctionForAddress(final Program program, final Address addr) {
         if (program == null || addr == null) {
             return null;
         }
@@ -41,7 +41,7 @@ public class GhidraUtils {
     /**
      * Find a high symbol by name in the given high function
      */
-    public static HighSymbol findVariableByName(HighFunction highFunction, String variableName) {
+    public static HighSymbol findVariableByName(final HighFunction highFunction, final String variableName) {
         if (highFunction == null || variableName == null) {
             return null;
         }
@@ -55,7 +55,7 @@ public class GhidraUtils {
     /**
      * Helper method to convert an Iterator to a Stream
      */
-    private static <T> Stream<T> iteratorToStream(Iterator<T> iterator) {
+    private static <T> Stream<T> iteratorToStream(final Iterator<T> iterator) {
         return StreamSupport.stream(
             Spliterators.spliteratorUnknownSize(iterator, Spliterator.ORDERED),
             false
@@ -65,18 +65,18 @@ public class GhidraUtils {
     /**
      * Decompile a function and return the results
      */
-    public static DecompileResults decompileFunction(Function func, Program program) {
+    public static DecompileResults decompileFunction(final Function func, final Program program) {
         if (func == null || program == null) {
             return null;
         }
         
         // Set up decompiler for accessing the decompiled function
-        var decomp = new DecompInterface();
+        final var decomp = new DecompInterface();
         decomp.openProgram(program);
         decomp.setSimplificationStyle("decompile"); // Full decompilation
         
         // Decompile the function
-        var results = decomp.decompileFunction(func, 60, new ConsoleTaskMonitor());
+        final var results = decomp.decompileFunction(func, 60, new ConsoleTaskMonitor());
         
         if (results == null || !results.decompileCompleted()) {
             Msg.error(GhidraUtils.class, "Could not decompile function: " + 
@@ -92,13 +92,13 @@ public class GhidraUtils {
     /**
      * Get the address of a symbol by name
      */
-    public static Address getSymbolAddress(Program program, String symbolName) {
+    public static Address getSymbolAddress(final Program program, final String symbolName) {
         if (program == null || symbolName == null || symbolName.isEmpty()) {
             return null;
         }
         
-        var symbolTable = program.getSymbolTable();
-        var symbolIterator = symbolTable.getSymbols(symbolName);
+        final var symbolTable = program.getSymbolTable();
+        final var symbolIterator = symbolTable.getSymbols(symbolName);
         
         return Optional.of(symbolIterator)
             .filter(SymbolIterator::hasNext)
@@ -119,16 +119,16 @@ public class GhidraUtils {
      * @param hfunction is the given HighFunction
      * @return true if there is a difference (and a full commit is required)
      */
-    public static boolean checkFullCommit(HighSymbol highSymbol, HighFunction hfunction) {
+    public static boolean checkFullCommit(final HighSymbol highSymbol, final HighFunction hfunction) {
         // Early return if this isn't a parameter
         if (highSymbol != null && !highSymbol.isParameter()) {
             return false;
         }
         
-        var function = hfunction.getFunction();
-        var parameters = function.getParameters();
-        var localSymbolMap = hfunction.getLocalSymbolMap();
-        var numParams = localSymbolMap.getNumParams();
+        final var function = hfunction.getFunction();
+        final var parameters = function.getParameters();
+        final var localSymbolMap = hfunction.getLocalSymbolMap();
+        final var numParams = localSymbolMap.getNumParams();
         
         // Check if parameter counts match
         if (numParams != parameters.length) {
@@ -137,7 +137,7 @@ public class GhidraUtils {
 
         // Check if parameters match in order and storage
         return IntStream.range(0, numParams).anyMatch(i -> {
-            var param = localSymbolMap.getParamSymbol(i);
+            final var param = localSymbolMap.getParamSymbol(i);
             
             // Check parameter index
             if (param.getCategoryIndex() != i) {

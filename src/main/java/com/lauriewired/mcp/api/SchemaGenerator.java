@@ -24,8 +24,8 @@ public final class SchemaGenerator {
     private static final com.github.victools.jsonschema.generator.SchemaGenerator GENERATOR;
 
     static {
-        JacksonModule jacksonModule = new JacksonModule(JacksonOption.RESPECT_JSONPROPERTY_REQUIRED);
-        SchemaGeneratorConfigBuilder configBuilder =
+        final JacksonModule jacksonModule = new JacksonModule(JacksonOption.RESPECT_JSONPROPERTY_REQUIRED);
+        final SchemaGeneratorConfigBuilder configBuilder =
             new SchemaGeneratorConfigBuilder(SchemaVersion.DRAFT_2020_12, OptionPreset.PLAIN_JSON)
                 .with(jacksonModule)
                 .with(Option.FORBIDDEN_ADDITIONAL_PROPERTIES_BY_DEFAULT);
@@ -36,7 +36,7 @@ public final class SchemaGenerator {
         configBuilder.forMethods()
             .withPropertyNameOverrideResolver(method ->
                 Json.toSnakeCase(method.getName()));
-        SchemaGeneratorConfig config = configBuilder.build();
+        final SchemaGeneratorConfig config = configBuilder.build();
         GENERATOR = new com.github.victools.jsonschema.generator.SchemaGenerator(config);
     }
 
@@ -50,14 +50,14 @@ public final class SchemaGenerator {
      * @param outputType   the ToolOutput subtype (e.g., ListOutput.class, JsonOutput.class)
      * @return JSON Schema string, or null if responseType is Void
      */
-    public static String generateSchema(Class<?> responseType, Class<?> outputType) {
+    public static String generateSchema(final Class<?> responseType, final Class<?> outputType) {
         if (responseType == Void.class || responseType == void.class) {
             return null;
         }
 
         if (outputType == ListOutput.class) {
             // Generate schema for the item type, then wrap in pagination envelope
-            JsonNode itemSchema = GENERATOR.generateSchema(responseType);
+            final JsonNode itemSchema = GENERATOR.generateSchema(responseType);
             // Remove $schema from item-level schema (only needed at top level)
             if (itemSchema instanceof ObjectNode on) {
                 on.remove("$schema");
@@ -65,21 +65,21 @@ public final class SchemaGenerator {
             return Json.serialize(buildListEnvelope(itemSchema));
         }
 
-        JsonNode schema = GENERATOR.generateSchema(responseType);
+        final JsonNode schema = GENERATOR.generateSchema(responseType);
         return schema.toString();
     }
 
     /**
      * Build the pagination envelope schema wrapping item schemas.
      */
-    private static Map<String, Object> buildListEnvelope(JsonNode itemSchema) {
-        Map<String, Object> schema = new LinkedHashMap<>();
+    private static Map<String, Object> buildListEnvelope(final JsonNode itemSchema) {
+        final Map<String, Object> schema = new LinkedHashMap<>();
         schema.put("$schema", SchemaVersion.DRAFT_2020_12.getIdentifier());
         schema.put("type", "object");
 
-        Map<String, Object> properties = new LinkedHashMap<>();
+        final Map<String, Object> properties = new LinkedHashMap<>();
 
-        Map<String, Object> itemsArray = new LinkedHashMap<>();
+        final Map<String, Object> itemsArray = new LinkedHashMap<>();
         itemsArray.put("type", "array");
         // Convert JsonNode to a Map so Jackson serializes it inline
         itemsArray.put("items", Json.mapper().convertValue(itemSchema, Map.class));

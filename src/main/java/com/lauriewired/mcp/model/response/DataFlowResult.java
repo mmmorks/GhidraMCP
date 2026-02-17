@@ -15,7 +15,7 @@ public record DataFlowResult(
 
     @Override
     public String toDisplayText() {
-        StringBuilder sb = new StringBuilder();
+        final StringBuilder sb = new StringBuilder();
         sb.append("Data Flow Analysis for variable '").append(variable.name())
           .append("' in function ").append(function).append("\n\n");
 
@@ -25,7 +25,7 @@ public record DataFlowResult(
         sb.append("  Storage: ").append(variable.storage() != null ? variable.storage() : "No storage information available").append("\n\n");
 
         sb.append("Variable definitions and uses:\n");
-        for (Reference ref : references) {
+        for (final Reference ref : references) {
             sb.append("  ").append(ref.address()).append(": ")
               .append(ref.kind()).append(": ").append(ref.operation())
               .append(" - ").append(ref.instruction()).append("\n");

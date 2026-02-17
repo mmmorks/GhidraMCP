@@ -17,7 +17,7 @@ public record MemoryPermissionsResult(
 
     @Override
     public String toDisplayText() {
-        StringBuilder sb = new StringBuilder();
+        final StringBuilder sb = new StringBuilder();
         sb.append("Memory permissions at ").append(start).append(":\n");
         sb.append("  Block: ").append(block).append("\n");
         sb.append("  Start: ").append(start).append("\n");

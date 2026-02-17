@@ -21,7 +21,7 @@ public record CallGraphResult(
 
     @Override
     public String toDisplayText() {
-        StringBuilder sb = new StringBuilder();
+        final StringBuilder sb = new StringBuilder();
         sb.append("Call Graph for ").append(function)
           .append(" at ").append(entryPoint)
           .append(" (direction: ").append(direction)
@@ -29,7 +29,7 @@ public record CallGraphResult(
 
         if (callers != null && !callers.isEmpty()) {
             sb.append("CALLERS (functions that call ").append(function).append("):\n");
-            for (CallGraphNode node : callers) {
+            for (final CallGraphNode node : callers) {
                 appendCallGraphNode(sb, node, 0, true);
             }
             sb.append("\n");
@@ -37,7 +37,7 @@ public record CallGraphResult(
 
         if (callees != null && !callees.isEmpty()) {
             sb.append("CALLEES (functions called by ").append(function).append("):\n");
-            for (CallGraphNode node : callees) {
+            for (final CallGraphNode node : callees) {
                 appendCallGraphNode(sb, node, 0, false);
             }
             sb.append("\n");
@@ -46,14 +46,14 @@ public record CallGraphResult(
         return sb.toString();
     }
 
-    private static void appendCallGraphNode(StringBuilder sb, CallGraphNode node, int depth, boolean isCallers) {
-        String indent = "  ".repeat(depth);
+    private static void appendCallGraphNode(final StringBuilder sb, final CallGraphNode node, final int depth, final boolean isCallers) {
+        final String indent = "  ".repeat(depth);
         sb.append(indent).append("- ").append(node.name())
           .append(" at ").append(node.address()).append("\n");
 
-        List<CallGraphNode> children = isCallers ? node.callers() : node.callees();
+        final List<CallGraphNode> children = isCallers ? node.callers() : node.callees();
         if (children != null) {
-            for (CallGraphNode child : children) {
+            for (final CallGraphNode child : children) {
                 appendCallGraphNode(sb, child, depth + 1, isCallers);
             }
         }

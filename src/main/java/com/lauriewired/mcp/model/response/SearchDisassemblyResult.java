@@ -20,8 +20,8 @@ public record SearchDisassemblyResult(String query, int matchCount, List<DisasmM
             return "No matches found for pattern: " + query;
         }
 
-        StringBuilder sb = new StringBuilder();
-        for (DisasmMatch match : matches) {
+        final StringBuilder sb = new StringBuilder();
+        for (final DisasmMatch match : matches) {
             if (match.function() != null) {
                 sb.append(String.format("Location: %s (in function %s)\n", match.address(), match.function()));
             } else {
@@ -29,8 +29,8 @@ public record SearchDisassemblyResult(String query, int matchCount, List<DisasmM
             }
             sb.append("----------------------------------------\n");
 
-            for (ContextLine line : match.context()) {
-                String prefix = line.isMatch() ? "\u2192 " : "  ";
+            for (final ContextLine line : match.context()) {
+                final String prefix = line.isMatch() ? "\u2192 " : "  ";
                 sb.append(prefix).append(line.address()).append(": ").append(line.text()).append("\n");
             }
             sb.append("\n");

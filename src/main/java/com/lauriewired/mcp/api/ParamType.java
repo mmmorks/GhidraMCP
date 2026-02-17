@@ -2,6 +2,7 @@ package com.lauriewired.mcp.api;
 
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -19,22 +20,22 @@ public enum ParamType {
 
     private final String jsonSchemaType;
 
-    ParamType(String jsonSchemaType) {
+    ParamType(final String jsonSchemaType) {
         this.jsonSchemaType = jsonSchemaType;
     }
 
     /**
      * Infer ParamType from a Java reflection Type.
      */
-    public static ParamType inferFrom(Type javaType) {
+    public static ParamType inferFrom(final Type javaType) {
         if (javaType == String.class) return STRING;
         if (javaType == int.class || javaType == Integer.class) return INTEGER;
         if (javaType == long.class || javaType == Long.class) return LONG;
         if (javaType == boolean.class || javaType == Boolean.class) return BOOLEAN;
 
         if (javaType instanceof ParameterizedType pt) {
-            Type raw = pt.getRawType();
-            Type[] args = pt.getActualTypeArguments();
+            final Type raw = pt.getRawType();
+            final Type[] args = pt.getActualTypeArguments();
 
             if (raw == Map.class && args.length == 2) {
                 if (args[1] == Long.class) return LONG_MAP;
@@ -53,8 +54,8 @@ public enum ParamType {
     /**
      * Build a JSON Schema Map for this parameter type (used by Jackson serialization in ToolDef).
      */
-    public java.util.Map<String, Object> toJsonSchemaMap(String description, boolean required, String defaultValue) {
-        java.util.Map<String, Object> schema = new java.util.LinkedHashMap<>();
+    public Map<String, Object> toJsonSchemaMap(final String description, boolean required, final String defaultValue) {
+        final Map<String, Object> schema = new LinkedHashMap<>();
         schema.put("type", jsonSchemaType);
 
         if (description != null && !description.isEmpty()) {
@@ -63,13 +64,13 @@ public enum ParamType {
 
         switch (this) {
             case STRING_MAP:
-                schema.put("additionalProperties", java.util.Map.of("type", "string"));
+                schema.put("additionalProperties", Map.of("type", "string"));
                 break;
             case LONG_MAP:
-                schema.put("additionalProperties", java.util.Map.of("type", "integer"));
+                schema.put("additionalProperties", Map.of("type", "integer"));
                 break;
             case STRING_PAIR_LIST:
-                schema.put("items", java.util.Map.of("type", "array", "items", java.util.Map.of("type", "string")));
+                schema.put("items", Map.of("type", "array", "items", Map.of("type", "string")));
                 break;
             default:
                 break;
@@ -92,7 +93,7 @@ public enum ParamType {
     /**
      * Parse a raw string value (from GET query or POST body) into the appropriate typed value.
      */
-    public Object parseFromString(String raw, Object defaultValue) {
+    public Object parseFromString(final String raw, final Object defaultValue) {
         if (raw == null || raw.isEmpty()) return defaultValue;
 
         return switch (this) {

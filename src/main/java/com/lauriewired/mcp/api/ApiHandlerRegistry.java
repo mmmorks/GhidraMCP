@@ -3,6 +3,7 @@ package com.lauriewired.mcp.api;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -47,16 +48,16 @@ public class ApiHandlerRegistry {
     private final List<ToolDef> toolDefs = new ArrayList<>();
 
     public ApiHandlerRegistry(
-            McpServerManager serverManager,
-            FunctionService functionService,
-            NamespaceService namespaceService,
-            DataTypeService dataTypeService,
-            AnalysisService analysisService,
-            CommentService commentService,
-            MemoryService memoryService,
-            ProgramService programService,
-            SearchService searchService,
-            VariableService variableService) {
+            final McpServerManager serverManager,
+            final FunctionService functionService,
+            final NamespaceService namespaceService,
+            final DataTypeService dataTypeService,
+            final AnalysisService analysisService,
+            final CommentService commentService,
+            final MemoryService memoryService,
+            final ProgramService programService,
+            final SearchService searchService,
+            final VariableService variableService) {
         this.serverManager = serverManager;
         this.functionService = functionService;
         this.namespaceService = namespaceService;
@@ -69,7 +70,7 @@ public class ApiHandlerRegistry {
         this.variableService = variableService;
         this.telemetryLogger = new TelemetryLogger();
 
-        int timeoutSeconds = serverManager.getRequestTimeoutSeconds();
+        final int timeoutSeconds = serverManager.getRequestTimeoutSeconds();
         this.timeoutHandler = new TimeoutHandler(timeoutSeconds);
         this.timeoutHandler.start();
     }
@@ -83,26 +84,26 @@ public class ApiHandlerRegistry {
             return;
         }
 
-        HttpServer server = serverManager.getServer();
+        final HttpServer server = serverManager.getServer();
         toolDefs.clear();
 
-        Object[] services = {
+        final Object[] services = {
             programService, functionService, namespaceService,
             dataTypeService, analysisService, commentService,
             memoryService, searchService, variableService
         };
 
-        for (Object service : services) {
+        for (final Object service : services) {
             // Walk up the class hierarchy to find @McpTool methods declared in the
             // actual service class.  This is necessary because proxy/mock frameworks
             // (e.g. Mockito ByteBuddy subclasses) override methods without carrying
             // over annotations, so we must scan the declaring superclass directly.
             for (Class<?> clz = service.getClass(); clz != null && clz != Object.class; clz = clz.getSuperclass()) {
-                for (Method method : clz.getDeclaredMethods()) {
-                    McpTool ann = method.getAnnotation(McpTool.class);
+                for (final Method method : clz.getDeclaredMethods()) {
+                    final McpTool ann = method.getAnnotation(McpTool.class);
                     if (ann == null) continue;
                     method.setAccessible(true);
-                    ToolDef def = ToolDef.fromMethod(method, ann);
+                    final ToolDef def = ToolDef.fromMethod(method, ann);
                     toolDefs.add(def);
                     registerEndpoint(server, def.getName(), createHandler(def, method, service));
                 }
@@ -133,41 +134,41 @@ public class ApiHandlerRegistry {
         }
     }
 
-    private HttpHandler wrapWithTelemetryAndTimeout(HttpHandler handler, String toolName, String endpoint) {
-        HttpHandler telemetryHandler = new TelemetryInterceptor(handler, telemetryLogger, toolName, endpoint);
+    private HttpHandler wrapWithTelemetryAndTimeout(final HttpHandler handler, final String toolName, final String endpoint) {
+        final HttpHandler telemetryHandler = new TelemetryInterceptor(handler, telemetryLogger, toolName, endpoint);
         return timeoutHandler.wrap(telemetryHandler);
     }
 
-    private void registerEndpoint(HttpServer server, String toolName, HttpHandler handler) {
-        String endpoint = "/" + toolName;
+    private void registerEndpoint(final HttpServer server, final String toolName, final HttpHandler handler) {
+        final String endpoint = "/" + toolName;
         server.createContext(endpoint, wrapWithTelemetryAndTimeout(handler, toolName, endpoint));
     }
 
     /**
      * Create an HttpHandler from a ToolDef + Method, dispatching params via reflection.
      */
-    private HttpHandler createHandler(ToolDef def, Method method, Object target) {
+    private HttpHandler createHandler(final ToolDef def, final Method method, final Object target) {
         return exchange -> {
             try {
-                java.util.Map<String, Object> params = def.parseParams(exchange);
+                final Map<String, Object> params = def.parseParams(exchange);
                 // Build args array in method parameter order
-                java.lang.reflect.Parameter[] methodParams = method.getParameters();
-                Object[] args = new Object[methodParams.length];
+                final java.lang.reflect.Parameter[] methodParams = method.getParameters();
+                final Object[] args = new Object[methodParams.length];
                 for (int i = 0; i < methodParams.length; i++) {
-                    Param paramAnn = methodParams[i].getAnnotation(Param.class);
+                    final Param paramAnn = methodParams[i].getAnnotation(Param.class);
                     if (paramAnn != null) {
-                        String snakeName = Json.toSnakeCase(methodParams[i].getName());
+                        final String snakeName = Json.toSnakeCase(methodParams[i].getName());
                         args[i] = params.get(snakeName);
                     }
                 }
-                Object rawResult = method.invoke(target, args);
+                final Object rawResult = method.invoke(target, args);
                 if (rawResult instanceof ToolOutput output) {
                     HttpUtils.sendStructuredResponse(exchange, output);
                 } else {
                     HttpUtils.sendResponse(exchange, (String) rawResult);
                 }
             } catch (java.lang.reflect.InvocationTargetException e) {
-                Throwable cause = e.getCause();
+                final Throwable cause = e.getCause();
                 HttpUtils.sendJsonErrorResponse(exchange, 500, "Error: " + (cause != null ? cause.getMessage() : e.getMessage()));
             } catch (Exception e) {
                 HttpUtils.sendJsonErrorResponse(exchange, 500, "Error: " + e.getMessage());
@@ -178,15 +179,15 @@ public class ApiHandlerRegistry {
     /**
      * Register the /mcp/tools endpoint that serves tool definitions as JSON.
      */
-    private void registerMcpToolsEndpoint(HttpServer server) {
+    private void registerMcpToolsEndpoint(final HttpServer server) {
         registerEndpoint(server, "mcp/tools", exchange -> {
-            StringBuilder sb = new StringBuilder("[");
+            final StringBuilder sb = new StringBuilder("[");
             for (int i = 0; i < toolDefs.size(); i++) {
                 if (i > 0) sb.append(",");
                 sb.append(toolDefs.get(i).toToolJson());
             }
             sb.append("]");
-            byte[] bytes = sb.toString().getBytes(StandardCharsets.UTF_8);
+            final byte[] bytes = sb.toString().getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
             exchange.sendResponseHeaders(200, bytes.length);
             try (var os = exchange.getResponseBody()) {
@@ -199,10 +200,10 @@ public class ApiHandlerRegistry {
     // JSON extraction utilities (used by ToolDef.parseParams for complex types)
     // =========================================================================
 
-    static int findUnescapedQuote(String s, int fromIndex) {
+    static int findUnescapedQuote(final String s, final int fromIndex) {
         int i = fromIndex;
         while (i < s.length()) {
-            int q = s.indexOf('"', i);
+            final int q = s.indexOf('"', i);
             if (q < 0) return -1;
             int backslashes = 0;
             int j = q - 1;
@@ -218,13 +219,13 @@ public class ApiHandlerRegistry {
         return -1;
     }
 
-    static String unescapeJsonString(String s) {
+    static String unescapeJsonString(final String s) {
         if (s == null || s.indexOf('\\') < 0) return s;
-        StringBuilder sb = new StringBuilder(s.length());
+        final StringBuilder sb = new StringBuilder(s.length());
         for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
+            final char c = s.charAt(i);
             if (c == '\\' && i + 1 < s.length()) {
-                char next = s.charAt(i + 1);
+                final char next = s.charAt(i + 1);
                 switch (next) {
                     case '"':  sb.append('"');  i++; break;
                     case '\\': sb.append('\\'); i++; break;
@@ -237,7 +238,7 @@ public class ApiHandlerRegistry {
                     case 'u':
                         if (i + 5 < s.length()) {
                             try {
-                                int cp = Integer.parseInt(s.substring(i + 2, i + 6), 16);
+                                final int cp = Integer.parseInt(s.substring(i + 2, i + 6), 16);
                                 sb.append((char) cp);
                                 i += 5;
                             } catch (NumberFormatException e) {
@@ -258,36 +259,36 @@ public class ApiHandlerRegistry {
         return sb.toString();
     }
 
-    static String extractJsonString(String json, String key) {
-        String searchKey = "\"" + key + "\"";
-        int keyIndex = json.indexOf(searchKey);
+    static String extractJsonString(final String json, final String key) {
+        final String searchKey = "\"" + key + "\"";
+        final int keyIndex = json.indexOf(searchKey);
         if (keyIndex < 0) return null;
 
-        int colonIndex = json.indexOf(':', keyIndex + searchKey.length());
+        final int colonIndex = json.indexOf(':', keyIndex + searchKey.length());
         if (colonIndex < 0) return null;
 
-        int quoteStart = json.indexOf('"', colonIndex + 1);
+        final int quoteStart = json.indexOf('"', colonIndex + 1);
         if (quoteStart < 0) return null;
 
-        int quoteEnd = findUnescapedQuote(json, quoteStart + 1);
+        final int quoteEnd = findUnescapedQuote(json, quoteStart + 1);
         if (quoteEnd < 0) return null;
 
         return unescapeJsonString(json.substring(quoteStart + 1, quoteEnd));
     }
 
-    static Integer extractJsonInt(String json, String key) {
-        String searchKey = "\"" + key + "\"";
-        int keyIndex = json.indexOf(searchKey);
+    static Integer extractJsonInt(final String json, final String key) {
+        final String searchKey = "\"" + key + "\"";
+        final int keyIndex = json.indexOf(searchKey);
         if (keyIndex < 0) return null;
 
-        int colonIndex = json.indexOf(':', keyIndex + searchKey.length());
+        final int colonIndex = json.indexOf(':', keyIndex + searchKey.length());
         if (colonIndex < 0) return null;
 
         int numStart = colonIndex + 1;
         while (numStart < json.length() && Character.isWhitespace(json.charAt(numStart))) numStart++;
 
         if (numStart < json.length() && json.charAt(numStart) == '"') {
-            int quoteEnd = json.indexOf('"', numStart + 1);
+            final int quoteEnd = json.indexOf('"', numStart + 1);
             if (quoteEnd < 0) return null;
             try {
                 return Integer.parseInt(json.substring(numStart + 1, quoteEnd));
@@ -310,40 +311,40 @@ public class ApiHandlerRegistry {
         }
     }
 
-    static Map<String, String> extractJsonObject(String json, String key) {
-        String searchKey = "\"" + key + "\"";
-        int keyIndex = json.indexOf(searchKey);
+    static Map<String, String> extractJsonObject(final String json, final String key) {
+        final String searchKey = "\"" + key + "\"";
+        final int keyIndex = json.indexOf(searchKey);
         if (keyIndex < 0) return Map.of();
 
-        int braceStart = json.indexOf('{', keyIndex + searchKey.length());
+        final int braceStart = json.indexOf('{', keyIndex + searchKey.length());
         if (braceStart < 0) return Map.of();
 
         int depth = 1;
         int braceEnd = braceStart + 1;
         while (braceEnd < json.length() && depth > 0) {
-            char c = json.charAt(braceEnd);
+            final char c = json.charAt(braceEnd);
             if (c == '{') depth++;
             else if (c == '}') depth--;
             braceEnd++;
         }
 
-        String inner = json.substring(braceStart + 1, braceEnd - 1).trim();
+        final String inner = json.substring(braceStart + 1, braceEnd - 1).trim();
         if (inner.isEmpty()) return Map.of();
 
-        Map<String, String> result = new java.util.LinkedHashMap<>();
+        final Map<String, String> result = new LinkedHashMap<>();
         int i = 0;
         while (i < inner.length()) {
-            int qs1 = inner.indexOf('"', i);
+            final int qs1 = inner.indexOf('"', i);
             if (qs1 < 0) break;
-            int qe1 = findUnescapedQuote(inner, qs1 + 1);
+            final int qe1 = findUnescapedQuote(inner, qs1 + 1);
             if (qe1 < 0) break;
-            String k = unescapeJsonString(inner.substring(qs1 + 1, qe1));
+            final String k = unescapeJsonString(inner.substring(qs1 + 1, qe1));
 
-            int qs2 = inner.indexOf('"', qe1 + 1);
+            final int qs2 = inner.indexOf('"', qe1 + 1);
             if (qs2 < 0) break;
-            int qe2 = findUnescapedQuote(inner, qs2 + 1);
+            final int qe2 = findUnescapedQuote(inner, qs2 + 1);
             if (qe2 < 0) break;
-            String v = unescapeJsonString(inner.substring(qs2 + 1, qe2));
+            final String v = unescapeJsonString(inner.substring(qs2 + 1, qe2));
 
             result.put(k, v);
             i = qe2 + 1;
@@ -351,19 +352,20 @@ public class ApiHandlerRegistry {
         return result;
     }
 
-    static java.util.List<String[]> extractJsonArrayOfPairs(String json, String key) {
-        String searchKey = "\"" + key + "\"";
-        int keyIndex = json.indexOf(searchKey);
+    @SuppressWarnings("PMD.ReturnEmptyCollectionRatherThanNull")
+    static List<String[]> extractJsonArrayOfPairs(final String json, final String key) {
+        final String searchKey = "\"" + key + "\"";
+        final int keyIndex = json.indexOf(searchKey);
         if (keyIndex < 0) return null;
 
-        int bracketStart = json.indexOf('[', keyIndex + searchKey.length());
+        final int bracketStart = json.indexOf('[', keyIndex + searchKey.length());
         if (bracketStart < 0) return null;
 
         int depth = 1;
         int bracketEnd = bracketStart + 1;
         boolean inQuote = false;
         while (bracketEnd < json.length() && depth > 0) {
-            char c = json.charAt(bracketEnd);
+            final char c = json.charAt(bracketEnd);
             if (c == '"' && (bracketEnd == 0 || json.charAt(bracketEnd - 1) != '\\')) {
                 inQuote = !inQuote;
             } else if (!inQuote) {
@@ -373,10 +375,10 @@ public class ApiHandlerRegistry {
             bracketEnd++;
         }
 
-        String inner = json.substring(bracketStart + 1, bracketEnd - 1).trim();
-        if (inner.isEmpty()) return java.util.List.of();
+        final String inner = json.substring(bracketStart + 1, bracketEnd - 1).trim();
+        if (inner.isEmpty()) return List.of();
 
-        java.util.List<String[]> result = new java.util.ArrayList<>();
+        final List<String[]> result = new ArrayList<>();
         int i = 0;
         while (i < inner.length()) {
             int arrStart = -1;
@@ -389,7 +391,7 @@ public class ApiHandlerRegistry {
             int arrEnd = arrStart + 1;
             boolean arrInQuote = false;
             while (arrEnd < inner.length() && arrDepth > 0) {
-                char c = inner.charAt(arrEnd);
+                final char c = inner.charAt(arrEnd);
                 if (c == '"' && (arrEnd == 0 || inner.charAt(arrEnd - 1) != '\\')) {
                     arrInQuote = !arrInQuote;
                 } else if (!arrInQuote) {
@@ -399,14 +401,14 @@ public class ApiHandlerRegistry {
                 arrEnd++;
             }
 
-            String pair = inner.substring(arrStart + 1, arrEnd - 1);
-            int qs1 = pair.indexOf('"');
+            final String pair = inner.substring(arrStart + 1, arrEnd - 1);
+            final int qs1 = pair.indexOf('"');
             if (qs1 < 0) { i = arrEnd; continue; }
-            int qe1 = findUnescapedQuote(pair, qs1 + 1);
+            final int qe1 = findUnescapedQuote(pair, qs1 + 1);
             if (qe1 < 0) { i = arrEnd; continue; }
-            int qs2 = pair.indexOf('"', qe1 + 1);
+            final int qs2 = pair.indexOf('"', qe1 + 1);
             if (qs2 < 0) { i = arrEnd; continue; }
-            int qe2 = findUnescapedQuote(pair, qs2 + 1);
+            final int qe2 = findUnescapedQuote(pair, qs2 + 1);
             if (qe2 < 0) { i = arrEnd; continue; }
 
             result.add(new String[]{unescapeJsonString(pair.substring(qs1 + 1, qe1)), unescapeJsonString(pair.substring(qs2 + 1, qe2))});
@@ -415,36 +417,36 @@ public class ApiHandlerRegistry {
         return result;
     }
 
-    static java.util.Map<String, Long> extractJsonLongObject(String json, String key) {
-        String searchKey = "\"" + key + "\"";
-        int keyIndex = json.indexOf(searchKey);
+    static Map<String, Long> extractJsonLongObject(final String json, final String key) {
+        final String searchKey = "\"" + key + "\"";
+        final int keyIndex = json.indexOf(searchKey);
         if (keyIndex < 0) return Map.of();
 
-        int braceStart = json.indexOf('{', keyIndex + searchKey.length());
+        final int braceStart = json.indexOf('{', keyIndex + searchKey.length());
         if (braceStart < 0) return Map.of();
 
         int depth = 1;
         int braceEnd = braceStart + 1;
         while (braceEnd < json.length() && depth > 0) {
-            char c = json.charAt(braceEnd);
+            final char c = json.charAt(braceEnd);
             if (c == '{') depth++;
             else if (c == '}') depth--;
             braceEnd++;
         }
 
-        String inner = json.substring(braceStart + 1, braceEnd - 1).trim();
-        if (inner.isEmpty()) return java.util.Map.of();
+        final String inner = json.substring(braceStart + 1, braceEnd - 1).trim();
+        if (inner.isEmpty()) return Map.of();
 
-        java.util.Map<String, Long> result = new java.util.LinkedHashMap<>();
+        final Map<String, Long> result = new LinkedHashMap<>();
         int i = 0;
         while (i < inner.length()) {
-            int qs1 = inner.indexOf('"', i);
+            final int qs1 = inner.indexOf('"', i);
             if (qs1 < 0) break;
-            int qe1 = findUnescapedQuote(inner, qs1 + 1);
+            final int qe1 = findUnescapedQuote(inner, qs1 + 1);
             if (qe1 < 0) break;
-            String k = unescapeJsonString(inner.substring(qs1 + 1, qe1));
+            final String k = unescapeJsonString(inner.substring(qs1 + 1, qe1));
 
-            int colonIdx = inner.indexOf(':', qe1 + 1);
+            final int colonIdx = inner.indexOf(':', qe1 + 1);
             if (colonIdx < 0) break;
 
             int numStart = colonIdx + 1;
@@ -459,7 +461,7 @@ public class ApiHandlerRegistry {
                 numEnd++;
             }
 
-            String numStr = inner.substring(numStart, numEnd).trim();
+            final String numStr = inner.substring(numStart, numEnd).trim();
             try {
                 long value;
                 if (numStr.startsWith("0x") || numStr.startsWith("0X")) {

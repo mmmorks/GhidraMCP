@@ -21,7 +21,7 @@ public class TelemetryInterceptor implements HttpHandler {
     private final String toolName;
     private final String endpoint;
     
-    public TelemetryInterceptor(HttpHandler handler, TelemetryLogger logger, String toolName, String endpoint) {
+    public TelemetryInterceptor(final HttpHandler handler, final TelemetryLogger logger, final String toolName, final String endpoint) {
         this.wrappedHandler = handler;
         this.telemetryLogger = logger;
         this.toolName = toolName;
@@ -29,9 +29,9 @@ public class TelemetryInterceptor implements HttpHandler {
     }
     
     @Override
-    public void handle(HttpExchange exchange) throws IOException {
-        long startTime = System.currentTimeMillis();
-        Map<String, Object> parameters = new HashMap<>();
+    public void handle(final HttpExchange exchange) throws IOException {
+        final long startTime = System.currentTimeMillis();
+        final Map<String, Object> parameters = new HashMap<>();
         String errorType = null;
         String errorMessage = null;
         boolean success = false;
@@ -52,14 +52,14 @@ public class TelemetryInterceptor implements HttpHandler {
             telemetryLogger.logToolStart(toolName, endpoint, parameters);
             
             // Create a wrapper for the response to capture output
-            HttpExchangeWrapper wrapper = new HttpExchangeWrapper(exchange, requestBodyBytes);
+            final HttpExchangeWrapper wrapper = new HttpExchangeWrapper(exchange, requestBodyBytes);
             
             // Execute the actual handler
             wrappedHandler.handle(wrapper);
             
             // Capture response
             responseBody = wrapper.getCapturedResponseBody();
-            int responseCode = wrapper.getCapturedResponseCode();
+            final int responseCode = wrapper.getCapturedResponseCode();
             
             // Determine success based on HTTP status code
             success = responseCode >= 200 && responseCode < 300;
@@ -78,23 +78,23 @@ public class TelemetryInterceptor implements HttpHandler {
         } finally {
             // Log the result
             if (success) {
-                Map<String, Object> metadata = new HashMap<>();
+                final Map<String, Object> metadata = new HashMap<>();
                 metadata.put("responseLength", responseBody.length());
                 telemetryLogger.logToolSuccess(toolName, endpoint, startTime, responseBody, metadata);
             } else {
-                Map<String, Object> context = new HashMap<>();
+                final Map<String, Object> context = new HashMap<>();
                 context.put("parameters", parameters);
                 telemetryLogger.logToolFailure(toolName, endpoint, startTime, errorType, errorMessage, context);
             }
         }
     }
     
-    private Map<String, Object> parseQueryParams(HttpExchange exchange) {
-        Map<String, Object> params = new HashMap<>();
-        String query = exchange.getRequestURI().getQuery();
+    private Map<String, Object> parseQueryParams(final HttpExchange exchange) {
+        final Map<String, Object> params = new HashMap<>();
+        final String query = exchange.getRequestURI().getQuery();
         if (query != null) {
-            for (String param : query.split("&")) {
-                String[] pair = param.split("=", 2);
+            for (final String param : query.split("&")) {
+                final String[] pair = param.split("=", 2);
                 if (pair.length == 2) {
                     params.put(pair[0], pair[1]);
                 }
@@ -103,22 +103,22 @@ public class TelemetryInterceptor implements HttpHandler {
         return params;
     }
     
-    private Map<String, Object> parsePostParams(String contentType, byte[] bodyBytes) throws IOException {
-        Map<String, Object> params = new HashMap<>();
+    private Map<String, Object> parsePostParams(final String contentType, final byte[] bodyBytes) throws IOException {
+        final Map<String, Object> params = new HashMap<>();
         if (bodyBytes == null) return params;
 
-        String body = new String(bodyBytes, StandardCharsets.UTF_8).trim();
+        final String body = new String(bodyBytes, StandardCharsets.UTF_8).trim();
 
         // Handle JSON content type or auto-detect JSON body
         if ((contentType != null && contentType.contains("application/json")) || body.startsWith("{")) {
-            Map<String, String> jsonParams = com.lauriewired.mcp.utils.HttpUtils.parseJsonBody(body);
+            final Map<String, String> jsonParams = com.lauriewired.mcp.utils.HttpUtils.parseJsonBody(body);
             params.putAll(jsonParams);
             return params;
         }
 
         if (contentType != null && contentType.contains("application/x-www-form-urlencoded")) {
-            for (String param : body.split("&")) {
-                String[] pair = param.split("=", 2);
+            for (final String param : body.split("&")) {
+                final String[] pair = param.split("=", 2);
                 if (pair.length == 2) {
                     params.put(pair[0], java.net.URLDecoder.decode(pair[1], "UTF-8"));
                 }
@@ -138,14 +138,14 @@ public class TelemetryInterceptor implements HttpHandler {
         private OutputStream originalOutput;
         private int responseCode = 200;
         
-        public HttpExchangeWrapper(HttpExchange exchange, byte[] requestBodyBytes) {
+        public HttpExchangeWrapper(final HttpExchange exchange, final byte[] requestBodyBytes) {
             this.wrapped = exchange;
             this.responseCapture = new ByteArrayOutputStream();
             this.bufferedRequestBody = requestBodyBytes;
         }
         
         @Override
-        public void sendResponseHeaders(int rCode, long responseLength) throws IOException {
+        public void sendResponseHeaders(final int rCode, final long responseLength) throws IOException {
             this.responseCode = rCode;
             wrapped.sendResponseHeaders(rCode, responseLength);
         }
@@ -228,17 +228,17 @@ public class TelemetryInterceptor implements HttpHandler {
         }
         
         @Override
-        public Object getAttribute(String name) {
+        public Object getAttribute(final String name) {
             return wrapped.getAttribute(name);
         }
         
         @Override
-        public void setAttribute(String name, Object value) {
+        public void setAttribute(final String name, final Object value) {
             wrapped.setAttribute(name, value);
         }
         
         @Override
-        public void setStreams(InputStream i, OutputStream o) {
+        public void setStreams(final InputStream i, final OutputStream o) {
             wrapped.setStreams(i, o);
         }
         
@@ -255,19 +255,19 @@ public class TelemetryInterceptor implements HttpHandler {
         private final OutputStream out1;
         private final OutputStream out2;
         
-        public TeeOutputStream(OutputStream out1, OutputStream out2) {
+        public TeeOutputStream(final OutputStream out1, final OutputStream out2) {
             this.out1 = out1;
             this.out2 = out2;
         }
         
         @Override
-        public void write(int b) throws IOException {
+        public void write(final int b) throws IOException {
             out1.write(b);
             out2.write(b);
         }
         
         @Override
-        public void write(byte[] b, int off, int len) throws IOException {
+        public void write(final byte[] b, final int off, final int len) throws IOException {
             out1.write(b, off, len);
             out2.write(b, off, len);
         }

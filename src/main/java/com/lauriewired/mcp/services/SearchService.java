@@ -48,7 +48,7 @@ public class SearchService {
      *
      * @param programService the program service for accessing the current program
      */
-    public SearchService(ProgramService programService) {
+    public SearchService(final ProgramService programService) {
         this.programService = programService;
     }
 
@@ -61,30 +61,30 @@ public class SearchService {
 
         Example: search_memory("Password", True) -> matches of "Password" string in memory """)
     public ToolOutput searchMemory(
-            @Param("The pattern to search for (string or hex bytes like \"00 FF 32\")") String query,
-            @Param(value = "True to search for UTF-8 string, False to search for hex bytes", defaultValue = "true") boolean asString,
-            @Param(value = "Optional memory block name to restrict search", defaultValue = "") String blockName,
-            @Param(value = "Maximum number of results to return", defaultValue = "10") int limit) {
-        Program program = programService.getCurrentProgram();
+            @Param("The pattern to search for (string or hex bytes like \"00 FF 32\")") final String query,
+            @Param(value = "True to search for UTF-8 string, False to search for hex bytes", defaultValue = "true") final boolean asString,
+            @Param(value = "Optional memory block name to restrict search", defaultValue = "") final String blockName,
+            @Param(value = "Maximum number of results to return", defaultValue = "10") final int limit) {
+        final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
         if (query == null || query.isEmpty()) return StatusOutput.error("Search query is required");
 
-        List<SearchMemoryResult.MemoryMatch> results = new ArrayList<>();
-        Memory memory = program.getMemory();
+        final List<SearchMemoryResult.MemoryMatch> results = new ArrayList<>();
+        final Memory memory = program.getMemory();
 
         try {
             // Create a byte matcher based on the input type
-            ByteMatcher matcher;
-            int patternLength;
+            final ByteMatcher matcher;
+            final int patternLength;
 
             if (asString) {
                 final byte[] searchPattern = query.getBytes(StandardCharsets.UTF_8);
-                SearchSettings settings = new SearchSettings()
+                final SearchSettings settings = new SearchSettings()
                     .withSearchFormat(SearchFormat.STRING);
                 matcher = new ByteMatcher(query, settings) {
                     @Override
-                    public Iterable<ByteMatcher.ByteMatch> match(ExtendedByteSequence ebs) {
-                        List<ByteMatch> matches = new ArrayList<>();
+                    public Iterable<ByteMatcher.ByteMatch> match(final ExtendedByteSequence ebs) {
+                        final List<ByteMatch> matches = new ArrayList<>();
 
                         // Skip if sequence is shorter than the pattern
                         if (ebs.getLength() < searchPattern.length) {
@@ -123,9 +123,9 @@ public class SearchService {
                 patternLength = query.getBytes(StandardCharsets.UTF_8).length;
             } else {
                 // Parse hex strings for byte pattern searches
-                String[] byteStrings = query.split("\\s+");
-                byte[] bytePattern = new byte[byteStrings.length];
-                boolean[] wildcardMask = new boolean[byteStrings.length];
+                final String[] byteStrings = query.split("\\s+");
+                final byte[] bytePattern = new byte[byteStrings.length];
+                final boolean[] wildcardMask = new boolean[byteStrings.length];
 
                 for (int i = 0; i < byteStrings.length; i++) {
                     if (byteStrings[i].equals("??")) {
@@ -140,12 +140,12 @@ public class SearchService {
                 // Create a byte matcher for hex pattern
                 final byte[] pattern = bytePattern;
                 final boolean[] mask = wildcardMask;
-                SearchSettings settings = new SearchSettings()
+                final SearchSettings settings = new SearchSettings()
                     .withSearchFormat(SearchFormat.HEX);
                 matcher = new ByteMatcher(query, settings) {
                     @Override
-                    public Iterable<ByteMatcher.ByteMatch> match(ExtendedByteSequence ebs) {
-                        List<ByteMatch> matches = new ArrayList<>();
+                    public Iterable<ByteMatcher.ByteMatch> match(final ExtendedByteSequence ebs) {
+                        final List<ByteMatch> matches = new ArrayList<>();
 
                         // Skip if sequence is shorter than the pattern
                         if (ebs.getLength() < pattern.length) {
@@ -190,16 +190,16 @@ public class SearchService {
             }
 
             // Define the search area
-            AddressSet searchSet = new AddressSet();
+            final AddressSet searchSet = new AddressSet();
             if (blockName != null && !blockName.isEmpty()) {
-                MemoryBlock block = memory.getBlock(blockName);
+                final MemoryBlock block = memory.getBlock(blockName);
                 if (block == null) {
                     return StatusOutput.error("Memory block not found: " + blockName);
                 }
                 searchSet.add(block.getStart(), block.getEnd());
             } else {
                 // Search all initialized memory if no block specified
-                for (MemoryBlock block : memory.getBlocks()) {
+                for (final MemoryBlock block : memory.getBlocks()) {
                     if (block.isInitialized()) {
                         searchSet.add(block.getStart(), block.getEnd());
                     }
@@ -207,26 +207,26 @@ public class SearchService {
             }
 
             // Create a program byte source for the memory search
-            ProgramByteSource byteSource = new ProgramByteSource(program);
+            final ProgramByteSource byteSource = new ProgramByteSource(program);
 
             // Create a memory searcher with the proper parameters
-            MemorySearcher searcher = new MemorySearcher(byteSource, matcher, searchSet, limit);
+            final MemorySearcher searcher = new MemorySearcher(byteSource, matcher, searchSet, limit);
 
             // Perform the search
-            List<Address> matches = new ArrayList<>();
+            final List<Address> matches = new ArrayList<>();
             int count = 0;
             MemoryMatch memMatch;
 
             Address startAddr = searchSet.getMinAddress();
             while ((memMatch = searcher.findNext(startAddr, TaskMonitor.DUMMY)) != null && count < limit) {
-                Address matchAddress = memMatch.getAddress();
+                final Address matchAddress = memMatch.getAddress();
                 matches.add(matchAddress);
                 startAddr = matchAddress.next();
                 count++;
             }
 
             // Format results
-            for (Address matchAddr : matches) {
+            for (final Address matchAddr : matches) {
                 results.add(formatMemoryMatch(program, memory, matchAddr, patternLength));
             }
 
@@ -244,25 +244,25 @@ public class SearchService {
     /**
      * Format a memory match as a record
      */
-    private SearchMemoryResult.MemoryMatch formatMemoryMatch(Program program, Memory memory, Address matchAddr, int matchLength) {
-        MemoryBlock block = memory.getBlock(matchAddr);
-        String blockNameStr = block != null ? block.getName() : null;
+    private SearchMemoryResult.MemoryMatch formatMemoryMatch(final Program program, final Memory memory, final Address matchAddr, final int matchLength) {
+        final MemoryBlock block = memory.getBlock(matchAddr);
+        final String blockNameStr = block != null ? block.getName() : null;
 
-        ghidra.program.model.symbol.Symbol sym = program.getSymbolTable().getPrimarySymbol(matchAddr);
-        String label = sym != null ? sym.getName() : null;
+        final ghidra.program.model.symbol.Symbol sym = program.getSymbolTable().getPrimarySymbol(matchAddr);
+        final String label = sym != null ? sym.getName() : null;
 
         // Build hex context
-        StringBuilder context = new StringBuilder();
-        int contextSize = 16;
+        final StringBuilder context = new StringBuilder();
+        final int contextSize = 16;
         Address startContextAddr = matchAddr.subtract(contextSize);
         Address endContextAddr = matchAddr.add(matchLength + contextSize - 1);
         if (block != null) {
             if (startContextAddr.compareTo(block.getStart()) < 0) startContextAddr = block.getStart();
             if (endContextAddr.compareTo(block.getEnd()) > 0) endContextAddr = block.getEnd();
         }
-        int totalBytes = (int) endContextAddr.subtract(startContextAddr) + 1;
+        final int totalBytes = (int) endContextAddr.subtract(startContextAddr) + 1;
         if (totalBytes > 0) {
-            byte[] bytes = new byte[totalBytes];
+            final byte[] bytes = new byte[totalBytes];
             try {
                 memory.getBytes(startContextAddr, bytes, 0, bytes.length);
                 for (int i = 0; i < bytes.length; i++) {
@@ -287,23 +287,23 @@ public class SearchService {
 
         Example: search_disassembly("mov.*eax") -> finds MOV instructions using EAX register """)
     public ToolOutput searchDisassembly(
-            @Param("Regex pattern to search for in assembly instructions") String query,
+            @Param("Regex pattern to search for in assembly instructions") final String query,
             @Param(value = "Starting index for pagination", defaultValue = "0") int offset,
-            @Param(value = "Maximum number of results to return", defaultValue = "10") int limit) {
-        Program program = programService.getCurrentProgram();
+            @Param(value = "Maximum number of results to return", defaultValue = "10") final int limit) {
+        final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
         if (query == null || query.isEmpty()) return StatusOutput.error("Search query is required");
 
-        Pattern pattern;
+        final Pattern pattern;
         try {
             pattern = Pattern.compile(query, Pattern.CASE_INSENSITIVE);
         } catch (Exception e) {
             return StatusOutput.error("Invalid regex pattern: " + e.getMessage());
         }
 
-        Memory memory = program.getMemory();
-        List<MemoryBlock> codeBlocks = new ArrayList<>();
-        for (MemoryBlock block : memory.getBlocks()) {
+        final Memory memory = program.getMemory();
+        final List<MemoryBlock> codeBlocks = new ArrayList<>();
+        for (final MemoryBlock block : memory.getBlocks()) {
             if (block.isExecute()) codeBlocks.add(block);
         }
 
@@ -311,40 +311,40 @@ public class SearchService {
             return StatusOutput.error("No executable code blocks found in program");
         }
 
-        List<SearchDisassemblyResult.DisasmMatch> matches = new ArrayList<>();
+        final List<SearchDisassemblyResult.DisasmMatch> matches = new ArrayList<>();
         int resultCount = 0;
 
-        for (MemoryBlock block : codeBlocks) {
+        for (final MemoryBlock block : codeBlocks) {
             if (resultCount >= limit) break;
 
-            Address start = block.getStart();
-            Address end = block.getEnd();
-            InstructionIterator instructions = program.getListing().getInstructions(start, true);
+            final Address start = block.getStart();
+            final Address end = block.getEnd();
+            final InstructionIterator instructions = program.getListing().getInstructions(start, true);
 
             while (instructions.hasNext() && resultCount < limit) {
-                Instruction instr = instructions.next();
+                final Instruction instr = instructions.next();
                 if (instr.getAddress().compareTo(end) > 0) break;
 
-                String instrText = instr.getAddress() + ": " + instr.toString();
-                Matcher matcher = pattern.matcher(instrText);
+                final String instrText = instr.getAddress() + ": " + instr.toString();
+                final Matcher matcher = pattern.matcher(instrText);
                 if (matcher.find()) {
-                    Function function = program.getFunctionManager().getFunctionContaining(instr.getAddress());
+                    final Function function = program.getFunctionManager().getFunctionContaining(instr.getAddress());
 
                     // Build context lines
-                    List<SearchDisassemblyResult.ContextLine> contextLines = new ArrayList<>();
+                    final List<SearchDisassemblyResult.ContextLine> contextLines = new ArrayList<>();
 
                     // Before context
-                    int contextLineCount = 3;
+                    final int contextLineCount = 3;
                     Address contextStart = instr.getAddress();
-                    List<Instruction> beforeCtx = new ArrayList<>();
+                    final List<Instruction> beforeCtx = new ArrayList<>();
                     for (int i = 0; i < contextLineCount; i++) {
                         contextStart = contextStart.previous();
                         if (contextStart == null) break;
-                        Instruction prevInstr = program.getListing().getInstructionAt(contextStart);
+                        final Instruction prevInstr = program.getListing().getInstructionAt(contextStart);
                         if (prevInstr == null) break;
                         beforeCtx.add(0, prevInstr);
                     }
-                    for (Instruction ctx : beforeCtx) {
+                    for (final Instruction ctx : beforeCtx) {
                         contextLines.add(new SearchDisassemblyResult.ContextLine(
                                 ctx.getAddress().toString(), ctx.toString(), false));
                     }
@@ -358,7 +358,7 @@ public class SearchService {
                     for (int i = 0; i < contextLineCount; i++) {
                         afterAddr = afterAddr.next();
                         if (afterAddr == null) break;
-                        Instruction afterInstr = program.getListing().getInstructionAt(afterAddr);
+                        final Instruction afterInstr = program.getListing().getInstructionAt(afterAddr);
                         if (afterInstr == null) break;
                         contextLines.add(new SearchDisassemblyResult.ContextLine(
                                 afterInstr.getAddress().toString(), afterInstr.toString(), false));
@@ -392,47 +392,47 @@ public class SearchService {
 
         Example: search_decompiled("malloc\\\\(.*\\\\)") -> finds malloc calls in decompiled code """)
     public ToolOutput searchDecompiled(
-            @Param("Regex pattern to search for in decompiled code") String query,
+            @Param("Regex pattern to search for in decompiled code") final String query,
             @Param(value = "Starting index for pagination", defaultValue = "0") int offset,
-            @Param(value = "Maximum number of functions to search/return", defaultValue = "5") int limit) {
-        Program program = programService.getCurrentProgram();
+            @Param(value = "Maximum number of functions to search/return", defaultValue = "5") final int limit) {
+        final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
         if (query == null || query.isEmpty()) return StatusOutput.error("Search query is required");
 
-        Pattern pattern;
+        final Pattern pattern;
         try {
             pattern = Pattern.compile(query, Pattern.CASE_INSENSITIVE);
         } catch (Exception e) {
             return StatusOutput.error("Invalid regex pattern: " + e.getMessage());
         }
 
-        List<SearchDecompiledResult.DecompiledMatch> matches = new ArrayList<>();
-        FunctionManager functionManager = program.getFunctionManager();
-        DecompInterface decomp = new DecompInterface();
+        final List<SearchDecompiledResult.DecompiledMatch> matches = new ArrayList<>();
+        final FunctionManager functionManager = program.getFunctionManager();
+        final DecompInterface decomp = new DecompInterface();
         decomp.openProgram(program);
 
         int resultCount = 0;
         int processedCount = 0;
 
-        for (Function function : functionManager.getFunctions(true)) {
+        for (final Function function : functionManager.getFunctions(true)) {
             processedCount++;
             if (resultCount >= limit) break;
 
-            DecompileResults decompileResults = decomp.decompileFunction(function, 30, TaskMonitor.DUMMY);
+            final DecompileResults decompileResults = decomp.decompileFunction(function, 30, TaskMonitor.DUMMY);
             if (decompileResults == null || !decompileResults.decompileCompleted()) continue;
 
-            String decompiled = decompileResults.getDecompiledFunction().getC();
-            Matcher matcher = pattern.matcher(decompiled);
+            final String decompiled = decompileResults.getDecompiledFunction().getC();
+            final Matcher matcher = pattern.matcher(decompiled);
 
             if (matcher.find()) {
-                String[] lines = decompiled.split("\n");
+                final String[] lines = decompiled.split("\n");
 
                 // Find matching lines and build context
                 for (int i = 0; i < lines.length; i++) {
                     if (pattern.matcher(lines[i]).find()) {
-                        List<String> contextLines = new ArrayList<>();
-                        int startCtx = Math.max(0, i - 3);
-                        int endCtx = Math.min(lines.length - 1, i + 3);
+                        final List<String> contextLines = new ArrayList<>();
+                        final int startCtx = Math.max(0, i - 3);
+                        final int endCtx = Math.min(lines.length - 1, i + 3);
                         for (int j = startCtx; j <= endCtx; j++) {
                             contextLines.add(lines[j]);
                         }

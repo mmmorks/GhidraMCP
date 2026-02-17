@@ -16,7 +16,7 @@ public record SplitVariableResult(
 
     @Override
     public String toDisplayText() {
-        StringBuilder sb = new StringBuilder();
+        final StringBuilder sb = new StringBuilder();
         sb.append(status).append("\n");
         sb.append("  Original: ").append(originalVariable).append("\n");
         sb.append("  New: ").append(newVariable).append("\n");
@@ -26,7 +26,7 @@ public record SplitVariableResult(
 
         if (variables != null && !variables.isEmpty()) {
             sb.append("\nVariables:\n");
-            for (VarInfo v : variables) {
+            for (final VarInfo v : variables) {
                 sb.append("  ").append(v.name()).append(": ").append(v.dataType());
                 if (v.storage() != null) {
                     sb.append(" (").append(v.storage()).append(")");

@@ -7,7 +7,7 @@ public record CommentResult(String address, Comments comments) implements Displa
 
     @Override
     public String toDisplayText() {
-        StringBuilder sb = new StringBuilder();
+        final StringBuilder sb = new StringBuilder();
         sb.append("Comments at ").append(address).append(":\n");
 
         boolean hasComments = false;
