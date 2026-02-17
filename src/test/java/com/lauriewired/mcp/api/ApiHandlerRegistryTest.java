@@ -131,7 +131,7 @@ class ApiHandlerRegistryTest {
         // Function endpoints
         verify(mockHttpServer).createContext(eq("/list_functions"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/get_function_code"), any(HttpHandler.class));
-        verify(mockHttpServer).createContext(eq("/rename_function"), any(HttpHandler.class));
+        verify(mockHttpServer).createContext(eq("/rename_functions"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/get_function_by_address"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/get_current_address"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/get_current_function"), any(HttpHandler.class));
@@ -429,7 +429,7 @@ class ApiHandlerRegistryTest {
 
         // These tools should be POST
         var postTools = java.util.Set.of(
-            "rename_function", "set_function_prototype",
+            "rename_functions", "set_function_prototype",
             "rename_data", "set_address_data_type",
             "set_comment",
             "rename_variables", "split_variable", "set_variable_types",

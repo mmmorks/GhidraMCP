@@ -199,36 +199,36 @@ public class FunctionServiceTest {
         verify(mockFunctionManager).getFunctions(true);
     }
     
-    // ===== Happy path tests for renameFunction =====
+    // ===== Tests for renameFunctions =====
 
     @Test
-    @DisplayName("renameFunction returns error when no program is loaded")
-    void testRenameFunction_NoProgram() {
+    @DisplayName("renameFunctions returns error when no program is loaded")
+    void testRenameFunctions_NoProgram() {
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
         when(mockProgramManager.getCurrentProgram()).thenReturn(null);
 
-        String result = functionService.renameFunction("oldName", "newName").toStructuredJson();
+        String result = functionService.renameFunctions(java.util.Map.of("oldName", "newName")).toStructuredJson();
         assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
-    @DisplayName("renameFunction returns error for null identifier")
-    void testRenameFunction_NullIdentifier() {
+    @DisplayName("renameFunctions returns error for null map")
+    void testRenameFunctions_NullMap() {
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
         when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
 
-        String result = functionService.renameFunction(null, "newName").toStructuredJson();
-        assertTrue(result.contains("\"message\":\"Function identifier is required\""));
+        String result = functionService.renameFunctions(null).toStructuredJson();
+        assertTrue(result.contains("\"message\":\"No renames specified\""));
     }
 
     @Test
-    @DisplayName("renameFunction returns error for null new name")
-    void testRenameFunction_NullNewName() {
+    @DisplayName("renameFunctions returns error for empty map")
+    void testRenameFunctions_EmptyMap() {
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
         when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
 
-        String result = functionService.renameFunction("oldName", null).toStructuredJson();
-        assertTrue(result.contains("\"message\":\"New name is required\""));
+        String result = functionService.renameFunctions(java.util.Map.of()).toStructuredJson();
+        assertTrue(result.contains("\"message\":\"No renames specified\""));
     }
     
     // ===== Tests for getFunctionCode modes =====

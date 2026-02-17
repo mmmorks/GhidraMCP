@@ -2,7 +2,9 @@ package com.lauriewired.mcp.services;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import com.lauriewired.mcp.api.McpTool;
 import com.lauriewired.mcp.api.Param;
@@ -16,6 +18,7 @@ import com.lauriewired.mcp.model.response.FunctionByAddressResult;
 import com.lauriewired.mcp.model.response.FunctionCodeResult;
 import com.lauriewired.mcp.model.response.FunctionItem;
 import com.lauriewired.mcp.model.response.FunctionSearchItem;
+import com.lauriewired.mcp.model.response.RenameFunctionsResult;
 import com.lauriewired.mcp.utils.GhidraUtils;
 import com.lauriewired.mcp.utils.ProgramTransaction;
 
@@ -210,41 +213,50 @@ public class FunctionService {
     }
 
     @McpTool(post = true, description = """
-        Rename a function identified by name or address.
+        Rename functions in a single atomic transaction.
 
-        Resolves the target function flexibly: pass a current function name
-        (e.g., "FUN_00401000") or an address (e.g., "00401000", "ram:00401000").
+        Accepts a map of current function identifiers to new names. Each key can be
+        a function name (e.g., "FUN_00401000") or address (e.g., "00401000").
+        All functions are validated before any renames are applied (all-or-nothing).
 
-        Returns: Success or failure message
+        Returns: Structured result with renamed pairs and count
 
         Note: Function names must be unique within the program.
 
-        Examples:
-            rename_function("FUN_00401000", "initialize_system")
-            rename_function("00401000", "initialize_system")
-            rename_function("main", "entry_point") """,
-        outputType = StatusOutput.class, responseType = StatusOutput.class)
-    public ToolOutput renameFunction(
-            @Param("Current function name or address") final String functionIdentifier,
-            @Param("New function name to assign") final String newName) {
+        Example: rename_functions({"FUN_00401000": "initialize_system", "main": "entry_point"}) """,
+        outputType = JsonOutput.class, responseType = RenameFunctionsResult.class)
+    public ToolOutput renameFunctions(
+            @Param("Map of current function names/addresses to new names") final Map<String, String> renames) {
         final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
-        if (functionIdentifier == null || functionIdentifier.isEmpty()) return StatusOutput.error("Function identifier is required");
-        if (newName == null || newName.isEmpty()) return StatusOutput.error("New name is required");
+        if (renames == null || renames.isEmpty()) return StatusOutput.error("No renames specified");
 
-        final Function func = resolveFunction(program, functionIdentifier);
-        if (func == null) {
-            return StatusOutput.error("Function not found: " + functionIdentifier);
+        // Pre-validate: resolve all functions before starting transaction
+        final Map<Function, String> resolved = new LinkedHashMap<>();
+        for (final var entry : renames.entrySet()) {
+            final Function func = resolveFunction(program, entry.getKey());
+            if (func == null) {
+                return StatusOutput.error("Function not found: " + entry.getKey());
+            }
+            resolved.put(func, entry.getValue());
         }
 
-        try (var tx = ProgramTransaction.start(program, "Rename function")) {
-            final String oldName = func.getName();
-            func.setName(newName, SourceType.USER_DEFINED);
+        try (var tx = ProgramTransaction.start(program, "Rename functions")) {
+            final Map<String, String> renamed = new LinkedHashMap<>();
+
+            for (final var entry : resolved.entrySet()) {
+                final Function func = entry.getKey();
+                final String newName = entry.getValue();
+                final String oldName = func.getName();
+                func.setName(newName, SourceType.USER_DEFINED);
+                renamed.put(oldName, newName);
+            }
+
             tx.commit();
-            return StatusOutput.ok("Renamed '" + oldName + "' to '" + newName + "' at " + func.getEntryPoint());
+            return new JsonOutput(new RenameFunctionsResult("Renamed successfully", renamed, renamed.size()));
         } catch (InvalidInputException | DuplicateNameException | RuntimeException e) {
-            Msg.error(this, "Error renaming function", e);
-            return StatusOutput.error("Failed to rename function: " + e.getMessage());
+            Msg.error(this, "Error renaming functions", e);
+            return StatusOutput.error("Failed to rename functions: " + e.getMessage());
         }
     }
 
