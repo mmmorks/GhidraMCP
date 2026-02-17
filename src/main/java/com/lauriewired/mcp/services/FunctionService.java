@@ -9,11 +9,11 @@ import com.lauriewired.mcp.api.Param;
 import com.lauriewired.mcp.model.JsonOutput;
 import com.lauriewired.mcp.model.ListOutput;
 import com.lauriewired.mcp.model.StatusOutput;
-import com.lauriewired.mcp.model.TextOutput;
 import com.lauriewired.mcp.model.ToolOutput;
 import com.lauriewired.mcp.model.response.CurrentAddressResult;
 import com.lauriewired.mcp.model.response.CurrentFunctionResult;
 import com.lauriewired.mcp.model.response.FunctionByAddressResult;
+import com.lauriewired.mcp.model.response.FunctionCodeResult;
 import com.lauriewired.mcp.model.response.FunctionItem;
 import com.lauriewired.mcp.model.response.FunctionSearchItem;
 import com.lauriewired.mcp.utils.GhidraUtils;
@@ -83,12 +83,12 @@ public class FunctionService {
         return ListOutput.paginate(items, offset, limit);
     }
 
-    @McpTool(responseType = TextOutput.class, description = """
+    @McpTool(outputType = JsonOutput.class, responseType = FunctionCodeResult.class, description = """
         Get a function's code in the specified representation.
 
         Resolves the function by name or address, then returns the requested output.
 
-        Returns: Function code in the requested format, or error message
+        Returns: Structured list of code lines with address and code text
 
         Examples:
             get_function_code("main") -> C pseudocode for main
@@ -107,39 +107,50 @@ public class FunctionService {
         // Normalize mode
         final String normalizedMode = (mode == null || mode.isEmpty()) ? "c" : mode.toLowerCase().trim();
 
-        return new TextOutput(switch (normalizedMode) {
-            case "assembly", "asm", "disassembly" -> getAssembly(program, func);
-            case "pcode" -> getPcode(program, func);
-            default -> getDecompiledC(program, func); // "c", "decompile", or any unrecognized mode
-        });
+        final String effectiveFormat;
+        final List<FunctionCodeResult.CodeLine> lines;
+        switch (normalizedMode) {
+            case "assembly", "asm", "disassembly" -> {
+                effectiveFormat = "assembly";
+                lines = getAssemblyLines(program, func);
+            }
+            case "pcode" -> {
+                effectiveFormat = "pcode";
+                lines = getPcodeLines(program, func);
+            }
+            default -> {
+                effectiveFormat = "C";
+                lines = getDecompiledCLines(program, func);
+            }
+        }
+
+        return new JsonOutput(new FunctionCodeResult(func.getName(), effectiveFormat, lines));
     }
 
-    private String getDecompiledC(final Program program, final Function func) {
+    private List<FunctionCodeResult.CodeLine> getDecompiledCLines(final Program program, final Function func) {
         final DecompInterface decomp = new DecompInterface();
         decomp.openProgram(program);
         final DecompileResults result = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
         if (result == null || !result.decompileCompleted()) {
-            return "Decompilation failed";
+            return List.of(new FunctionCodeResult.CodeLine(null, "Decompilation failed", null));
         }
 
         // Use the token tree to get per-line address mappings
         final ClangTokenGroup markup = result.getCCodeMarkup();
         if (markup == null) {
             // Fallback to plain text if no markup available
-            return result.getDecompiledFunction().getC();
+            final List<FunctionCodeResult.CodeLine> lines = new ArrayList<>();
+            for (final String line : result.getDecompiledFunction().getC().split("\n", -1)) {
+                lines.add(new FunctionCodeResult.CodeLine(null, line, null));
+            }
+            return lines;
         }
 
         final PrettyPrinter printer = new PrettyPrinter(func, markup, null);
-        final List<ClangLine> lines = printer.getLines();
+        final List<ClangLine> clangLines = printer.getLines();
 
-        // Determine address column width from the function's entry point
-        final String sampleAddr = func.getEntryPoint().toString();
-        final int addrWidth = sampleAddr.length() + 2; // +2 for spacing
-        final String addrFormat = "%-" + addrWidth + "s";
-        final String blankPad = " ".repeat(addrWidth);
-
-        final StringBuilder sb = new StringBuilder();
-        for (final ClangLine line : lines) {
+        final List<FunctionCodeResult.CodeLine> lines = new ArrayList<>();
+        for (final ClangLine line : clangLines) {
             // Find the first address on this line from any token
             Address lineAddr = null;
             for (final ClangToken token : line.getAllTokens()) {
@@ -147,21 +158,16 @@ public class FunctionService {
                 if (lineAddr != null) break;
             }
 
-            // Prefix: address or blank padding
-            if (lineAddr != null) {
-                sb.append(String.format(addrFormat, lineAddr.toString()));
-            } else {
-                sb.append(blankPad);
-            }
-
-            sb.append(PrettyPrinter.getText(line));
-            sb.append('\n');
+            lines.add(new FunctionCodeResult.CodeLine(
+                    lineAddr != null ? lineAddr.toString() : null,
+                    PrettyPrinter.getText(line),
+                    null));
         }
-        return sb.toString();
+        return lines;
     }
 
-    private String getAssembly(final Program program, final Function func) {
-        final StringBuilder result = new StringBuilder();
+    private List<FunctionCodeResult.CodeLine> getAssemblyLines(final Program program, final Function func) {
+        final List<FunctionCodeResult.CodeLine> lines = new ArrayList<>();
         final Listing listing = program.getListing();
         final Address start = func.getEntryPoint();
         final Address end = func.getBody().getMaxAddress();
@@ -171,34 +177,36 @@ public class FunctionService {
             final Instruction instr = instructions.next();
             if (instr.getAddress().compareTo(end) > 0) break;
 
-            String comment = listing.getComment(
-                CommentType.EOL, instr.getAddress());
-            comment = (comment != null) ? "; " + comment : "";
-
-            result.append(String.format("%s: %s %s\n",
-                instr.getAddress(), instr.toString(), comment));
+            final String comment = listing.getComment(CommentType.EOL, instr.getAddress());
+            lines.add(new FunctionCodeResult.CodeLine(
+                    instr.getAddress().toString(),
+                    instr.toString(),
+                    comment));
         }
-        return result.toString();
+        return lines;
     }
 
-    private String getPcode(final Program program, final Function func) {
+    private List<FunctionCodeResult.CodeLine> getPcodeLines(final Program program, final Function func) {
         final DecompInterface decomp = new DecompInterface();
         decomp.openProgram(program);
         final DecompileResults result = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
         if (result == null || !result.decompileCompleted()) {
-            return "Decompilation failed";
+            return List.of(new FunctionCodeResult.CodeLine(null, "Decompilation failed", null));
         }
 
         final var highFunction = result.getHighFunction();
-        if (highFunction == null) return "No high function available";
+        if (highFunction == null) {
+            return List.of(new FunctionCodeResult.CodeLine(null, "No high function available", null));
+        }
 
-        final StringBuilder sb = new StringBuilder();
-        sb.append("PCode for ").append(func.getName()).append(":\n");
+        final List<FunctionCodeResult.CodeLine> lines = new ArrayList<>();
         final var iter = highFunction.getPcodeOps();
         while (iter.hasNext()) {
-            sb.append(iter.next().toString()).append("\n");
+            final var op = iter.next();
+            final String addr = op.getSeqnum().getTarget().toString();
+            lines.add(new FunctionCodeResult.CodeLine(addr, op.toString(), null));
         }
-        return sb.toString();
+        return lines;
     }
 
     @McpTool(post = true, description = """
