@@ -9,7 +9,7 @@
 
 
 # ghidraMCP
-ghidraMCP is a Model Context Protocol server for allowing LLMs to autonomously reverse engineer applications. It exposes 54 tools from core Ghidra functionality to MCP clients.
+ghidraMCP is a Model Context Protocol server for allowing LLMs to autonomously reverse engineer applications. It exposes 40 tools from core Ghidra functionality to MCP clients.
 
 https://github.com/user-attachments/assets/36080514-f227-44bd-af84-78e29ee1d7f9
 
@@ -29,104 +29,95 @@ MCP Server + Ghidra Plugin
 
 # Available Tools
 
-## Functions (12 tools)
+## Program (1 tool)
 
 | Tool | Description |
 |------|-------------|
-| `list_methods` | List function names with pagination |
-| `list_functions` | List all functions (name + address) |
-| `decompile_function` | Decompile a function by name |
-| `decompile_function_by_address` | Decompile a function by address |
-| `disassemble_function` | Get assembly listing for a function |
-| `rename_function` | Rename a function by name |
-| `rename_function_by_address` | Rename a function by address |
-| `set_function_prototype` | Set a function's signature/prototype |
-| `get_function_by_address` | Get function details at an address |
-| `get_current_address` | Get the current cursor address in Ghidra |
-| `get_current_function` | Get the function at the current cursor |
-| `search_functions_by_name` | Search for functions by partial name |
+| `get_program_info` | Get metadata about the currently loaded binary |
 
-## Data Types (11 tools)
+## Functions (8 tools)
 
 | Tool | Description |
 |------|-------------|
-| `list_structures` | List all defined structures |
-| `get_structure_details` | Get detailed structure information |
-| `list_structure_fields` | List fields of a structure |
-| `rename_struct_field` | Rename a structure field |
-| `create_structure` | Create a new structure |
-| `add_structure_field` | Add a field to a structure |
-| `list_enums` | List all defined enums |
-| `get_enum_details` | Get detailed enum information |
-| `create_enum` | Create a new enum |
-| `add_enum_value` | Add a value to an enum |
-| `find_data_type_usage` | Find where a data type is used |
+| `list_functions` | List function names with pagination |
+| `get_function_code` | Get a function's decompiled or disassembled code |
+| `rename_function` | Rename a function by name or address |
+| `set_function_prototype` | Set or modify a function's signature/prototype |
+| `get_function_by_address` | Get detailed information about a function at an address |
+| `get_current_address` | Get the address currently selected in the Ghidra GUI |
+| `get_current_function` | Get the function currently selected in the Ghidra GUI |
+| `search_functions_by_name` | Search for functions by partial name match |
 
-## Analysis (7 tools)
+## Data Types (9 tools)
 
 | Tool | Description |
 |------|-------------|
-| `list_references` | List references to an address |
-| `list_references_from` | List references from an address |
-| `analyze_control_flow` | Build a control flow graph |
-| `analyze_data_flow` | Track variable data flow |
-| `analyze_call_graph` | Build a call graph with configurable depth |
-| `get_function_callers` | Get functions that call a given function |
-| `get_call_hierarchy` | Get full call hierarchy with depth |
+| `list_data_types` | List data types (structures and/or enums) with pagination |
+| `get_data_type` | Get detailed information about a named data type |
+| `create_structure` | Create a new structure data type |
+| `update_structure` | Bulk update a structure: rename fields, change types, resize |
+| `add_structure_field` | Add a field to an existing structure |
+| `create_enum` | Create a new enum data type |
+| `update_enum` | Bulk update an enum: rename values, change numeric values, resize |
+| `add_enum_value` | Add a value to an existing enum |
+| `find_data_type_usage` | Find all locations where a data type is used |
+
+## Analysis (5 tools)
+
+| Tool | Description |
+|------|-------------|
+| `analyze_control_flow` | Analyze the control flow of a function |
+| `analyze_data_flow` | Track variable data flow in a function |
+| `get_call_graph` | Get the call graph for a function with configurable depth |
+| `list_references` | List cross-references (xrefs) to an address |
+| `list_references_from` | List all references from an address |
 
 ## Memory (7 tools)
 
 | Tool | Description |
 |------|-------------|
-| `list_segments` | List memory segments |
-| `list_data_items` | List defined data items with pagination |
+| `get_memory_layout` | Get the memory layout of the program (segments/sections) |
+| `list_data_items` | List defined data labels and their values with pagination |
 | `rename_data` | Rename a data label at an address |
-| `set_memory_data_type` | Set data type at an address |
+| `set_address_data_type` | Set the data type at a specific memory address |
 | `read_memory` | Read raw memory contents (hex, decimal, or binary) |
-| `get_memory_permissions` | Get memory block permissions |
-| `get_data_type_at` | Get the current data type at an address |
+| `get_memory_permissions` | Get memory permissions and block information at an address |
+| `get_address_data_type` | Get the data type currently defined at a memory address |
 
-## Namespaces & Symbols (6 tools)
-
-| Tool | Description |
-|------|-------------|
-| `list_classes` | List namespaces/classes |
-| `list_namespaces` | List non-global namespaces |
-| `list_symbols` | List all symbols |
-| `list_imports` | List imported symbols |
-| `list_exports` | List exported symbols |
-| `get_symbol_address` | Get address of a named symbol |
-
-## Comments (5 tools)
+## Symbols (2 tools)
 
 | Tool | Description |
 |------|-------------|
-| `set_decompiler_comment` | Set a pre-comment in the decompiler view |
-| `set_disassembly_comment` | Set an EOL comment in the disassembly view |
-| `get_comments` | Get all comments at an address |
-| `get_decompiler_comment` | Get the decompiler comment at an address |
-| `get_disassembly_comment` | Get the disassembly comment at an address |
+| `list_symbols` | List all symbols with pagination |
+| `get_symbol_address` | Get the memory address of a named symbol |
+
+## Comments (2 tools)
+
+| Tool | Description |
+|------|-------------|
+| `set_comment` | Set a comment at an address |
+| `get_comment` | Get all comments at a specific address |
 
 ## Search (3 tools)
 
 | Tool | Description |
 |------|-------------|
-| `search_memory` | Search for byte patterns or strings in memory |
-| `search_disassembly` | Search assembly code with regex |
-| `search_decompiled` | Search decompiled code with regex |
+| `search_memory` | Search program memory for byte patterns or strings |
+| `search_disassembly` | Search for patterns in disassembled code using regex |
+| `search_decompiled` | Search for patterns in decompiled code using regex |
 
 ## Variables (3 tools)
 
 | Tool | Description |
 |------|-------------|
-| `rename_variable` | Rename a local variable in a function |
-| `split_variable` | Split/rename a variable at a specific usage point |
-| `set_local_variable_type` | Set data type for a local variable |
+| `rename_variables` | Batch rename local variables within a function |
+| `split_variable` | Split or rename a variable at a specific usage address |
+| `set_variable_types` | Batch set data types for local variables in a function |
 
 # Installation
 
 ## Prerequisites
-- [Ghidra](https://ghidra-sre.org) (11.3.1+)
+- [Ghidra](https://ghidra-sre.org) (12.0.3+)
 - Python 3.10+
 - Python dependencies: `pip install -r requirements.txt`
 
@@ -196,12 +187,12 @@ Another MCP client that supports multiple models on the backend is [5ire](https:
 # Building from Source
 
 ## Prerequisites
-- Java 21
+- Java 24
 - Maven
 
 ## Build
 ```
-mvn clean package assembly:single
+mvn clean package
 ```
 
 The generated zip file (`target/GhidraMCP-1.0-SNAPSHOT.zip`) includes the built Ghidra plugin and its resources:
@@ -231,7 +222,7 @@ bridge_mcp_ghidra.py (Python MCP Server)
 GhidraMCPPlugin (Java, runs inside Ghidra)
     |
     +-- McpServerManager (HTTP server on port 8080)
-    +-- ApiHandlerRegistry (54 endpoint handlers)
+    +-- ApiHandlerRegistry (40 endpoint handlers)
     +-- Service Layer
         +-- FunctionService
         +-- DataTypeService
@@ -262,4 +253,4 @@ GhidraMCPPlugin (Java, runs inside Ghidra)
 
 **Timeouts on large binaries**
 - Increase the request timeout in `Edit` -> `Tool Options` -> `GhidraMCP HTTP Server`
-- Use paginated tools (`list_methods`, `list_data_items`, etc.) with smaller `limit` values
+- Use paginated tools (`list_functions`, `list_data_items`, etc.) with smaller `limit` values

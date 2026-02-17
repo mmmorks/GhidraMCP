@@ -40,7 +40,10 @@ pip install -r requirements.txt
 LLM Client → (MCP/stdio) → bridge_mcp_ghidra.py → (HTTP) → GhidraMCPPlugin (inside Ghidra)
 ```
 
-**Java plugin entrypoint:** `GhidraMCPPlugin` constructs 9 services and passes them to `ApiHandlerRegistry`, which uses reflection to discover `@McpTool`-annotated methods on all services and registers 40 HTTP endpoints + a `/mcp/tools` metadata endpoint on an embedded `HttpServer` (default port 8080).
+**Java plugin entrypoint:** `GhidraMCPPlugin` constructs 9 services and a `McpServerManager`, then passes them to `ApiHandlerRegistry`, which uses reflection to discover `@McpTool`-annotated methods on all services and registers 40 HTTP endpoints + a `/mcp/tools` metadata endpoint.
+
+**Server management** (in `com.lauriewired.mcp`):
+- `McpServerManager` — manages the embedded `HttpServer` lifecycle (start/stop), thread pool, and configurable options (port, thread pool size, request timeout) exposed via Ghidra's Tool Options UI. Defaults: port 8080, 10 worker threads, 30s request timeout.
 
 **Annotation-driven tool registry** (in `com.lauriewired.mcp.api`):
 - `@McpTool` — marks a service method as an MCP tool (description, POST vs GET, `responseType` for schema generation)
@@ -51,11 +54,12 @@ LLM Client → (MCP/stdio) → bridge_mcp_ghidra.py → (HTTP) → GhidraMCPPlug
 - `SchemaGenerator` — generates JSON Schema from Java record types at runtime via victools/jsonschema-generator; used by `/mcp/tools` to emit `outputSchema` for each tool
 
 **Typed output model** (in `com.lauriewired.mcp.model`):
-- `ToolOutput` — sealed interface with `toStructuredJson()` method; permits `TextOutput`, `ListOutput`, `StatusOutput`, `JsonOutput`
+- `ToolOutput` — sealed interface with `toStructuredJson()` and `toDisplayText()` methods; permits `TextOutput`, `ListOutput`, `StatusOutput`, `JsonOutput`
 - `TextOutput` — free-form text (decompiled code, hex dumps, analysis results)
 - `ListOutput` — paginated lists of typed record items with defensive copying; serialized via Jackson
 - `StatusOutput` — mutation results (success/failure) with convenience factories
-- `JsonOutput` — holds a typed `Object` (typically a response record); serialized via Jackson
+- `JsonOutput` — holds a typed `Object` (typically a response record); serialized via Jackson; delegates `toDisplayText()` to `Displayable` if the data record implements it
+- `Displayable` — interface for response records that produce human-readable display text distinct from the structured JSON; implemented by 19 of 28 response records
 
 **Response records** (in `com.lauriewired.mcp.model.response`):
 - ~28 Java records representing structured tool outputs (e.g., `ProgramInfoResult`, `ControlFlowResult`, `SearchMemoryResult`)
@@ -64,7 +68,7 @@ LLM Client → (MCP/stdio) → bridge_mcp_ghidra.py → (HTTP) → GhidraMCPPlug
 - Used by `SchemaGenerator` to derive `outputSchema` at runtime via reflection
 
 **Service layer** (all in `com.lauriewired.mcp.services`):
-- `ProgramService` — provides current `Program` reference from Ghidra's `PluginTool`; used by all other services
+- `ProgramService` (1 tool) — provides current `Program` reference from Ghidra's `PluginTool`; used by all other services
 - `FunctionService` (8 tools), `DataTypeService` (9 tools), `AnalysisService` (5 tools), `MemoryService` (7 tools), `SearchService` (3 tools), `VariableService` (3 tools), `CommentService` (2 tools), `NamespaceService` (2 tools)
 
 **Key utilities** (in `com.lauriewired.mcp.utils`):
@@ -78,7 +82,7 @@ LLM Client → (MCP/stdio) → bridge_mcp_ghidra.py → (HTTP) → GhidraMCPPlug
 - `TelemetryInterceptor` — wraps HTTP handlers; logs go to `~/.ghidra_mcp/telemetry/`
 - `TelemetryLogger` — file-based telemetry logging with `ConcurrentHashMap` for thread-safe metrics
 
-**Python bridge:** `bridge_mcp_ghidra.py` is a generic ~156-line MCP proxy. At startup it fetches tool definitions from `GET /mcp/tools` and dynamically registers them as MCP tools. No per-tool code needed — Java is the single source of truth for tool metadata. Supports `outputSchema` and `readOnlyHint` (GET = read-only, POST = mutation).
+**Python bridge:** `bridge_mcp_ghidra.py` is a generic ~164-line MCP proxy. At startup it fetches tool definitions from `GET /mcp/tools` and dynamically registers them as MCP tools. No per-tool code needed — Java is the single source of truth for tool metadata. Supports `outputSchema` and `readOnlyHint` (GET = read-only, POST = mutation).
 
 ## Key Patterns
 
@@ -92,7 +96,7 @@ LLM Client → (MCP/stdio) → bridge_mcp_ghidra.py → (HTTP) → GhidraMCPPlug
 
 ## Dependencies
 
-- **Java 24**, Maven build, Ghidra 11.3.1 JARs in `lib/` (system-scoped)
+- **Java 24**, Maven build, Ghidra 12.0.3 JARs in `lib/` (system-scoped)
 - **Jackson 2.18.2** (shaded), **victools jsonschema-generator 4.37.0** (shaded) — relocated to `com.lauriewired.shaded.*`
 - **Python 3.10+**, `mcp>=1.26.0`, `requests>=2`
 - **Test:** JUnit 5.9.2, Mockito 5.21, JaCoCo 0.8.13
@@ -100,4 +104,4 @@ LLM Client → (MCP/stdio) → bridge_mcp_ghidra.py → (HTTP) → GhidraMCPPlug
 
 ## Testing Notes
 
-Tests mock Ghidra internals (`Program`, `FunctionManager`, `Listing`, etc.) via Mockito. The Surefire plugin is configured with `--add-opens` flags for Mockito's reflective access. Test files mirror the main source structure under `src/test/java/`. Helper classes (`MockablePluginTool`, `TestDataTypeService`, `TestFunctionService`, `TestMemoryService`, `TestProgramService`) provide reusable mock setups.
+Tests mock Ghidra internals (`Program`, `FunctionManager`, `Listing`, etc.) via Mockito. The Surefire plugin is configured with `--add-opens` flags for Mockito's reflective access. Test files mirror the main source structure under `src/test/java/`. Helper classes (`MockablePluginTool`, `TestDataTypeService`, `TestFunctionService`, `TestMemoryService`, `TestProgramService`) provide reusable mock setups. 27 test files total, including dedicated tests for `McpServerManager` and `FindDataTypeUsage`.
