@@ -19,7 +19,8 @@ import logging
 
 import requests
 from mcp.server.lowlevel import Server
-from mcp.types import Tool, TextContent, ToolAnnotations, CallToolResult
+from mcp.shared.exceptions import McpError
+from mcp.types import ErrorData, Tool, TextContent, ToolAnnotations, CallToolResult
 import mcp.server.stdio
 
 DEFAULT_GHIDRA_SERVER = "http://127.0.0.1:8080"
@@ -45,11 +46,12 @@ def _fetch_tool_definitions() -> list[dict]:
         return []
 
 
-def _handle_response(response: requests.Response) -> tuple[str, dict | None]:
-    """Process HTTP response into (display_text, structured_data) tuple.
+def _handle_response(response: requests.Response) -> tuple[str, dict | None, bool]:
+    """Process HTTP response into (display_text, structured_data, is_error) tuple.
 
     Parses the JSON envelope and extracts both the 'text' field (display) and
     'data' field (structured).  Falls back gracefully for old-format responses.
+    The third element signals tool execution errors per the MCP spec.
     """
     text = response.content.decode("utf-8").strip()
     try:
@@ -64,18 +66,18 @@ def _handle_response(response: requests.Response) -> tuple[str, dict | None]:
                         display = json.dumps(data, indent=2)
                     else:
                         display = str(data) if data is not None else ""
-                return display, data if isinstance(data, (dict, list)) else None
+                return display, data if isinstance(data, (dict, list)) else None, False
             else:
                 msg = f"Error: {envelope.get('error', 'Unknown error')}"
-                return msg, None
+                return msg, None, True
     except (json.JSONDecodeError, KeyError):
         pass
     if response.ok:
-        return text, None
-    return f"Error {response.status_code}: {text}", None
+        return text, None, False
+    return f"Error {response.status_code}: {text}", None, True
 
 
-def _call_tool(tool_def: dict, arguments: dict) -> tuple[str, dict | None]:
+def _call_tool(tool_def: dict, arguments: dict) -> tuple[str, dict | None, bool]:
     """Dispatch a tool call as GET or POST to the Ghidra plugin."""
     endpoint = tool_def["name"]
     method = tool_def.get("method", "GET").upper()
@@ -100,7 +102,7 @@ def _call_tool(tool_def: dict, arguments: dict) -> tuple[str, dict | None]:
             )
         return _handle_response(response)
     except Exception as e:
-        return f"Request failed: {e}", None
+        return f"Request failed: {e}", None, True
 
 
 async def main():
@@ -140,14 +142,17 @@ async def main():
     async def call_tool(name: str, arguments: dict) -> CallToolResult:
         tool_def = tool_lookup.get(name)
         if tool_def is None:
-            return CallToolResult(
-                content=[TextContent(type="text", text=f"Unknown tool: {name}")],
-                isError=True,
-            )
-        display_text, structured_data = _call_tool(tool_def, arguments or {})
+            # Protocol error per MCP spec — unknown tool is a structural problem,
+            # not a tool execution failure.
+            raise McpError(ErrorData(
+                code=-32602,
+                message=f"Unknown tool: {name}",
+            ))
+        display_text, structured_data, is_error = _call_tool(tool_def, arguments or {})
         return CallToolResult(
             content=[TextContent(type="text", text=display_text)],
             structuredContent=structured_data,
+            isError=is_error,
         )
 
     async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
