@@ -249,18 +249,71 @@ public class ToolDef {
     public Class<? extends ToolOutput> getOutputType() { return outputType; }
 
     private static String buildFullDescription(final String rawDescription, final List<ToolParamDef> params) {
-        if (params.isEmpty()) return rawDescription;
+        final String normalized = normalizeDescription(rawDescription);
+        if (params.isEmpty()) return normalized;
 
-        final StringBuilder sb = new StringBuilder(rawDescription);
-        sb.append("\n\n    Parameters:\n");
+        final StringBuilder sb = new StringBuilder(normalized);
+        sb.append("\n\nParameters:\n");
         for (final ToolParamDef p : params) {
-            sb.append("        ").append(p.name()).append(": ").append(p.description());
+            sb.append("    ").append(p.name()).append(": ").append(p.description());
             if (!p.required() && p.defaultValue() != null) {
                 sb.append(" (default: ").append(p.defaultValue()).append(")");
             }
             sb.append("\n");
         }
         return sb.toString().stripTrailing();
+    }
+
+    /**
+     * Normalize a description by unwrapping continuation lines within paragraphs.
+     *
+     * Java text blocks preserve line breaks that exist only for source readability.
+     * This method joins those continuation lines while preserving intentional structure:
+     * blank-line paragraph breaks and indented blocks under bare labels (e.g. "Examples:").
+     */
+    static String normalizeDescription(final String raw) {
+        final String[] lines = raw.split("\n", -1);
+
+        // Group consecutive non-blank lines into paragraphs
+        final List<List<String>> paragraphs = new ArrayList<>();
+        List<String> current = new ArrayList<>();
+        for (final String line : lines) {
+            if (line.trim().isEmpty()) {
+                if (!current.isEmpty()) {
+                    paragraphs.add(current);
+                    current = new ArrayList<>();
+                }
+            } else {
+                current.add(line);
+            }
+        }
+        if (!current.isEmpty()) paragraphs.add(current);
+
+        final StringBuilder result = new StringBuilder();
+        for (int i = 0; i < paragraphs.size(); i++) {
+            if (i > 0) result.append("\n\n");
+            final List<String> para = paragraphs.get(i);
+            final String firstTrimmed = para.get(0).trim();
+
+            // A bare label like "Examples:" — preserve indented lines beneath it
+            if (para.size() > 1 && firstTrimmed.endsWith(":") && !firstTrimmed.contains(": ")) {
+                for (int j = 0; j < para.size(); j++) {
+                    if (j > 0) result.append("\n");
+                    result.append(para.get(j));
+                }
+            } else {
+                // Join continuation lines into a single paragraph
+                final StringBuilder joined = new StringBuilder(firstTrimmed);
+                for (int j = 1; j < para.size(); j++) {
+                    final String trimmed = para.get(j).trim();
+                    if (!trimmed.isEmpty()) {
+                        joined.append(" ").append(trimmed);
+                    }
+                }
+                result.append(joined);
+            }
+        }
+        return result.toString();
     }
 
     private static Param findParamAnnotation(final java.lang.annotation.Annotation[] annotations) {

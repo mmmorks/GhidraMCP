@@ -290,6 +290,60 @@ class ToolDefTest {
     }
 
     // =========================================================================
+    // Description normalization tests
+    // =========================================================================
+
+    @Test
+    void testNormalize_JoinsContinuationLines() {
+        String input = "Returns: List of function names. If more results are available,\n"
+                     + "         the response includes pagination hints.";
+        String result = ToolDef.normalizeDescription(input);
+        assertEquals("Returns: List of function names. If more results are available, "
+                   + "the response includes pagination hints.", result);
+    }
+
+    @Test
+    void testNormalize_JoinsMidSentenceWrap() {
+        String input = "Note: Basic blocks are instruction sequences with single entry/exit points.\n"
+                     + "Essential for understanding branching and loops.";
+        String result = ToolDef.normalizeDescription(input);
+        assertEquals("Note: Basic blocks are instruction sequences with single entry/exit points. "
+                   + "Essential for understanding branching and loops.", result);
+    }
+
+    @Test
+    void testNormalize_PreservesBlockStructure() {
+        String input = "Examples:\n"
+                     + "    get_function_code(\"main\") -> C pseudocode\n"
+                     + "    get_function_code(\"00401000\", \"asm\") -> assembly";
+        String result = ToolDef.normalizeDescription(input);
+        assertEquals(input, result);
+    }
+
+    @Test
+    void testNormalize_PreservesParagraphBreaks() {
+        String input = "First paragraph.\n\nSecond paragraph.\n\nThird paragraph.";
+        String result = ToolDef.normalizeDescription(input);
+        assertEquals(input, result);
+    }
+
+    @Test
+    void testNormalize_MixedStructure() {
+        String input = "Get a function's code.\n\n"
+                     + "Resolves the function by name or address,\n"
+                     + "then returns the requested output.\n\n"
+                     + "Examples:\n"
+                     + "    example1\n"
+                     + "    example2";
+        String result = ToolDef.normalizeDescription(input);
+        assertEquals("Get a function's code.\n\n"
+                   + "Resolves the function by name or address, then returns the requested output.\n\n"
+                   + "Examples:\n"
+                   + "    example1\n"
+                   + "    example2", result);
+    }
+
+    // =========================================================================
     // parseParams tests (GET query params)
     // =========================================================================
 
