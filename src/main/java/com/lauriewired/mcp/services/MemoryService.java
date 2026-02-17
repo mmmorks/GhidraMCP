@@ -6,12 +6,12 @@ import java.util.List;
 import com.lauriewired.mcp.model.JsonOutput;
 import com.lauriewired.mcp.model.ListOutput;
 import com.lauriewired.mcp.model.StatusOutput;
-import com.lauriewired.mcp.model.TextOutput;
 import com.lauriewired.mcp.model.ToolOutput;
 import com.lauriewired.mcp.model.response.AddressDataTypeResult;
 import com.lauriewired.mcp.model.response.DataItem;
 import com.lauriewired.mcp.model.response.MemoryPermissionsResult;
 import com.lauriewired.mcp.model.response.MemorySegmentItem;
+import com.lauriewired.mcp.model.response.ReadMemoryResult;
 import com.lauriewired.mcp.utils.HttpUtils;
 import com.lauriewired.mcp.utils.ProgramTransaction;
 
@@ -257,20 +257,21 @@ public class MemoryService {
         }
     }
 
-    @McpTool(responseType = TextOutput.class, description = """
+    @McpTool(outputType = JsonOutput.class, responseType = ReadMemoryResult.class, description = """
         Read raw memory contents at a specific address.
 
-        Reads bytes from memory and formats them for analysis.
+        Reads bytes from memory and returns them as structured data.
 
-        Returns: Formatted memory contents with context
+        Returns: Structured memory contents with rows of address, byte values, and ASCII
 
-        Note: Shows memory in rows with address, hex bytes, and ASCII representation.
+        Note: Each row contains the address, an array of formatted byte values, and
+        an ASCII representation (for hex and decimal formats).
 
-        Example: read_memory("00401000", 32, "hex") -> Memory dump with hex values """)
+        Example: read_memory("00401000", 32, "hex") -> Structured memory dump """)
     public ToolOutput readMemory(
-            @Param("final Memory address to read from (e.g., \"00401000\")") final String address,
+            @Param("Memory address to read from (e.g., \"00401000\")") final String address,
             @Param(value = "Number of bytes to read (1-1024, default: 16)", defaultValue = "16") final int size,
-            @Param(value = "final Output format - \"hex\", \"decimal\", \"binary\", or \"ascii\" (default: \"hex\")", defaultValue = "hex") final String format) {
+            @Param(value = "Output format - \"hex\", \"decimal\", \"binary\", or \"ascii\" (default: \"hex\")", defaultValue = "hex") final String format) {
         final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
         if (address == null || address.isEmpty()) return StatusOutput.error("Address is required");
@@ -298,15 +299,21 @@ public class MemoryService {
                 return StatusOutput.error("Failed to read memory: " + e.getMessage());
             }
 
-            // Format the output based on requested format
-            final String content = switch (format.toLowerCase()) {
-                case "decimal" -> formatBytesAsDecimal(bytes, addr);
-                case "binary" -> formatBytesAsBinary(bytes, addr);
-                case "ascii" -> formatBytesAsAscii(bytes, addr);
-                default -> formatBytesAsHex(bytes, addr);
+            // Build structured rows based on requested format
+            final String normalizedFormat = format.toLowerCase();
+            final List<ReadMemoryResult.MemoryRow> rows = switch (normalizedFormat) {
+                case "decimal" -> buildDecimalRows(bytes, addr);
+                case "binary" -> buildBinaryRows(bytes, addr);
+                case "ascii" -> buildAsciiRows(bytes, addr);
+                default -> buildHexRows(bytes, addr);
             };
 
-            return new TextOutput(String.format("Memory at %s (%d bytes):\n%s", addr, size, content));
+            final String effectiveFormat = switch (normalizedFormat) {
+                case "decimal", "binary", "ascii" -> normalizedFormat;
+                default -> "hex";
+            };
+
+            return new JsonOutput(new ReadMemoryResult(addr.toString(), size, effectiveFormat, rows));
         } catch (Exception e) {
             return StatusOutput.error("Error reading memory: " + e.getMessage());
         }
@@ -419,78 +426,72 @@ public class MemoryService {
         }
     }
 
-    // Helper methods for formatting bytes
-    private String formatBytesAsHex(final byte[] bytes, final Address startAddr) {
-        final StringBuilder sb = new StringBuilder();
+    // Helper methods for building structured memory rows
+    private List<ReadMemoryResult.MemoryRow> buildHexRows(final byte[] bytes, final Address startAddr) {
+        final List<ReadMemoryResult.MemoryRow> rows = new ArrayList<>();
         for (int i = 0; i < bytes.length; i += 16) {
-            sb.append(String.format("%s: ", startAddr.add(i)));
+            final List<String> values = new ArrayList<>();
+            final StringBuilder ascii = new StringBuilder();
             for (int j = 0; j < 16 && (i + j) < bytes.length; j++) {
-                sb.append(String.format("%02X ", bytes[i + j] & 0xFF));
-            }
-            for (int j = bytes.length - i; j < 16; j++) {
-                sb.append("   ");
-            }
-            sb.append(" | ");
-            for (int j = 0; j < 16 && (i + j) < bytes.length; j++) {
+                values.add(String.format("%02X", bytes[i + j] & 0xFF));
                 final char c = (char)(bytes[i + j] & 0xFF);
+                ascii.append(c >= 32 && c < 127 ? c : '.');
+            }
+            rows.add(new ReadMemoryResult.MemoryRow(startAddr.add(i).toString(), values, ascii.toString()));
+        }
+        return rows;
+    }
+
+    private List<ReadMemoryResult.MemoryRow> buildDecimalRows(final byte[] bytes, final Address startAddr) {
+        final List<ReadMemoryResult.MemoryRow> rows = new ArrayList<>();
+        for (int i = 0; i < bytes.length; i += 8) {
+            final List<String> values = new ArrayList<>();
+            final StringBuilder ascii = new StringBuilder();
+            for (int j = 0; j < 8 && (i + j) < bytes.length; j++) {
+                values.add(String.valueOf(bytes[i + j] & 0xFF));
+                final char c = (char)(bytes[i + j] & 0xFF);
+                ascii.append(c >= 32 && c < 127 ? c : '.');
+            }
+            rows.add(new ReadMemoryResult.MemoryRow(startAddr.add(i).toString(), values, ascii.toString()));
+        }
+        return rows;
+    }
+
+    private List<ReadMemoryResult.MemoryRow> buildBinaryRows(final byte[] bytes, final Address startAddr) {
+        final List<ReadMemoryResult.MemoryRow> rows = new ArrayList<>();
+        for (int i = 0; i < bytes.length; i += 4) {
+            final List<String> values = new ArrayList<>();
+            for (int j = 0; j < 4 && (i + j) < bytes.length; j++) {
+                values.add(String.format("%8s", Integer.toBinaryString(bytes[i + j] & 0xFF)).replace(' ', '0'));
+            }
+            rows.add(new ReadMemoryResult.MemoryRow(startAddr.add(i).toString(), values, null));
+        }
+        return rows;
+    }
+
+    private List<ReadMemoryResult.MemoryRow> buildAsciiRows(final byte[] bytes, final Address startAddr) {
+        final List<ReadMemoryResult.MemoryRow> rows = new ArrayList<>();
+        for (int i = 0; i < bytes.length; i += 16) {
+            final List<String> values = new ArrayList<>();
+            for (int j = 0; j < 16 && (i + j) < bytes.length; j++) {
+                final byte b = bytes[i + j];
+                final char c = (char)(b & 0xFF);
                 if (c >= 32 && c < 127) {
-                    sb.append(c);
+                    values.add(String.valueOf(c));
+                } else if (c == '\n') {
+                    values.add("\\n");
+                } else if (c == '\r') {
+                    values.add("\\r");
+                } else if (c == '\t') {
+                    values.add("\\t");
+                } else if (c == 0) {
+                    values.add("\\0");
                 } else {
-                    sb.append('.');
+                    values.add(String.format("\\x%02X", b & 0xFF));
                 }
             }
-            sb.append("\n");
+            rows.add(new ReadMemoryResult.MemoryRow(startAddr.add(i).toString(), values, null));
         }
-        return sb.toString();
-    }
-
-    private String formatBytesAsDecimal(final byte[] bytes, final Address startAddr) {
-        final StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < bytes.length; i++) {
-            if (i % 8 == 0) {
-                if (i > 0) sb.append("\n");
-                sb.append(String.format("%s: ", startAddr.add(i)));
-            }
-            sb.append(String.format("%3d ", bytes[i] & 0xFF));
-        }
-        sb.append("\n");
-        return sb.toString();
-    }
-
-    private String formatBytesAsBinary(final byte[] bytes, final Address startAddr) {
-        final StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < bytes.length; i++) {
-            if (i % 4 == 0) {
-                if (i > 0) sb.append("\n");
-                sb.append(String.format("%s: ", startAddr.add(i)));
-            }
-            sb.append(String.format("%s ", Integer.toBinaryString(bytes[i] & 0xFF)
-                .replaceAll("(?=\\b\\d{1,7}\\b)", "0")));
-        }
-        sb.append("\n");
-        return sb.toString();
-    }
-
-    private String formatBytesAsAscii(final byte[] bytes, final Address startAddr) {
-        final StringBuilder sb = new StringBuilder();
-        sb.append(String.format("ASCII at %s:\n", startAddr));
-        for (final byte b : bytes) {
-            final char c = (char)(b & 0xFF);
-            if (c >= 32 && c < 127) {
-                sb.append(c);
-            } else if (c == '\n') {
-                sb.append("\\n");
-            } else if (c == '\r') {
-                sb.append("\\r");
-            } else if (c == '\t') {
-                sb.append("\\t");
-            } else if (c == 0) {
-                sb.append("\\0");
-            } else {
-                sb.append(String.format("\\x%02X", b & 0xFF));
-            }
-        }
-        sb.append("\n");
-        return sb.toString();
+        return rows;
     }
 }
