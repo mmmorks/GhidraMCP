@@ -2,7 +2,6 @@ package com.lauriewired.mcp.services;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -92,71 +91,6 @@ public class VariableServiceTest {
     void testSplitVariable_InvalidUsageAddress() {
         String result = variableService.splitVariable("main", "oldVar", "invalid", "newVar").toStructuredJson();
         assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
-
-    @Test
-    @DisplayName("setLocalVariableType returns false when no program is loaded")
-    void testSetLocalVariableType_NoProgram() {
-        boolean result = variableService.setLocalVariableType("0x1000", "varName", "int");
-        assertFalse(result);
-    }
-
-    @Test
-    @DisplayName("setLocalVariableType returns false for null function address")
-    void testSetLocalVariableType_NullFunctionAddress() {
-        boolean result = variableService.setLocalVariableType(null, "varName", "int");
-        assertFalse(result);
-    }
-
-    @Test
-    @DisplayName("setLocalVariableType returns false for empty function address")
-    void testSetLocalVariableType_EmptyFunctionAddress() {
-        boolean result = variableService.setLocalVariableType("", "varName", "int");
-        assertFalse(result);
-    }
-
-    @Test
-    @DisplayName("setLocalVariableType returns false for null variable name")
-    void testSetLocalVariableType_NullVariableName() {
-        boolean result = variableService.setLocalVariableType("0x1000", null, "int");
-        assertFalse(result);
-    }
-
-    @Test
-    @DisplayName("setLocalVariableType returns false for empty variable name")
-    void testSetLocalVariableType_EmptyVariableName() {
-        boolean result = variableService.setLocalVariableType("0x1000", "", "int");
-        assertFalse(result);
-    }
-
-    @Test
-    @DisplayName("setLocalVariableType returns false for null type")
-    void testSetLocalVariableType_NullType() {
-        boolean result = variableService.setLocalVariableType("0x1000", "varName", null);
-        assertFalse(result);
-    }
-
-    @Test
-    @DisplayName("setLocalVariableType returns false for empty type")
-    void testSetLocalVariableType_EmptyType() {
-        boolean result = variableService.setLocalVariableType("0x1000", "varName", "");
-        assertFalse(result);
-    }
-
-    @Test
-    @DisplayName("setLocalVariableType handles common data types")
-    void testSetLocalVariableType_CommonTypes() {
-        assertFalse(variableService.setLocalVariableType("0x1000", "varName", "int"));
-        assertFalse(variableService.setLocalVariableType("0x1000", "varName", "char"));
-        assertFalse(variableService.setLocalVariableType("0x1000", "varName", "void*"));
-        assertFalse(variableService.setLocalVariableType("0x1000", "varName", "DWORD"));
-    }
-
-    @Test
-    @DisplayName("setLocalVariableType handles invalid address format")
-    void testSetLocalVariableType_InvalidAddress() {
-        boolean result = variableService.setLocalVariableType("invalid", "varName", "int");
-        assertFalse(result);
     }
 
     @Test

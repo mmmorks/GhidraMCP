@@ -1,19 +1,12 @@
 package com.lauriewired.mcp.services;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Map;
 
-import com.lauriewired.mcp.model.ListOutput;
 import com.lauriewired.mcp.model.StatusOutput;
 import com.lauriewired.mcp.model.TextOutput;
 import com.lauriewired.mcp.model.ToolOutput;
-import com.lauriewired.mcp.utils.HttpUtils;
 
-import ghidra.program.model.data.CategoryPath;
 import ghidra.program.model.data.DataType;
 import ghidra.program.model.data.DataTypeComponent;
 import ghidra.program.model.data.DataTypeManager;
@@ -21,7 +14,6 @@ import ghidra.program.model.data.Enum;
 import ghidra.program.model.data.EnumDataType;
 import ghidra.program.model.data.ProgramBasedDataTypeManager;
 import ghidra.program.model.data.Structure;
-import ghidra.program.model.data.StructureDataType;
 import ghidra.program.model.listing.Program;
 
 /**
@@ -38,42 +30,6 @@ public class TestDataTypeService extends DataTypeService {
     public TestDataTypeService(TestProgramService testProgramService) {
         super(testProgramService);
         this.testProgramService = testProgramService;
-    }
-
-    /**
-     * List all structure/type definitions in the program with pagination
-     *
-     * @param offset starting index
-     * @param limit maximum number of structures to return
-     * @return list of structures
-     */
-    @Override
-    public String listStructures(int offset, int limit) {
-        Program program = testProgramService.getCurrentProgram();
-        if (program == null) return "No program loaded";
-
-        ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
-        List<Structure> structs = new ArrayList<>();
-        // Get all structures from the data type manager
-        dtm.getAllStructures().forEachRemaining((struct) -> {
-            structs.add(struct);
-        });
-        Collections.sort(structs, Comparator.comparing(Structure::getName));  
-        List<String> lines = new ArrayList<>();
-        for (Structure struct : structs) {
-            StringBuilder sb = new StringBuilder();
-            sb.append(struct.getName()).append(": {");
-            for (int i = 0; i < struct.getNumComponents(); i++) {
-                DataTypeComponent comp = struct.getComponent(i);
-                if (i > 0) sb.append(", ");
-                sb.append(comp.getDataType().getName())
-                .append(" ")
-                .append(comp.getFieldName());
-            }
-            sb.append("}");
-            lines.add(sb.toString());
-        }
-        return HttpUtils.paginateList(lines, offset, limit);
     }
 
     /**
@@ -422,61 +378,6 @@ public class TestDataTypeService extends DataTypeService {
     }
 
     /**
-     * Create a new structure data type
-     * Simplified for testing without Swing threading
-     *
-     * @param structName name of the structure to create
-     * @param size size of the structure in bytes (0 for auto-size)
-     * @param categoryPath category path for the structure (e.g., "/MyStructures")
-     * @return status message
-     */
-    @Override
-    public String createStructure(String structName, int size, String categoryPath) {
-        Program program = testProgramService.getCurrentProgram();
-        if (program == null) return "No program loaded";
-        if (structName == null || structName.isEmpty()) {
-            return "Structure name is required";
-        }
-
-        String resultMessage = null;
-        int tx = program.startTransaction("Create structure");
-        try {
-            ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
-            
-            // Check if structure already exists
-            DataType existing = findDataTypeByNameInAllCategories(dtm, structName);
-            if (existing != null && existing instanceof Structure) {
-                resultMessage = "Structure '" + structName + "' already exists";
-                return resultMessage;
-            }
-            
-            // Create category path if specified
-            CategoryPath catPath = CategoryPath.ROOT;
-            if (categoryPath != null && !categoryPath.isEmpty()) {
-                catPath = new CategoryPath(categoryPath);
-            }
-            
-            // Create the structure
-            StructureDataType struct = new StructureDataType(catPath, structName, size, dtm);
-            
-            // Add the structure to the data type manager
-            DataType addedType = dtm.addDataType(struct, null);
-            
-            resultMessage = "Structure '" + structName + "' created successfully at " +
-                            addedType.getCategoryPath().getPath();
-        }
-        catch (Exception e) {
-            resultMessage = "Failed to create structure: " + e.getMessage();
-        }
-        finally {
-            program.endTransaction(tx, resultMessage != null &&
-                                 resultMessage.contains("successfully"));
-        }
-
-        return resultMessage;
-    }
-
-    /**
      * Add a field to an existing structure
      * Simplified for testing without Swing threading
      *
@@ -545,64 +446,6 @@ public class TestDataTypeService extends DataTypeService {
     }
 
     /**
-     * Create a new enum data type
-     * Simplified for testing without Swing threading
-     *
-     * @param enumName name of the enum to create
-     * @param size size of the enum in bytes (1, 2, 4, or 8)
-     * @param categoryPath category path for the enum (e.g., "/MyEnums")
-     * @return status message
-     */
-    @Override
-    public String createEnum(String enumName, int size, String categoryPath) {
-        Program program = testProgramService.getCurrentProgram();
-        if (program == null) return "No program loaded";
-        if (enumName == null || enumName.isEmpty()) {
-            return "Enum name is required";
-        }
-        if (size != 1 && size != 2 && size != 4 && size != 8) {
-            return "Enum size must be 1, 2, 4, or 8 bytes";
-        }
-
-        String resultMessage = null;
-        int tx = program.startTransaction("Create enum");
-        try {
-            ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
-            
-            // Check if enum already exists
-            DataType existing = findDataTypeByNameInAllCategories(dtm, enumName);
-            if (existing != null && existing instanceof EnumDataType) {
-                resultMessage = "Enum '" + enumName + "' already exists";
-                return resultMessage;
-            }
-            
-            // Create category path if specified
-            CategoryPath catPath = CategoryPath.ROOT;
-            if (categoryPath != null && !categoryPath.isEmpty()) {
-                catPath = new CategoryPath(categoryPath);
-            }
-            
-            // Create the enum
-            EnumDataType enumType = new EnumDataType(catPath, enumName, size, dtm);
-            
-            // Add the enum to the data type manager
-            DataType addedType = dtm.addDataType(enumType, null);
-            
-            resultMessage = "Enum '" + enumName + "' created successfully at " +
-                            addedType.getCategoryPath().getPath();
-        }
-        catch (Exception e) {
-            resultMessage = "Failed to create enum: " + e.getMessage();
-        }
-        finally {
-            program.endTransaction(tx, resultMessage != null &&
-                                 resultMessage.contains("successfully"));
-        }
-
-        return resultMessage;
-    }
-
-    /**
      * Add a value to an existing enum
      * Simplified for testing without Swing threading
      *
@@ -653,46 +496,4 @@ public class TestDataTypeService extends DataTypeService {
         return StatusOutput.error(resultMessage);
     }
 
-    /**
-     * List all enums in the program with pagination
-     *
-     * @param offset starting index
-     * @param limit maximum number of enums to return
-     * @return list of enums
-     */
-    @Override
-    public String listEnums(int offset, int limit) {
-        Program program = testProgramService.getCurrentProgram();
-        if (program == null) return "No program loaded";
-
-        ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
-        List<EnumDataType> enums = new ArrayList<>();
-        
-        // Get all enums from the data type manager
-        Iterator<DataType> allTypes = dtm.getAllDataTypes();
-        while (allTypes.hasNext()) {
-            DataType dt = allTypes.next();
-            if (dt instanceof EnumDataType) {
-                enums.add((EnumDataType) dt);
-            }
-        }
-        
-        Collections.sort(enums, Comparator.comparing(EnumDataType::getName));
-        
-        List<String> lines = new ArrayList<>();
-        for (EnumDataType enumType : enums) {
-            StringBuilder sb = new StringBuilder();
-            sb.append(enumType.getName()).append(" (").append(enumType.getLength()).append(" bytes): {");
-            
-            String[] names = enumType.getNames();
-            for (int i = 0; i < names.length; i++) {
-                if (i > 0) sb.append(", ");
-                sb.append(names[i]).append("=").append(enumType.getValue(names[i]));
-            }
-            sb.append("}");
-            lines.add(sb.toString());
-        }
-        
-        return HttpUtils.paginateList(lines, offset, limit);
-    }
 }

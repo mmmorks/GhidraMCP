@@ -23,34 +23,6 @@ public class DataTypeServiceTest {
         dataTypeService = new DataTypeService(programService);
     }
 
-    @Test
-    @DisplayName("listStructures returns error when no program is loaded")
-    void testListStructures_NoProgram() {
-        String result = dataTypeService.listStructures(0, 10);
-        assertEquals("No program loaded", result);
-    }
-
-    @Test
-    @DisplayName("listStructures handles negative offset")
-    void testListStructures_NegativeOffset() {
-        String result = dataTypeService.listStructures(-1, 10);
-        assertEquals("No program loaded", result);
-    }
-
-    @Test
-    @DisplayName("listStructures handles zero limit")
-    void testListStructures_ZeroLimit() {
-        String result = dataTypeService.listStructures(0, 0);
-        assertEquals("No program loaded", result);
-    }
-
-    @Test
-    @DisplayName("listStructures handles large offset")
-    void testListStructures_LargeOffset() {
-        String result = dataTypeService.listStructures(1000, 10);
-        assertEquals("No program loaded", result);
-    }
-
     // Tests for updateStructure
 
     @Test
@@ -230,43 +202,6 @@ public class DataTypeServiceTest {
     // which is challenging due to Ghidra's architecture. The existing tests
     // ensure the service handles error cases gracefully.
 
-    // Tests for new structure creation functionality
-    
-    @Test
-    @DisplayName("createStructure returns error when no program is loaded")
-    void testCreateStructure_NoProgram() {
-        String result = dataTypeService.createStructure("TestStruct", 0, null);
-        assertEquals("No program loaded", result);
-    }
-    
-    @Test
-    @DisplayName("createStructure returns error for null structure name")
-    void testCreateStructure_NullName() {
-        String result = dataTypeService.createStructure(null, 0, null);
-        assertEquals("No program loaded", result);
-    }
-    
-    @Test
-    @DisplayName("createStructure returns error for empty structure name")
-    void testCreateStructure_EmptyName() {
-        String result = dataTypeService.createStructure("", 0, null);
-        assertEquals("No program loaded", result);
-    }
-    
-    @Test
-    @DisplayName("createStructure handles negative size")
-    void testCreateStructure_NegativeSize() {
-        String result = dataTypeService.createStructure("TestStruct", -1, null);
-        assertEquals("No program loaded", result);
-    }
-    
-    @Test
-    @DisplayName("createStructure handles category path")
-    void testCreateStructure_WithCategoryPath() {
-        String result = dataTypeService.createStructure("TestStruct", 0, "/MyStructures");
-        assertEquals("No program loaded", result);
-    }
-    
     // Tests for structure field addition
     
     @Test
@@ -304,53 +239,6 @@ public class DataTypeServiceTest {
         assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
     
-    // Tests for enum creation
-    
-    @Test
-    @DisplayName("createEnum returns error when no program is loaded")
-    void testCreateEnum_NoProgram() {
-        String result = dataTypeService.createEnum("TestEnum", 4, null);
-        assertEquals("No program loaded", result);
-    }
-    
-    @Test
-    @DisplayName("createEnum returns error for null enum name")
-    void testCreateEnum_NullName() {
-        String result = dataTypeService.createEnum(null, 4, null);
-        assertEquals("Enum name is required", result);
-    }
-    
-    @Test
-    @DisplayName("createEnum returns error for empty enum name")
-    void testCreateEnum_EmptyName() {
-        String result = dataTypeService.createEnum("", 4, null);
-        assertEquals("Enum name is required", result);
-    }
-    
-    @Test
-    @DisplayName("createEnum returns error for invalid size")
-    void testCreateEnum_InvalidSize() {
-        String result = dataTypeService.createEnum("TestEnum", 3, null);
-        assertEquals("Enum size must be 1, 2, 4, or 8 bytes", result);
-    }
-    
-    @Test
-    @DisplayName("createEnum accepts valid sizes")
-    void testCreateEnum_ValidSizes() {
-        int[] validSizes = {1, 2, 4, 8};
-        for (int size : validSizes) {
-            String result = dataTypeService.createEnum("TestEnum", size, null);
-            assertEquals("No program loaded", result);
-        }
-    }
-    
-    @Test
-    @DisplayName("createEnum handles category path")
-    void testCreateEnum_WithCategoryPath() {
-        String result = dataTypeService.createEnum("TestEnum", 4, "/MyEnums");
-        assertEquals("No program loaded", result);
-    }
-    
     // Tests for enum value addition
     
     @Test
@@ -386,36 +274,6 @@ public class DataTypeServiceTest {
     void testAddEnumValue_LargeValue() {
         String result = dataTypeService.addEnumValue("TestEnum", "LARGE", 0x7FFFFFFFL).toStructuredJson();
         assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
-    
-    // Tests for enum listing
-    
-    @Test
-    @DisplayName("listEnums returns error when no program is loaded")
-    void testListEnums_NoProgram() {
-        String result = dataTypeService.listEnums(0, 10);
-        assertEquals("No program loaded", result);
-    }
-    
-    @Test
-    @DisplayName("listEnums handles negative offset")
-    void testListEnums_NegativeOffset() {
-        String result = dataTypeService.listEnums(-1, 10);
-        assertEquals("No program loaded", result);
-    }
-    
-    @Test
-    @DisplayName("listEnums handles zero limit")
-    void testListEnums_ZeroLimit() {
-        String result = dataTypeService.listEnums(0, 0);
-        assertEquals("No program loaded", result);
-    }
-    
-    @Test
-    @DisplayName("listEnums handles large offset")
-    void testListEnums_LargeOffset() {
-        String result = dataTypeService.listEnums(1000, 10);
-        assertEquals("No program loaded", result);
     }
     
     // Regression tests for array data type bug

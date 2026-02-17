@@ -23,7 +23,6 @@ import com.lauriewired.mcp.model.response.DataTypeDetailResult;
 import com.lauriewired.mcp.model.response.DataTypeItem;
 import com.lauriewired.mcp.model.response.DataTypeUsageItem;
 import com.lauriewired.mcp.model.response.UpdateResult;
-import com.lauriewired.mcp.utils.HttpUtils;
 import com.lauriewired.mcp.utils.ProgramTransaction;
 
 import ghidra.program.model.data.Array;
@@ -66,42 +65,6 @@ public class DataTypeService {
      */
     public DataTypeService(final ProgramService programService) {
         this.programService = programService;
-    }
-
-    /**
-     * List all structure/type definitions in the program with pagination and LLM-friendly hints
-     *
-     * @param offset starting index
-     * @param limit maximum number of structures to return
-     * @return paginated list of structures with pagination metadata
-     */
-    public String listStructures(final int offset, final int limit) {
-        final Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
-
-        final ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
-        final List<Structure> structs = new ArrayList<>();
-        // Get all structures from the data type manager
-        dtm.getAllStructures().forEachRemaining((struct) -> {
-            structs.add(struct);
-        });
-        Collections.sort(structs, Comparator.comparing(Structure::getName));
-        final List<String> lines = new ArrayList<>();
-        for (final Structure struct : structs) {
-            final StringBuilder sb = new StringBuilder();
-            sb.append(struct.getName()).append(": {");
-            for (int i = 0; i < struct.getNumComponents(); i++) {
-                final DataTypeComponent comp = struct.getComponent(i);
-                if (i > 0) sb.append(", ");
-                sb.append(comp.getDataType().getName())
-                .append(" ")
-                .append(comp.getFieldName());
-            }
-            sb.append("}");
-            lines.add(sb.toString());
-        }
-
-        return HttpUtils.paginateList(lines, offset, limit);
     }
 
     @McpTool(post = true, outputType = JsonOutput.class, responseType = UpdateResult.class, description = """
@@ -604,19 +567,6 @@ public class DataTypeService {
         }
     }
 
-    /**
-     * Create a new structure data type
-     *
-     * @param structName name of the structure to create
-     * @param size size of the structure in bytes (0 for auto-size)
-     * @param categoryPath category path for the structure (e.g., "/MyStructures")
-     * @return status message
-     */
-    public String createStructure(final String structName, final int size, final String categoryPath) {
-        final ToolOutput result = createStructure(structName, size, categoryPath, null);
-        return (result instanceof StatusOutput s) ? s.message() : result.toStructuredJson();
-    }
-
     @McpTool(post = true, outputType = StatusOutput.class, responseType = StatusOutput.class, description = """
         Create a new structure data type in Ghidra, optionally with inline fields.
 
@@ -738,19 +688,6 @@ public class DataTypeService {
         }
     }
 
-    /**
-     * Create a new enum data type
-     *
-     * @param enumName name of the enum to create
-     * @param size size of the enum in bytes (1, 2, 4, or 8)
-     * @param categoryPath category path for the enum (e.g., "/MyEnums")
-     * @return status message
-     */
-    public String createEnum(final String enumName, final int size, final String categoryPath) {
-        final ToolOutput result = createEnum(enumName, size, categoryPath, null);
-        return (result instanceof StatusOutput s) ? s.message() : result.toStructuredJson();
-    }
-
     @McpTool(post = true, outputType = StatusOutput.class, responseType = StatusOutput.class, description = """
         Create a new enum data type in Ghidra, optionally with inline values.
 
@@ -851,250 +788,6 @@ public class DataTypeService {
             Msg.error(this, "Error adding enum value", e);
             return StatusOutput.error("Failed to add enum value: " + e.getMessage());
         }
-    }
-
-    /**
-     * List all enums in the program with pagination and LLM-friendly hints
-     *
-     * @param offset starting index
-     * @param limit maximum number of enums to return
-     * @return paginated list of enums with pagination metadata
-     */
-    public String listEnums(final int offset, final int limit) {
-        final Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
-
-        final ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
-        final List<Enum> enums = new ArrayList<>();
-
-        // Get all enums from the data type manager
-        final Iterator<DataType> allTypes = dtm.getAllDataTypes();
-        while (allTypes.hasNext()) {
-            final DataType dt = allTypes.next();
-            if (dt instanceof Enum enumDataType) {
-                enums.add(enumDataType);
-            }
-        }
-
-        Collections.sort(enums, Comparator.comparing(Enum::getName));
-
-        final List<String> lines = new ArrayList<>();
-        for (final Enum enumType : enums) {
-            final StringBuilder sb = new StringBuilder();
-            sb.append(enumType.getName()).append(" (").append(enumType.getLength()).append(" bytes): {");
-
-            final String[] names = enumType.getNames();
-            for (int i = 0; i < names.length; i++) {
-                if (i > 0) sb.append(", ");
-                sb.append(names[i]).append("=").append(enumType.getValue(names[i]));
-            }
-            sb.append("}");
-            lines.add(sb.toString());
-        }
-
-        return HttpUtils.paginateList(lines, offset, limit);
-    }
-
-    /**
-     * Get detailed information about a structure including all fields
-     *
-     * @param structureName name of the structure to get details for
-     * @return detailed structure information
-     */
-    public String getStructureDetails(final String structureName) {
-        final Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
-        if (structureName == null || structureName.isEmpty()) return "Structure name is required";
-
-        final ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
-
-        // Find the structure by name
-        DataType dataType = dtm.getDataType("/" + structureName);
-        if (dataType == null) {
-            // Try searching in all categories
-            final Iterator<DataType> allTypes = dtm.getAllDataTypes();
-            while (allTypes.hasNext()) {
-                final DataType dt = allTypes.next();
-                if (dt.getName().equals(structureName) && dt instanceof Structure) {
-                    dataType = dt;
-                    break;
-                }
-            }
-        }
-
-        if (dataType == null || !(dataType instanceof Structure)) {
-            return "Structure not found: " + structureName;
-        }
-
-        final Structure struct = (Structure) dataType;
-        final StringBuilder result = new StringBuilder();
-
-        // Structure header information
-        result.append("Structure: ").append(struct.getName()).append("\n");
-        result.append("Category: ").append(struct.getCategoryPath()).append("\n");
-        result.append("Size: ").append(struct.getLength()).append(" bytes\n");
-        result.append("Alignment: ").append(struct.getAlignment()).append("\n");
-        result.append("Packed: ").append(struct.isPackingEnabled() ? "Yes" : "No").append("\n");
-        result.append("Description: ").append(struct.getDescription() != null ? struct.getDescription() : "None").append("\n");
-        result.append("\nFields:\n");
-
-        // List all fields
-        final DataTypeComponent[] components = struct.getComponents();
-        if (components.length == 0) {
-            result.append("  (no fields defined)\n");
-        } else {
-            for (final DataTypeComponent comp : components) {
-                result.append(String.format("  [%04X] %s: %s (%d bytes)",
-                    comp.getOffset(),
-                    comp.getFieldName() != null ? comp.getFieldName() : "(unnamed)",
-                    comp.getDataType().getName(),
-                    comp.getLength()));
-
-                if (comp.getComment() != null) {
-                    result.append(" // ").append(comp.getComment());
-                }
-                result.append("\n");
-            }
-        }
-
-        // Show undefined components if any
-        final DataTypeComponent[] definedComponents = struct.getDefinedComponents();
-        if (definedComponents.length < components.length) {
-            result.append("\nUndefined regions:\n");
-            int lastEnd = 0;
-            for (final DataTypeComponent comp : definedComponents) {
-                if (comp.getOffset() > lastEnd) {
-                    result.append(String.format("  [%04X-%04X] undefined (%d bytes)\n",
-                        lastEnd, comp.getOffset() - 1, comp.getOffset() - lastEnd));
-                }
-                lastEnd = comp.getOffset() + comp.getLength();
-            }
-            if (lastEnd < struct.getLength()) {
-                result.append(String.format("  [%04X-%04X] undefined (%d bytes)\n",
-                    lastEnd, struct.getLength() - 1, struct.getLength() - lastEnd));
-            }
-        }
-
-        return result.toString();
-    }
-
-    /**
-     * Get detailed information about an enum including all values
-     *
-     * @param enumName name of the enum to get details for
-     * @return detailed enum information
-     */
-    public String getEnumDetails(final String enumName) {
-        final Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
-        if (enumName == null || enumName.isEmpty()) return "Enum name is required";
-
-        final ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
-
-        // Find the enum by name
-        DataType dataType = dtm.getDataType("/" + enumName);
-        if (dataType == null) {
-            // Try searching in all categories
-            final Iterator<DataType> allTypes = dtm.getAllDataTypes();
-            while (allTypes.hasNext()) {
-                final DataType dt = allTypes.next();
-                if (dt.getName().equals(enumName) && dt instanceof Enum) {
-                    dataType = dt;
-                    break;
-                }
-            }
-        }
-
-        if (dataType == null || !(dataType instanceof Enum)) {
-            return "Enum not found: " + enumName;
-        }
-
-        final Enum enumType = (Enum) dataType;
-        final StringBuilder result = new StringBuilder();
-
-        // Enum header information
-        result.append("Enum: ").append(enumType.getName()).append("\n");
-        result.append("Category: ").append(enumType.getCategoryPath()).append("\n");
-        result.append("Size: ").append(enumType.getLength()).append(" bytes\n");
-        result.append("Description: ").append(enumType.getDescription() != null ? enumType.getDescription() : "None").append("\n");
-        result.append("\nValues:\n");
-
-        // List all values sorted by numeric value
-        final String[] names = enumType.getNames();
-        final List<Map.Entry<String, Long>> entries = new ArrayList<>();
-        for (final String name : names) {
-            entries.add(Map.entry(name, enumType.getValue(name)));
-        }
-        entries.sort(Map.Entry.comparingByValue());
-
-        if (entries.isEmpty()) {
-            result.append("  (no values defined)\n");
-        } else {
-            for (final Map.Entry<String, Long> entry : entries) {
-                result.append(String.format("  %s = 0x%X (%d)\n",
-                    entry.getKey(),
-                    entry.getValue(),
-                    entry.getValue()));
-            }
-        }
-
-        return result.toString();
-    }
-
-    /**
-     * List all fields of a structure
-     *
-     * @param structureName name of the structure
-     * @return list of structure fields with detailed information
-     */
-    public String listStructureFields(final String structureName) {
-        final Program program = programService.getCurrentProgram();
-        if (program == null) return "No program loaded";
-        if (structureName == null || structureName.isEmpty()) return "Structure name is required";
-
-        final ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
-
-        // Find the structure by name
-        DataType dataType = dtm.getDataType("/" + structureName);
-        if (dataType == null) {
-            // Try searching in all categories
-            final Iterator<DataType> allTypes = dtm.getAllDataTypes();
-            while (allTypes.hasNext()) {
-                final DataType dt = allTypes.next();
-                if (dt.getName().equals(structureName) && dt instanceof Structure) {
-                    dataType = dt;
-                    break;
-                }
-            }
-        }
-
-        if (dataType == null || !(dataType instanceof Structure)) {
-            return "Structure not found: " + structureName;
-        }
-
-        final Structure struct = (Structure) dataType;
-        final DataTypeComponent[] components = struct.getComponents();
-
-        if (components.length == 0) {
-            return "Structure " + structureName + " has no fields defined";
-        }
-
-        final List<String> fields = new ArrayList<>();
-        for (final DataTypeComponent comp : components) {
-            final StringBuilder fieldInfo = new StringBuilder(String.format("Offset: 0x%04X, Name: %s, Type: %s, Size: %d bytes",
-                comp.getOffset(),
-                comp.getFieldName() != null ? comp.getFieldName() : "(unnamed)",
-                comp.getDataType().getName(),
-                comp.getLength()));
-
-            if (comp.getComment() != null) {
-                fieldInfo.append(", Comment: ").append(comp.getComment());
-            }
-
-            fields.add(fieldInfo.toString());
-        }
-
-        return String.join("\n", fields);
     }
 
     @McpTool(outputType = ListOutput.class, responseType = DataTypeItem.class, description = """
