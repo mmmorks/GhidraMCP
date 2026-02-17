@@ -59,13 +59,7 @@ def _handle_response(response: requests.Response) -> tuple[str, dict | None, boo
         if isinstance(envelope, dict) and "status" in envelope:
             if envelope["status"] == "success":
                 data = envelope.get("data")
-                display = envelope.get("text")
-                # Prefer the explicit 'text' field; fall back to stringified data
-                if display is None:
-                    if isinstance(data, (dict, list)):
-                        display = json.dumps(data, indent=2)
-                    else:
-                        display = str(data) if data is not None else ""
+                display = envelope.get("text", "")
                 return display, data if isinstance(data, (dict, list)) else None, False
             else:
                 msg = f"Error: {envelope.get('error', 'Unknown error')}"

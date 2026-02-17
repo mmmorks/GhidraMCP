@@ -17,14 +17,10 @@ public record ReadMemoryResult(
     /**
      * A row of memory bytes starting at a given address.
      * @param address  row start address
-     * @param bytes    byte values formatted according to the requested format
+     * @param bytes    space-separated byte values formatted according to the requested format
      * @param ascii    printable ASCII representation (null for ascii/binary formats)
      */
-    public record MemoryRow(String address, List<String> bytes, String ascii) {
-        public MemoryRow {
-            bytes = List.copyOf(bytes);
-        }
-    }
+    public record MemoryRow(String address, String bytes, String ascii) {}
 
     @Override
     public String toDisplayText() {
@@ -32,7 +28,7 @@ public record ReadMemoryResult(
         sb.append(String.format("Memory at %s (%d bytes, %s):\n", address, size, format));
         for (final MemoryRow row : rows) {
             sb.append(row.address()).append(": ");
-            sb.append(String.join(" ", row.bytes()));
+            sb.append(row.bytes());
             if (row.ascii() != null) {
                 // Pad to align ASCII column
                 sb.append("  | ").append(row.ascii());

@@ -430,14 +430,15 @@ public class MemoryService {
     private List<ReadMemoryResult.MemoryRow> buildHexRows(final byte[] bytes, final Address startAddr) {
         final List<ReadMemoryResult.MemoryRow> rows = new ArrayList<>();
         for (int i = 0; i < bytes.length; i += 16) {
-            final List<String> values = new ArrayList<>();
+            final StringBuilder values = new StringBuilder();
             final StringBuilder ascii = new StringBuilder();
             for (int j = 0; j < 16 && (i + j) < bytes.length; j++) {
-                values.add(String.format("%02X", bytes[i + j] & 0xFF));
+                if (j > 0) values.append(' ');
+                values.append(String.format("%02X", bytes[i + j] & 0xFF));
                 final char c = (char)(bytes[i + j] & 0xFF);
                 ascii.append(c >= 32 && c < 127 ? c : '.');
             }
-            rows.add(new ReadMemoryResult.MemoryRow(startAddr.add(i).toString(), values, ascii.toString()));
+            rows.add(new ReadMemoryResult.MemoryRow(startAddr.add(i).toString(), values.toString(), ascii.toString()));
         }
         return rows;
     }
@@ -445,14 +446,15 @@ public class MemoryService {
     private List<ReadMemoryResult.MemoryRow> buildDecimalRows(final byte[] bytes, final Address startAddr) {
         final List<ReadMemoryResult.MemoryRow> rows = new ArrayList<>();
         for (int i = 0; i < bytes.length; i += 8) {
-            final List<String> values = new ArrayList<>();
+            final StringBuilder values = new StringBuilder();
             final StringBuilder ascii = new StringBuilder();
             for (int j = 0; j < 8 && (i + j) < bytes.length; j++) {
-                values.add(String.valueOf(bytes[i + j] & 0xFF));
+                if (j > 0) values.append(' ');
+                values.append(bytes[i + j] & 0xFF);
                 final char c = (char)(bytes[i + j] & 0xFF);
                 ascii.append(c >= 32 && c < 127 ? c : '.');
             }
-            rows.add(new ReadMemoryResult.MemoryRow(startAddr.add(i).toString(), values, ascii.toString()));
+            rows.add(new ReadMemoryResult.MemoryRow(startAddr.add(i).toString(), values.toString(), ascii.toString()));
         }
         return rows;
     }
@@ -460,11 +462,12 @@ public class MemoryService {
     private List<ReadMemoryResult.MemoryRow> buildBinaryRows(final byte[] bytes, final Address startAddr) {
         final List<ReadMemoryResult.MemoryRow> rows = new ArrayList<>();
         for (int i = 0; i < bytes.length; i += 4) {
-            final List<String> values = new ArrayList<>();
+            final StringBuilder values = new StringBuilder();
             for (int j = 0; j < 4 && (i + j) < bytes.length; j++) {
-                values.add(String.format("%8s", Integer.toBinaryString(bytes[i + j] & 0xFF)).replace(' ', '0'));
+                if (j > 0) values.append(' ');
+                values.append(String.format("%8s", Integer.toBinaryString(bytes[i + j] & 0xFF)).replace(' ', '0'));
             }
-            rows.add(new ReadMemoryResult.MemoryRow(startAddr.add(i).toString(), values, null));
+            rows.add(new ReadMemoryResult.MemoryRow(startAddr.add(i).toString(), values.toString(), null));
         }
         return rows;
     }
@@ -472,25 +475,26 @@ public class MemoryService {
     private List<ReadMemoryResult.MemoryRow> buildAsciiRows(final byte[] bytes, final Address startAddr) {
         final List<ReadMemoryResult.MemoryRow> rows = new ArrayList<>();
         for (int i = 0; i < bytes.length; i += 16) {
-            final List<String> values = new ArrayList<>();
+            final StringBuilder values = new StringBuilder();
             for (int j = 0; j < 16 && (i + j) < bytes.length; j++) {
+                if (j > 0) values.append(' ');
                 final byte b = bytes[i + j];
                 final char c = (char)(b & 0xFF);
                 if (c >= 32 && c < 127) {
-                    values.add(String.valueOf(c));
+                    values.append(c);
                 } else if (c == '\n') {
-                    values.add("\\n");
+                    values.append("\\n");
                 } else if (c == '\r') {
-                    values.add("\\r");
+                    values.append("\\r");
                 } else if (c == '\t') {
-                    values.add("\\t");
+                    values.append("\\t");
                 } else if (c == 0) {
-                    values.add("\\0");
+                    values.append("\\0");
                 } else {
-                    values.add(String.format("\\x%02X", b & 0xFF));
+                    values.append(String.format("\\x%02X", b & 0xFF));
                 }
             }
-            rows.add(new ReadMemoryResult.MemoryRow(startAddr.add(i).toString(), values, null));
+            rows.add(new ReadMemoryResult.MemoryRow(startAddr.add(i).toString(), values.toString(), null));
         }
         return rows;
     }

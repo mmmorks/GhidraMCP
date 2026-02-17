@@ -568,12 +568,7 @@ public class MemoryServiceTest {
 
         ReadMemoryResult.MemoryRow row = memResult.rows().get(0);
         assertEquals("00401000", row.address());
-        assertEquals(5, row.bytes().size());
-        assertEquals("48", row.bytes().get(0));
-        assertEquals("65", row.bytes().get(1));
-        assertEquals("6C", row.bytes().get(2));
-        assertEquals("6C", row.bytes().get(3));
-        assertEquals("6F", row.bytes().get(4));
+        assertEquals("48 65 6C 6C 6F", row.bytes());
         assertEquals("Hello", row.ascii());
     }
 
@@ -605,9 +600,9 @@ public class MemoryServiceTest {
         ReadMemoryResult memResult = (ReadMemoryResult) ((JsonOutput) result).data();
 
         assertEquals(2, memResult.rows().size());
-        assertEquals(16, memResult.rows().get(0).bytes().size());
+        assertEquals("00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F", memResult.rows().get(0).bytes());
         assertEquals("00401000", memResult.rows().get(0).address());
-        assertEquals(4, memResult.rows().get(1).bytes().size());
+        assertEquals("10 11 12 13", memResult.rows().get(1).bytes());
         assertEquals("00401010", memResult.rows().get(1).address());
     }
 
@@ -624,10 +619,7 @@ public class MemoryServiceTest {
         assertEquals(1, memResult.rows().size());
 
         ReadMemoryResult.MemoryRow row = memResult.rows().get(0);
-        assertEquals("0", row.bytes().get(0));
-        assertEquals("255", row.bytes().get(1));
-        assertEquals("10", row.bytes().get(2));
-        assertEquals("100", row.bytes().get(3));
+        assertEquals("0 255 10 100", row.bytes());
         assertEquals("...\u0064", row.ascii()); // 0x00='.', 0xFF='.', 0x0A='.', 0x64='d'
     }
 
@@ -644,10 +636,7 @@ public class MemoryServiceTest {
         assertEquals(1, memResult.rows().size());
 
         ReadMemoryResult.MemoryRow row = memResult.rows().get(0);
-        assertEquals("00000000", row.bytes().get(0));
-        assertEquals("00000001", row.bytes().get(1));
-        assertEquals("11111111", row.bytes().get(2));
-        assertEquals("00001010", row.bytes().get(3));
+        assertEquals("00000000 00000001 11111111 00001010", row.bytes());
         assertNull(row.ascii());
     }
 
@@ -664,13 +653,7 @@ public class MemoryServiceTest {
         assertEquals(1, memResult.rows().size());
 
         ReadMemoryResult.MemoryRow row = memResult.rows().get(0);
-        assertEquals("H", row.bytes().get(0));
-        assertEquals("i", row.bytes().get(1));
-        assertEquals("\\0", row.bytes().get(2));
-        assertEquals("\\n", row.bytes().get(3));
-        assertEquals("\\r", row.bytes().get(4));
-        assertEquals("\\t", row.bytes().get(5));
-        assertEquals("\\x80", row.bytes().get(6));
+        assertEquals("H i \\0 \\n \\r \\t \\x80", row.bytes());
         assertNull(row.ascii());
     }
 
