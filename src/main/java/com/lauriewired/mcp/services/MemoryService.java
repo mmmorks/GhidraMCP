@@ -299,21 +299,18 @@ public class MemoryService {
                 return StatusOutput.error("Failed to read memory: " + e.getMessage());
             }
 
-            // Build structured rows based on requested format
+            // Format all bytes into a single flat record
             final String normalizedFormat = format.toLowerCase();
-            final List<ReadMemoryResult.MemoryRow> rows = switch (normalizedFormat) {
-                case "decimal" -> buildDecimalRows(bytes, addr);
-                case "binary" -> buildBinaryRows(bytes, addr);
-                case "ascii" -> buildAsciiRows(bytes, addr);
-                default -> buildHexRows(bytes, addr);
-            };
-
             final String effectiveFormat = switch (normalizedFormat) {
                 case "decimal", "binary", "ascii" -> normalizedFormat;
                 default -> "hex";
             };
 
-            return new JsonOutput(new ReadMemoryResult(addr.toString(), size, effectiveFormat, rows));
+            final String formattedBytes = formatBytes(bytes, effectiveFormat);
+            final String ascii = ("hex".equals(effectiveFormat) || "decimal".equals(effectiveFormat))
+                    ? buildAsciiString(bytes) : null;
+
+            return new JsonOutput(new ReadMemoryResult(addr.toString(), size, effectiveFormat, formattedBytes, ascii));
         } catch (Exception e) {
             return StatusOutput.error("Error reading memory: " + e.getMessage());
         }
@@ -426,76 +423,35 @@ public class MemoryService {
         }
     }
 
-    // Helper methods for building structured memory rows
-    private List<ReadMemoryResult.MemoryRow> buildHexRows(final byte[] bytes, final Address startAddr) {
-        final List<ReadMemoryResult.MemoryRow> rows = new ArrayList<>();
-        for (int i = 0; i < bytes.length; i += 16) {
-            final StringBuilder values = new StringBuilder();
-            final StringBuilder ascii = new StringBuilder();
-            for (int j = 0; j < 16 && (i + j) < bytes.length; j++) {
-                if (j > 0) values.append(' ');
-                values.append(String.format("%02X", bytes[i + j] & 0xFF));
-                final char c = (char)(bytes[i + j] & 0xFF);
-                ascii.append(c >= 32 && c < 127 ? c : '.');
-            }
-            rows.add(new ReadMemoryResult.MemoryRow(startAddr.add(i).toString(), values.toString(), ascii.toString()));
-        }
-        return rows;
-    }
-
-    private List<ReadMemoryResult.MemoryRow> buildDecimalRows(final byte[] bytes, final Address startAddr) {
-        final List<ReadMemoryResult.MemoryRow> rows = new ArrayList<>();
-        for (int i = 0; i < bytes.length; i += 8) {
-            final StringBuilder values = new StringBuilder();
-            final StringBuilder ascii = new StringBuilder();
-            for (int j = 0; j < 8 && (i + j) < bytes.length; j++) {
-                if (j > 0) values.append(' ');
-                values.append(bytes[i + j] & 0xFF);
-                final char c = (char)(bytes[i + j] & 0xFF);
-                ascii.append(c >= 32 && c < 127 ? c : '.');
-            }
-            rows.add(new ReadMemoryResult.MemoryRow(startAddr.add(i).toString(), values.toString(), ascii.toString()));
-        }
-        return rows;
-    }
-
-    private List<ReadMemoryResult.MemoryRow> buildBinaryRows(final byte[] bytes, final Address startAddr) {
-        final List<ReadMemoryResult.MemoryRow> rows = new ArrayList<>();
-        for (int i = 0; i < bytes.length; i += 4) {
-            final StringBuilder values = new StringBuilder();
-            for (int j = 0; j < 4 && (i + j) < bytes.length; j++) {
-                if (j > 0) values.append(' ');
-                values.append(String.format("%8s", Integer.toBinaryString(bytes[i + j] & 0xFF)).replace(' ', '0'));
-            }
-            rows.add(new ReadMemoryResult.MemoryRow(startAddr.add(i).toString(), values.toString(), null));
-        }
-        return rows;
-    }
-
-    private List<ReadMemoryResult.MemoryRow> buildAsciiRows(final byte[] bytes, final Address startAddr) {
-        final List<ReadMemoryResult.MemoryRow> rows = new ArrayList<>();
-        for (int i = 0; i < bytes.length; i += 16) {
-            final StringBuilder values = new StringBuilder();
-            for (int j = 0; j < 16 && (i + j) < bytes.length; j++) {
-                if (j > 0) values.append(' ');
-                final byte b = bytes[i + j];
-                final char c = (char)(b & 0xFF);
-                if (c >= 32 && c < 127) {
-                    values.append(c);
-                } else if (c == '\n') {
-                    values.append("\\n");
-                } else if (c == '\r') {
-                    values.append("\\r");
-                } else if (c == '\t') {
-                    values.append("\\t");
-                } else if (c == 0) {
-                    values.append("\\0");
-                } else {
-                    values.append(String.format("\\x%02X", b & 0xFF));
+    private String formatBytes(final byte[] bytes, final String format) {
+        final StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < bytes.length; i++) {
+            if (i > 0) sb.append(' ');
+            switch (format) {
+                case "decimal" -> sb.append(bytes[i] & 0xFF);
+                case "binary" -> sb.append(String.format("%8s",
+                        Integer.toBinaryString(bytes[i] & 0xFF)).replace(' ', '0'));
+                case "ascii" -> {
+                    final char c = (char)(bytes[i] & 0xFF);
+                    if (c >= 32 && c < 127) sb.append(c);
+                    else if (c == '\n') sb.append("\\n");
+                    else if (c == '\r') sb.append("\\r");
+                    else if (c == '\t') sb.append("\\t");
+                    else if (c == 0) sb.append("\\0");
+                    else sb.append(String.format("\\x%02X", bytes[i] & 0xFF));
                 }
+                default -> sb.append(String.format("%02X", bytes[i] & 0xFF)); // hex
             }
-            rows.add(new ReadMemoryResult.MemoryRow(startAddr.add(i).toString(), values.toString(), null));
         }
-        return rows;
+        return sb.toString();
+    }
+
+    private String buildAsciiString(final byte[] bytes) {
+        final StringBuilder sb = new StringBuilder();
+        for (final byte b : bytes) {
+            final char c = (char)(b & 0xFF);
+            sb.append(c >= 32 && c < 127 ? c : '.');
+        }
+        return sb.toString();
     }
 }

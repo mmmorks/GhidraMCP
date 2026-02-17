@@ -546,13 +546,10 @@ public class MemoryServiceTest {
             System.arraycopy(data, 0, buf, 0, data.length);
             return null;
         }).when(mockMemory).getBytes(eq(mockDataAddr), any(byte[].class));
-
-        // Mock address addition for row addresses
-        when(mockDataAddr.add(0)).thenReturn(mockDataAddr);
     }
 
     @Test
-    @DisplayName("readMemory hex format returns structured rows with byte arrays")
+    @DisplayName("readMemory hex format returns flat record with bytes and ascii")
     void testReadMemory_Hex_Success() throws Exception {
         byte[] data = {0x48, 0x65, 0x6C, 0x6C, 0x6F};
         setupReadMemoryMocks(data);
@@ -564,12 +561,8 @@ public class MemoryServiceTest {
         assertEquals("00401000", memResult.address());
         assertEquals(5, memResult.size());
         assertEquals("hex", memResult.format());
-        assertEquals(1, memResult.rows().size());
-
-        ReadMemoryResult.MemoryRow row = memResult.rows().get(0);
-        assertEquals("00401000", row.address());
-        assertEquals("48 65 6C 6C 6F", row.bytes());
-        assertEquals("Hello", row.ascii());
+        assertEquals("48 65 6C 6C 6F", memResult.bytes());
+        assertEquals("Hello", memResult.ascii());
     }
 
     @Test
@@ -580,30 +573,22 @@ public class MemoryServiceTest {
 
         ToolOutput result = testMemoryService.readMemory("00401000", 4, "hex");
         ReadMemoryResult memResult = (ReadMemoryResult) ((JsonOutput) result).data();
-
-        ReadMemoryResult.MemoryRow row = memResult.rows().get(0);
-        assertEquals(".A..", row.ascii());
+        assertEquals(".A..", memResult.ascii());
     }
 
     @Test
-    @DisplayName("readMemory hex format splits into multiple rows at 16 bytes")
-    void testReadMemory_Hex_MultipleRows() throws Exception {
+    @DisplayName("readMemory hex format emits all bytes in a single flat record")
+    void testReadMemory_Hex_LargeRead() throws Exception {
         byte[] data = new byte[20];
         for (int i = 0; i < 20; i++) data[i] = (byte) i;
         setupReadMemoryMocks(data);
 
-        Address row2Addr = mock(Address.class);
-        when(row2Addr.toString()).thenReturn("00401010");
-        when(mockDataAddr.add(16)).thenReturn(row2Addr);
-
         ToolOutput result = testMemoryService.readMemory("00401000", 20, "hex");
         ReadMemoryResult memResult = (ReadMemoryResult) ((JsonOutput) result).data();
 
-        assertEquals(2, memResult.rows().size());
-        assertEquals("00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F", memResult.rows().get(0).bytes());
-        assertEquals("00401000", memResult.rows().get(0).address());
-        assertEquals("10 11 12 13", memResult.rows().get(1).bytes());
-        assertEquals("00401010", memResult.rows().get(1).address());
+        assertEquals("00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F 10 11 12 13",
+                memResult.bytes());
+        assertEquals("00401000", memResult.address());
     }
 
     @Test
@@ -616,11 +601,8 @@ public class MemoryServiceTest {
         ReadMemoryResult memResult = (ReadMemoryResult) ((JsonOutput) result).data();
 
         assertEquals("decimal", memResult.format());
-        assertEquals(1, memResult.rows().size());
-
-        ReadMemoryResult.MemoryRow row = memResult.rows().get(0);
-        assertEquals("0 255 10 100", row.bytes());
-        assertEquals("...\u0064", row.ascii()); // 0x00='.', 0xFF='.', 0x0A='.', 0x64='d'
+        assertEquals("0 255 10 100", memResult.bytes());
+        assertEquals("...d", memResult.ascii());
     }
 
     @Test
@@ -633,11 +615,8 @@ public class MemoryServiceTest {
         ReadMemoryResult memResult = (ReadMemoryResult) ((JsonOutput) result).data();
 
         assertEquals("binary", memResult.format());
-        assertEquals(1, memResult.rows().size());
-
-        ReadMemoryResult.MemoryRow row = memResult.rows().get(0);
-        assertEquals("00000000 00000001 11111111 00001010", row.bytes());
-        assertNull(row.ascii());
+        assertEquals("00000000 00000001 11111111 00001010", memResult.bytes());
+        assertNull(memResult.ascii());
     }
 
     @Test
@@ -650,11 +629,8 @@ public class MemoryServiceTest {
         ReadMemoryResult memResult = (ReadMemoryResult) ((JsonOutput) result).data();
 
         assertEquals("ascii", memResult.format());
-        assertEquals(1, memResult.rows().size());
-
-        ReadMemoryResult.MemoryRow row = memResult.rows().get(0);
-        assertEquals("H i \\0 \\n \\r \\t \\x80", row.bytes());
-        assertNull(row.ascii());
+        assertEquals("H i \\0 \\n \\r \\t \\x80", memResult.bytes());
+        assertNull(memResult.ascii());
     }
 
     @Test
@@ -680,8 +656,7 @@ public class MemoryServiceTest {
         String display = result.toDisplayText();
 
         assertTrue(display.contains("Memory at 00401000 (2 bytes, hex):"));
-        assertTrue(display.contains("00401000:"));
-        assertTrue(display.contains("48"));
+        assertTrue(display.contains("48 69"));
         assertTrue(display.contains("Hi"));
     }
 }
