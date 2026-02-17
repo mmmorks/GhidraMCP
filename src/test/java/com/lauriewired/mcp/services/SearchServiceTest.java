@@ -300,12 +300,7 @@ public class SearchServiceTest {
         when(mockProgramService.getCurrentProgram()).thenReturn(mockProgram);
         when(mockProgram.getFunctionManager()).thenReturn(mockFunctionManager);
 
-        // Mock language that doesn't support pcode to avoid decompiler initialization
-        ghidra.program.model.lang.Language mockLanguage = mock(ghidra.program.model.lang.Language.class);
-        when(mockProgram.getLanguage()).thenReturn(mockLanguage);
-        when(mockLanguage.supportsPcode()).thenReturn(false);
-
-        // Mock empty function iterator - need to mock iterator() method for for-each loop
+        // Mock empty function iterator
         Iterator<Function> emptyIterator = mock(Iterator.class);
         when(emptyIterator.hasNext()).thenReturn(false);
         when(mockFunctionManager.getFunctions(true)).thenReturn(mockFunctionIterator);
@@ -314,9 +309,9 @@ public class SearchServiceTest {
         // Test
         String result = searchServiceWithMocks.searchDecompiled("test", 0, 10).toStructuredJson();
 
-        // Verify - when language doesn't support pcode, it should return an error
+        // Verify - with no functions, ParallelDecompiler finds no matches
         assertNotNull(result);
-        assertTrue(result.contains("Decompiler not available") || result.contains("No matches found"));
+        assertTrue(result.contains("No matches found"));
     }
 
     @Test

@@ -2,12 +2,16 @@ package com.lauriewired.mcp.services;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import ghidra.app.decompiler.DecompInterface;
 import ghidra.app.decompiler.DecompileResults;
+import ghidra.app.decompiler.parallel.DecompilerCallback;
+import ghidra.app.decompiler.parallel.ParallelDecompiler;
 import ghidra.features.base.memsearch.bytesequence.ExtendedByteSequence;
 import ghidra.features.base.memsearch.bytesource.ProgramByteSource;
 import ghidra.features.base.memsearch.format.SearchFormat;
@@ -27,6 +31,7 @@ import ghidra.program.model.mem.MemoryAccessException;
 import ghidra.program.model.mem.MemoryBlock;
 import ghidra.util.Msg;
 import ghidra.util.task.TaskMonitor;
+import ghidra.util.task.TaskMonitorAdapter;
 
 import com.lauriewired.mcp.api.McpTool;
 import com.lauriewired.mcp.api.Param;
@@ -406,56 +411,99 @@ public class SearchService {
             return StatusOutput.error("Invalid regex pattern: " + e.getMessage());
         }
 
-        final List<SearchDecompiledResult.DecompiledMatch> matches = new ArrayList<>();
+        final List<SearchDecompiledResult.DecompiledMatch> matches =
+                Collections.synchronizedList(new ArrayList<>());
         final FunctionManager functionManager = program.getFunctionManager();
-        final DecompInterface decomp = new DecompInterface();
-        decomp.openProgram(program);
+        final AtomicInteger matchedFunctionCount = new AtomicInteger(0);
+        final AtomicBoolean limitReached = new AtomicBoolean(false);
 
-        int resultCount = 0;
-        int processedCount = 0;
+        // Cancellable monitor — true enables cancellation (cancel() is a no-op when false)
+        final TaskMonitorAdapter monitor = new TaskMonitorAdapter(true);
 
-        for (final Function function : functionManager.getFunctions(true)) {
-            processedCount++;
-            if (resultCount >= limit) break;
-
-            final DecompileResults decompileResults = decomp.decompileFunction(function, 30, TaskMonitor.DUMMY);
-            if (decompileResults == null || !decompileResults.decompileCompleted()) continue;
-
-            final String decompiled = decompileResults.getDecompiledFunction().getC();
-            final Matcher matcher = pattern.matcher(decompiled);
-
-            if (matcher.find()) {
-                final String[] lines = decompiled.split("\n");
-
-                // Find matching lines and build context
-                for (int i = 0; i < lines.length; i++) {
-                    if (pattern.matcher(lines[i]).find()) {
-                        final List<String> contextLines = new ArrayList<>();
-                        final int startCtx = Math.max(0, i - 3);
-                        final int endCtx = Math.min(lines.length - 1, i + 3);
-                        for (int j = startCtx; j <= endCtx; j++) {
-                            contextLines.add(lines[j]);
+        // Callback that decompiles each function in parallel and applies regex matching
+        final DecompilerCallback<List<SearchDecompiledResult.DecompiledMatch>> callback =
+                new DecompilerCallback<>(program, decompiler -> {
+                    // Do NOT call openProgram() — DecompilerCallback does this after configure()
+                }) {
+                    @Override
+                    public List<SearchDecompiledResult.DecompiledMatch> process(
+                            final DecompileResults decompileResults, final TaskMonitor taskMonitor) {
+                        if (limitReached.get()) {
+                            return List.of();
+                        }
+                        if (decompileResults == null || !decompileResults.decompileCompleted()) {
+                            return List.of();
+                        }
+                        if (decompileResults.getDecompiledFunction() == null) {
+                            return List.of();
                         }
 
-                        matches.add(new SearchDecompiledResult.DecompiledMatch(
-                                function.getName(),
-                                function.getEntryPoint().toString(),
-                                lines[i].trim(),
-                                contextLines));
-                    }
-                }
-                resultCount++;
-            }
+                        final String decompiled = decompileResults.getDecompiledFunction().getC();
+                        if (decompiled == null) {
+                            return List.of();
+                        }
 
-            if (processedCount % 100 == 0) {
-                Msg.info(this, "Processed " + processedCount + " functions for decompiled search");
+                        // Pattern is immutable/thread-safe — each thread creates its own Matcher
+                        final Matcher matcher = pattern.matcher(decompiled);
+                        if (!matcher.find()) {
+                            return List.of();
+                        }
+
+                        final Function function = decompileResults.getFunction();
+                        final String[] lines = decompiled.split("\n");
+                        final List<SearchDecompiledResult.DecompiledMatch> functionMatches = new ArrayList<>();
+
+                        for (int i = 0; i < lines.length; i++) {
+                            if (pattern.matcher(lines[i]).find()) {
+                                final List<String> contextLines = new ArrayList<>();
+                                final int startCtx = Math.max(0, i - 3);
+                                final int endCtx = Math.min(lines.length - 1, i + 3);
+                                for (int j = startCtx; j <= endCtx; j++) {
+                                    contextLines.add(lines[j]);
+                                }
+
+                                functionMatches.add(new SearchDecompiledResult.DecompiledMatch(
+                                        function.getName(),
+                                        function.getEntryPoint().toString(),
+                                        lines[i].trim(),
+                                        contextLines));
+                            }
+                        }
+
+                        return functionMatches;
+                    }
+                };
+
+        try {
+            ParallelDecompiler.decompileFunctions(callback, program,
+                    functionManager.getFunctions(true).iterator(),
+                    functionMatches -> {
+                        if (functionMatches != null && !functionMatches.isEmpty()) {
+                            matches.addAll(functionMatches);
+                            if (matchedFunctionCount.incrementAndGet() >= limit) {
+                                limitReached.set(true);
+                                monitor.cancel();
+                            }
+                        }
+                    },
+                    monitor);
+        } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+            // HTTP timeout fired — return whatever we have so far
+        } catch (final Exception e) {
+            if (!limitReached.get()) {
+                Msg.error(this, "Error during parallel decompilation search", e);
             }
+            // Limit-reached cancellation is expected — fall through
+        } finally {
+            callback.dispose();
         }
 
-        if (resultCount == 0) {
+        if (matches.isEmpty()) {
             return StatusOutput.error("No matches found for pattern: " + query);
         }
 
-        return new JsonOutput(new SearchDecompiledResult(query, resultCount, matches));
+        return new JsonOutput(new SearchDecompiledResult(query,
+                matchedFunctionCount.get(), matches));
     }
 }
