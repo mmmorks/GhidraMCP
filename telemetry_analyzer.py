@@ -5,55 +5,206 @@ Analyzes JSON telemetry logs to provide insights on tool usage, performance, and
 """
 
 import json
+import re
 import sys
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from collections import defaultdict, Counter
+from urllib.request import urlopen
+from urllib.error import URLError
 import statistics
 
-# Complete list of all MCP tools available in the system
-ALL_MCP_TOOLS = [
+# Default MCP server URL
+DEFAULT_MCP_URL = "http://localhost:8080"
+
+# Fallback list of MCP tools (used when the server is not reachable)
+FALLBACK_MCP_TOOLS = [
     'add_enum_value',
     'add_structure_field',
-    'analyze_call_graph',
     'analyze_control_flow',
     'analyze_data_flow',
     'create_enum',
     'create_structure',
-    'decompile_function',
-    'decompile_function_by_address',
-    'disassemble_function',
+    'find_data_type_usage',
+    'get_address_data_type',
+    'get_call_graph',
+    'get_comment',
     'get_current_address',
     'get_current_function',
+    'get_data_type',
     'get_function_by_address',
+    'get_function_code',
+    'get_memory_layout',
+    'get_memory_permissions',
+    'get_program_info',
     'get_symbol_address',
-    'list_classes',
     'list_data_items',
-    'list_enums',
-    'list_exports',
+    'list_data_types',
     'list_functions',
-    'list_imports',
-    'list_methods',
-    'list_namespaces',
     'list_references',
-    'list_segments',
-    'list_structures',
+    'list_references_from',
     'list_symbols',
+    'read_memory',
     'rename_data',
     'rename_function',
-    'rename_function_by_address',
-    'rename_struct_field',
-    'rename_variable',
+    'rename_variables',
     'search_decompiled',
     'search_disassembly',
     'search_functions_by_name',
     'search_memory',
-    'set_decompiler_comment',
-    'set_disassembly_comment',
+    'set_address_data_type',
+    'set_comment',
     'set_function_prototype',
-    'set_local_variable_type',
-    'set_memory_data_type'
+    'set_variable_types',
+    'split_variable',
+    'update_enum',
+    'update_structure',
 ]
+
+
+def fetch_mcp_tools(mcp_url):
+    """Fetch the current tool list from the running MCP server.
+
+    Returns a sorted list of tool names, or None if the server is not reachable.
+    """
+    url = f"{mcp_url}/mcp/tools"
+    try:
+        with urlopen(url, timeout=2) as resp:
+            data = json.loads(resp.read().decode())
+        tools = data if isinstance(data, list) else data.get("tools", [])
+        names = sorted(t["name"] for t in tools if isinstance(t, dict) and "name" in t)
+        return names if names else None
+    except (URLError, OSError, json.JSONDecodeError, KeyError):
+        return None
+
+
+def get_mcp_tools(mcp_url=DEFAULT_MCP_URL):
+    """Return the list of MCP tools, trying the live server first."""
+    live_tools = fetch_mcp_tools(mcp_url)
+    if live_tools is not None:
+        print(f"Fetched {len(live_tools)} tools from MCP server at {mcp_url}")
+        return live_tools
+    print(f"MCP server not reachable at {mcp_url}, using fallback tool list ({len(FALLBACK_MCP_TOOLS)} tools)")
+    return list(FALLBACK_MCP_TOOLS)
+
+def parse_age_spec(spec):
+    """Parse a relative age specifier like '30d', '3m', '1y' into a timedelta.
+
+    Supported units: d (days), w (weeks), m (months, approximated as 30 days), y (years, approximated as 365 days).
+    Returns a timedelta, or raises ValueError on invalid input.
+    """
+    match = re.fullmatch(r'(\d+)\s*([dwmy])', spec.strip().lower())
+    if not match:
+        raise ValueError(f"Invalid age specifier '{spec}'. Use e.g. 30d, 3m, 1y")
+    amount = int(match.group(1))
+    unit = match.group(2)
+    multipliers = {'d': 1, 'w': 7, 'm': 30, 'y': 365}
+    return timedelta(days=amount * multipliers[unit])
+
+
+def parse_event_timestamp(ts):
+    """Parse a telemetry event timestamp string into a datetime (UTC)."""
+    # Format from Java: yyyy-MM-dd'T'HH:mm:ss.SSS'Z'
+    for fmt in ("%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ"):
+        try:
+            return datetime.strptime(ts, fmt).replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    raise ValueError(f"Cannot parse timestamp: {ts}")
+
+
+def prune_telemetry(telemetry_dir, age_spec, dry_run=False):
+    """Remove telemetry events older than the given age specifier.
+
+    Rewrites JSONL files in-place, keeping only events newer than the cutoff.
+    Empty files are deleted entirely. Summary JSON files older than the cutoff
+    are also removed.
+
+    Args:
+        telemetry_dir: Path to telemetry directory.
+        age_spec: Relative age string like '30d', '3m', '1y'.
+        dry_run: If True, only report what would be pruned without modifying files.
+    """
+    telemetry_path = Path(telemetry_dir)
+    if not telemetry_path.exists():
+        print(f"Telemetry directory not found: {telemetry_dir}")
+        return
+
+    delta = parse_age_spec(age_spec)
+    cutoff = datetime.now(timezone.utc) - delta
+    print(f"Pruning events older than {age_spec} (before {cutoff.strftime('%Y-%m-%d %H:%M:%S UTC')})")
+    if dry_run:
+        print("(dry run — no files will be modified)\n")
+    else:
+        print()
+
+    total_removed = 0
+    total_kept = 0
+    files_deleted = 0
+    files_rewritten = 0
+
+    # Prune JSONL telemetry files
+    for jsonl_file in sorted(telemetry_path.glob("mcp_telemetry_*.jsonl")):
+        kept = []
+        removed = 0
+        with open(jsonl_file, 'r') as f:
+            for line in f:
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                try:
+                    event = json.loads(stripped)
+                    ts = parse_event_timestamp(event['timestamp'])
+                    if ts >= cutoff:
+                        kept.append(line)
+                    else:
+                        removed += 1
+                except (json.JSONDecodeError, KeyError, ValueError):
+                    kept.append(line)  # preserve unparseable lines
+
+        total_removed += removed
+        total_kept += len(kept)
+
+        if removed == 0:
+            continue
+
+        if not kept:
+            if dry_run:
+                print(f"  Would delete {jsonl_file.name} ({removed} events, all old)")
+            else:
+                jsonl_file.unlink()
+                print(f"  Deleted {jsonl_file.name} ({removed} events, all old)")
+            files_deleted += 1
+        else:
+            if dry_run:
+                print(f"  Would rewrite {jsonl_file.name}: remove {removed}, keep {len(kept)}")
+            else:
+                with open(jsonl_file, 'w') as f:
+                    f.writelines(kept)
+                print(f"  Rewrote {jsonl_file.name}: removed {removed}, kept {len(kept)}")
+            files_rewritten += 1
+
+    # Prune summary JSON files by date in filename
+    for summary_file in sorted(telemetry_path.glob("summary_*.json")):
+        date_match = re.search(r'summary_(\d{4}-\d{2}-\d{2})\.json$', summary_file.name)
+        if not date_match:
+            continue
+        try:
+            file_date = datetime.strptime(date_match.group(1), "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+        if file_date < cutoff:
+            if dry_run:
+                print(f"  Would delete summary {summary_file.name}")
+            else:
+                summary_file.unlink()
+                print(f"  Deleted summary {summary_file.name}")
+            files_deleted += 1
+
+    print(f"\nPrune {'preview' if dry_run else 'complete'}: "
+          f"{total_removed} events removed, {total_kept} kept, "
+          f"{files_deleted} files deleted, {files_rewritten} files rewritten")
+
 
 def parse_jsonl_file(file_path):
     """Parse a JSONL file and return list of events."""
@@ -67,8 +218,9 @@ def parse_jsonl_file(file_path):
                     print(f"Error parsing line: {e}")
     return events
 
-def analyze_telemetry(telemetry_dir):
+def analyze_telemetry(telemetry_dir, mcp_url=DEFAULT_MCP_URL):
     """Analyze all telemetry files in the directory."""
+    all_mcp_tools = get_mcp_tools(mcp_url)
     telemetry_path = Path(telemetry_dir)
     if not telemetry_path.exists():
         print(f"Telemetry directory not found: {telemetry_dir}")
@@ -126,7 +278,7 @@ def analyze_telemetry(telemetry_dir):
                 tool_failure[event['toolName']] += 1
     
     # Add unused tools with 0 counts
-    for tool in ALL_MCP_TOOLS:
+    for tool in all_mcp_tools:
         if tool not in tool_usage:
             tool_usage[tool] = 0
             tool_success[tool] = 0
@@ -296,7 +448,7 @@ def analyze_telemetry(telemetry_dir):
     print("\n8. TOKEN EFFICIENCY SUMMARY")
     print("-" * 40)
     
-    total_tools = len(ALL_MCP_TOOLS)
+    total_tools = len(all_mcp_tools)
     used_tools = len([t for t, c in tool_usage.items() if c > 0])
     unused_tools_count = total_tools - used_tools
     
@@ -314,6 +466,32 @@ def analyze_telemetry(telemetry_dir):
     print("\n" + "="*80)
 
 if __name__ == "__main__":
-    telemetry_dir = sys.argv[1] if len(sys.argv) > 1 else "~/.ghidra_mcp/telemetry"
-    telemetry_dir = Path(telemetry_dir).expanduser()
-    analyze_telemetry(telemetry_dir)
+    import argparse
+    parser = argparse.ArgumentParser(description="Analyze Ghidra MCP telemetry logs")
+    subparsers = parser.add_subparsers(dest="command")
+
+    # Default: analyze (also runs when no subcommand given)
+    analyze_parser = subparsers.add_parser("analyze", help="Analyze telemetry data (default)")
+    analyze_parser.add_argument("telemetry_dir", nargs="?", default="~/.ghidra_mcp/telemetry",
+                                help="Path to telemetry directory (default: ~/.ghidra_mcp/telemetry)")
+    analyze_parser.add_argument("--mcp-url", default=DEFAULT_MCP_URL,
+                                help=f"MCP server URL to fetch live tool list (default: {DEFAULT_MCP_URL})")
+
+    # Prune subcommand
+    prune_parser = subparsers.add_parser("prune", help="Remove old telemetry data")
+    prune_parser.add_argument("age", help="Remove events older than this age (e.g. 30d, 3m, 1y)")
+    prune_parser.add_argument("telemetry_dir", nargs="?", default="~/.ghidra_mcp/telemetry",
+                              help="Path to telemetry directory (default: ~/.ghidra_mcp/telemetry)")
+    prune_parser.add_argument("--dry-run", action="store_true",
+                              help="Preview what would be pruned without modifying files")
+
+    args = parser.parse_args()
+
+    if args.command == "prune":
+        telemetry_dir = Path(args.telemetry_dir).expanduser()
+        prune_telemetry(telemetry_dir, args.age, dry_run=args.dry_run)
+    else:
+        # Default to analyze (handles both explicit "analyze" and no subcommand)
+        telemetry_dir = Path(getattr(args, 'telemetry_dir', None) or "~/.ghidra_mcp/telemetry").expanduser()
+        mcp_url = getattr(args, 'mcp_url', None) or DEFAULT_MCP_URL
+        analyze_telemetry(telemetry_dir, mcp_url=mcp_url)
