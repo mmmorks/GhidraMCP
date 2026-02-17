@@ -1,11 +1,15 @@
 package com.lauriewired.mcp.services;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
+import com.lauriewired.mcp.model.JsonOutput;
 import com.lauriewired.mcp.model.ListOutput;
 import com.lauriewired.mcp.model.StatusOutput;
 import com.lauriewired.mcp.model.ToolOutput;
+import com.lauriewired.mcp.model.response.RenameDataResult;
 import com.lauriewired.mcp.utils.HttpUtils;
 
 import ghidra.program.model.address.Address;
@@ -107,52 +111,57 @@ public class TestMemoryService extends MemoryService {
     }
 
     /**
-     * Rename a data label at the specified address
+     * Rename data labels at the specified addresses
      * For testing, we'll simplify this to avoid Swing threading issues
      *
-     * @param address address of the data to rename
-     * @param newName new label name
-     * @return "Renamed successfully" or "Rename failed"
+     * @param renames map of address to new name
+     * @return structured result with renamed pairs and count
      */
     @Override
-    public ToolOutput renameData(String address, String newName) {
+    public ToolOutput renameData(Map<String, String> renames) {
         Program program = testProgramService.getCurrentProgram();
-        if (program == null) return StatusOutput.error("Rename failed");
+        if (program == null) return StatusOutput.error("No program loaded");
+        if (renames == null || renames.isEmpty()) return StatusOutput.error("No renames specified");
 
-        // For testing, we'll run directly without Swing
+        // Pre-validate all addresses
+        Map<Address, String> resolved = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : renames.entrySet()) {
+            Address addr = program.getAddressFactory().getAddress(entry.getKey());
+            if (addr == null) {
+                return StatusOutput.error("Invalid address: " + entry.getKey());
+            }
+            if (program.getListing().getDefinedDataAt(addr) == null) {
+                return StatusOutput.error("No defined data at address: " + entry.getKey());
+            }
+            resolved.put(addr, entry.getValue());
+        }
+
         int tx = program.startTransaction("Rename data");
         boolean success = false;
         try {
-            Address addr = program.getAddressFactory().getAddress(address);
-            if (addr == null) {
-                return StatusOutput.error("Rename failed");
-            }
+            SymbolTable symTable = program.getSymbolTable();
+            Map<String, String> renamed = new LinkedHashMap<>();
 
-            // Check if data exists at this address
-            if (program.getListing().getDefinedDataAt(addr) != null) {
-                SymbolTable symTable = program.getSymbolTable();
+            for (Map.Entry<Address, String> entry : resolved.entrySet()) {
+                Address addr = entry.getKey();
+                String newName = entry.getValue();
                 Symbol symbol = symTable.getPrimarySymbol(addr);
 
                 if (symbol != null) {
                     symbol.setName(newName, SourceType.USER_DEFINED);
-                    success = true;
                 } else {
-                    try {
-                        symTable.createLabel(addr, newName, SourceType.USER_DEFINED);
-                        success = true;
-                    } catch (InvalidInputException e) {
-                        // Error creating label
-                    }
+                    symTable.createLabel(addr, newName, SourceType.USER_DEFINED);
                 }
+                renamed.put(addr.toString(), newName);
             }
-        }
-        catch (DuplicateNameException | InvalidInputException e) {
-            // Rename error
-        }
-        finally {
+
+            success = true;
+            return new JsonOutput(new RenameDataResult("Renamed successfully", renamed, renamed.size()));
+        } catch (DuplicateNameException | InvalidInputException e) {
+            return StatusOutput.error("Rename failed: " + e.getMessage());
+        } finally {
             program.endTransaction(tx, success);
         }
-        return success ? StatusOutput.ok("Renamed successfully") : StatusOutput.error("Rename failed");
     }
     
     /**

@@ -5,6 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -15,6 +19,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import org.mockito.Mock;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -22,6 +27,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.lauriewired.mcp.model.JsonOutput;
 import com.lauriewired.mcp.model.ToolOutput;
 import com.lauriewired.mcp.model.response.ReadMemoryResult;
+import com.lauriewired.mcp.model.response.RenameDataResult;
 
 import ghidra.app.services.ProgramManager;
 import ghidra.program.model.address.Address;
@@ -164,35 +170,21 @@ public class MemoryServiceTest {
     @Test
     @DisplayName("renameData returns error when no program is loaded")
     void testRenameData_NoProgram() {
-        String result = memoryService.renameData("0x1000", "newName").toStructuredJson();
+        String result = memoryService.renameData(Map.of("0x1000", "newName")).toStructuredJson();
         assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
-    @DisplayName("renameData returns error for null address")
-    void testRenameData_NullAddress() {
-        String result = memoryService.renameData(null, "newName").toStructuredJson();
+    @DisplayName("renameData returns error for null map")
+    void testRenameData_NullMap() {
+        String result = memoryService.renameData((Map<String, String>) null).toStructuredJson();
         assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
-    @DisplayName("renameData returns error for empty address")
-    void testRenameData_EmptyAddress() {
-        String result = memoryService.renameData("", "newName").toStructuredJson();
-        assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
-
-    @Test
-    @DisplayName("renameData returns error for null name")
-    void testRenameData_NullName() {
-        String result = memoryService.renameData("0x1000", null).toStructuredJson();
-        assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
-
-    @Test
-    @DisplayName("renameData returns error for empty name")
-    void testRenameData_EmptyName() {
-        String result = memoryService.renameData("0x1000", "").toStructuredJson();
+    @DisplayName("renameData returns error for empty map")
+    void testRenameData_EmptyMap() {
+        String result = memoryService.renameData(Map.of()).toStructuredJson();
         assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
@@ -204,9 +196,9 @@ public class MemoryServiceTest {
 
     // Note: Testing with actual Program would require a full Ghidra environment
     // These tests verify the service handles null/error cases properly
-    
+
     // Happy path tests using mocked Ghidra objects
-    
+
     @Test
     @DisplayName("getMemoryLayout returns memory blocks when program is loaded")
     void testListSegments_Success() {
@@ -338,8 +330,8 @@ public class MemoryServiceTest {
     }
     
     @Test
-    @DisplayName("renameData successfully renames existing symbol")
-    void testRenameData_ExistingSymbol_Success() throws Exception {
+    @DisplayName("renameData successfully renames multiple data labels")
+    void testRenameData_MultipleAddresses_Success() throws Exception {
         // Setup mocks
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
         when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
@@ -347,24 +339,42 @@ public class MemoryServiceTest {
         when(mockProgram.getListing()).thenReturn(mockListing);
         when(mockProgram.getSymbolTable()).thenReturn(mockSymbolTable);
 
-        // Mock address
+        // Mock two addresses
+        Address mockAddr2 = mock(Address.class);
         when(mockAddressFactory.getAddress("0x1000")).thenReturn(mockDataAddr);
+        when(mockAddressFactory.getAddress("0x2000")).thenReturn(mockAddr2);
+        when(mockDataAddr.toString()).thenReturn("0x1000");
+        when(mockAddr2.toString()).thenReturn("0x2000");
 
-        // Mock data exists at address
+        // Mock data exists at both addresses
         when(mockListing.getDefinedDataAt(mockDataAddr)).thenReturn(mockData);
+        Data mockData2 = mock(Data.class);
+        when(mockListing.getDefinedDataAt(mockAddr2)).thenReturn(mockData2);
 
-        // Mock existing symbol
+        // Mock existing symbols
+        Symbol mockSymbol2 = mock(Symbol.class);
         when(mockSymbolTable.getPrimarySymbol(mockDataAddr)).thenReturn(mockSymbol);
+        when(mockSymbolTable.getPrimarySymbol(mockAddr2)).thenReturn(mockSymbol2);
 
         // Mock transaction
         when(mockProgram.startTransaction(anyString())).thenReturn(1);
 
-        // Execute
-        String result = testMemoryService.renameData("0x1000", "newName").toStructuredJson();
+        // Execute with ordered map to ensure deterministic iteration
+        Map<String, String> renames = new LinkedHashMap<>();
+        renames.put("0x1000", "config_table");
+        renames.put("0x2000", "key_buffer");
+        ToolOutput result = testMemoryService.renameData(renames);
 
-        // Verify
-        assertTrue(result.contains("\"message\":\"Renamed successfully\""));
-        verify(mockSymbol).setName("newName", SourceType.USER_DEFINED);
+        // Verify structured result
+        assertTrue(result instanceof JsonOutput);
+        RenameDataResult renameResult = (RenameDataResult) ((JsonOutput) result).data();
+        assertEquals("Renamed successfully", renameResult.status());
+        assertEquals(2, renameResult.count());
+        assertEquals("config_table", renameResult.renamed().get("0x1000"));
+        assertEquals("key_buffer", renameResult.renamed().get("0x2000"));
+
+        verify(mockSymbol).setName("config_table", SourceType.USER_DEFINED);
+        verify(mockSymbol2).setName("key_buffer", SourceType.USER_DEFINED);
         verify(mockProgram).endTransaction(1, true);
     }
 
@@ -380,6 +390,7 @@ public class MemoryServiceTest {
 
         // Mock address
         when(mockAddressFactory.getAddress("0x2000")).thenReturn(mockDataAddr);
+        when(mockDataAddr.toString()).thenReturn("0x2000");
 
         // Mock data exists at address
         when(mockListing.getDefinedDataAt(mockDataAddr)).thenReturn(mockData);
@@ -391,16 +402,19 @@ public class MemoryServiceTest {
         when(mockProgram.startTransaction(anyString())).thenReturn(1);
 
         // Execute
-        String result = testMemoryService.renameData("0x2000", "brandNewLabel").toStructuredJson();
+        ToolOutput result = testMemoryService.renameData(Map.of("0x2000", "brandNewLabel"));
 
         // Verify
-        assertTrue(result.contains("\"message\":\"Renamed successfully\""));
+        assertTrue(result instanceof JsonOutput);
+        RenameDataResult renameResult = (RenameDataResult) ((JsonOutput) result).data();
+        assertEquals("Renamed successfully", renameResult.status());
+        assertEquals(1, renameResult.count());
         verify(mockSymbolTable).createLabel(mockDataAddr, "brandNewLabel", SourceType.USER_DEFINED);
         verify(mockProgram).endTransaction(1, true);
     }
 
     @Test
-    @DisplayName("renameData returns 'Rename failed' for invalid address")
+    @DisplayName("renameData returns error for invalid address in map")
     void testRenameData_InvalidAddress() {
         // Setup mocks
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
@@ -410,19 +424,16 @@ public class MemoryServiceTest {
         // Mock invalid address
         when(mockAddressFactory.getAddress("invalid")).thenReturn(null);
 
-        // Mock transaction
-        when(mockProgram.startTransaction(anyString())).thenReturn(1);
-
-        // Execute
-        String result = testMemoryService.renameData("invalid", "newName").toStructuredJson();
+        // Execute - pre-validation should catch this before any transaction
+        String result = testMemoryService.renameData(Map.of("invalid", "newName")).toStructuredJson();
 
         // Verify
-        assertTrue(result.contains("\"message\":\"Rename failed\""));
-        verify(mockProgram).endTransaction(1, false);
+        assertTrue(result.contains("Invalid address: invalid"));
+        verify(mockProgram, never()).startTransaction(anyString());
     }
 
     @Test
-    @DisplayName("renameData returns 'Rename failed' when no data at address")
+    @DisplayName("renameData returns error when no data at address")
     void testRenameData_NoDataAtAddress() {
         // Setup mocks
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
@@ -436,15 +447,26 @@ public class MemoryServiceTest {
         // Mock no data at address
         when(mockListing.getDefinedDataAt(mockDataAddr)).thenReturn(null);
 
-        // Mock transaction
-        when(mockProgram.startTransaction(anyString())).thenReturn(1);
-
-        // Execute
-        String result = testMemoryService.renameData("0x3000", "newName").toStructuredJson();
+        // Execute - pre-validation should catch this before any transaction
+        String result = testMemoryService.renameData(Map.of("0x3000", "newName")).toStructuredJson();
 
         // Verify
-        assertTrue(result.contains("\"message\":\"Rename failed\""));
-        verify(mockProgram).endTransaction(1, false);
+        assertTrue(result.contains("No defined data at address: 0x3000"));
+        verify(mockProgram, never()).startTransaction(anyString());
+    }
+
+    @Test
+    @DisplayName("renameData returns error for empty map with program loaded")
+    void testRenameData_EmptyMapWithProgram() {
+        // Setup mocks
+        when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
+        when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
+
+        // Execute
+        String result = testMemoryService.renameData(Map.of()).toStructuredJson();
+
+        // Verify
+        assertTrue(result.contains("No renames specified"));
     }
 
     // Tests for setAddressDataType

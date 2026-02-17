@@ -1,7 +1,9 @@
 package com.lauriewired.mcp.services;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import com.lauriewired.mcp.model.JsonOutput;
 import com.lauriewired.mcp.model.ListOutput;
@@ -12,6 +14,7 @@ import com.lauriewired.mcp.model.response.DataItem;
 import com.lauriewired.mcp.model.response.MemoryPermissionsResult;
 import com.lauriewired.mcp.model.response.MemorySegmentItem;
 import com.lauriewired.mcp.model.response.ReadMemoryResult;
+import com.lauriewired.mcp.model.response.RenameDataResult;
 import com.lauriewired.mcp.utils.HttpUtils;
 import com.lauriewired.mcp.utils.ProgramTransaction;
 
@@ -126,47 +129,59 @@ public class MemoryService {
     }
 
     @McpTool(post = true, description = """
-        Rename a data label at the specified address.
+        Rename data labels at the specified addresses in a single atomic transaction.
 
-        Labels identify data elements (strings, arrays, structures) to improve code readability.
+        Accepts a map of address -> new name pairs. All addresses are validated before
+        any renames are applied (all-or-nothing).
 
-        Returns: Message indicating operation was attempted
+        Returns: Structured result with renamed pairs and count
 
-        Note: Creates a new label if none exists at the address. Address must point to data, not code.
+        Note: Each address must point to defined data, not code. Creates a new label if
+        none exists at the address.
 
-        Example: rename_data("00402000", "config_table") """,
-        outputType = StatusOutput.class, responseType = StatusOutput.class)
+        Example: rename_data({"00402000": "config_table", "00403000": "key_buffer"}) """,
+        outputType = JsonOutput.class, responseType = RenameDataResult.class)
     public ToolOutput renameData(
-            @Param("final Data address (e.g., \"00401000\" or \"ram:00401000\")") final String address,
-            @Param("New name to assign") final String newName) {
+            @Param("Map of data addresses to new names") final Map<String, String> renames) {
         final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
+        if (renames == null || renames.isEmpty()) return StatusOutput.error("No renames specified");
+
+        // Pre-validate all addresses
+        final Map<Address, String> resolved = new LinkedHashMap<>();
+        for (final var entry : renames.entrySet()) {
+            final Address addr = program.getAddressFactory().getAddress(entry.getKey());
+            if (addr == null) {
+                return StatusOutput.error("Invalid address: " + entry.getKey());
+            }
+            if (program.getListing().getDefinedDataAt(addr) == null) {
+                return StatusOutput.error("No defined data at address: " + entry.getKey());
+            }
+            resolved.put(addr, entry.getValue());
+        }
 
         try (var tx = ProgramTransaction.start(program, "Rename data")) {
-            final Address addr = program.getAddressFactory().getAddress(address);
-            if (addr == null) {
-                Msg.error(this, "Invalid address: " + address);
-                return StatusOutput.error("Rename failed");
-            }
-
-            if (program.getListing().getDefinedDataAt(addr) == null) {
-                Msg.error(this, "No defined data at address: " + address);
-                return StatusOutput.error("Rename failed");
-            }
-
             final SymbolTable symTable = program.getSymbolTable();
-            final Symbol symbol = symTable.getPrimarySymbol(addr);
+            final Map<String, String> renamed = new LinkedHashMap<>();
 
-            if (symbol != null) {
-                symbol.setName(newName, SourceType.USER_DEFINED);
-            } else {
-                symTable.createLabel(addr, newName, SourceType.USER_DEFINED);
+            for (final var entry : resolved.entrySet()) {
+                final Address addr = entry.getKey();
+                final String newName = entry.getValue();
+                final Symbol symbol = symTable.getPrimarySymbol(addr);
+
+                if (symbol != null) {
+                    symbol.setName(newName, SourceType.USER_DEFINED);
+                } else {
+                    symTable.createLabel(addr, newName, SourceType.USER_DEFINED);
+                }
+                renamed.put(addr.toString(), newName);
             }
+
             tx.commit();
-            return StatusOutput.ok("Renamed successfully");
+            return new JsonOutput(new RenameDataResult("Renamed successfully", renamed, renamed.size()));
         } catch (DuplicateNameException | InvalidInputException e) {
             Msg.error(this, "Rename data error", e);
-            return StatusOutput.error("Rename failed");
+            return StatusOutput.error("Rename failed: " + e.getMessage());
         }
     }
 
