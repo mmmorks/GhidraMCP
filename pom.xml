@@ -306,7 +306,7 @@
           <threshold>Medium</threshold>
           <xmlOutput>true</xmlOutput>
           <htmlOutput>true</htmlOutput>
-          <failOnError>false</failOnError>
+          <failOnError>true</failOnError>
           <excludeFilterFile>${project.basedir}/spotbugs-exclude.xml</excludeFilterFile>
         </configuration>
         <executions>

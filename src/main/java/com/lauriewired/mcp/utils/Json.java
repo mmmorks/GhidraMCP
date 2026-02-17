@@ -2,6 +2,7 @@ package com.lauriewired.mcp.utils;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 
@@ -43,9 +44,22 @@ public final class Json {
     }
 
     /**
-     * Get the shared ObjectMapper instance.
+     * Deserialize a JSON string to the given type.
+     *
+     * @throws RuntimeException if deserialization fails
      */
-    public static ObjectMapper mapper() {
-        return MAPPER;
+    public static <T> T readValue(final String json, final Class<T> type) {
+        try {
+            return MAPPER.readValue(json, type);
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException("JSON deserialization failed", e);
+        }
+    }
+
+    /**
+     * Convert a value (e.g. a JsonNode) to the given type using Jackson conversion.
+     */
+    public static <T> T convertValue(final JsonNode node, final Class<T> type) {
+        return MAPPER.convertValue(node, type);
     }
 }

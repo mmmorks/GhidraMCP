@@ -9,6 +9,9 @@ public record DataFlowResult(
     Variable variable,
     List<Reference> references
 ) implements Displayable {
+    public DataFlowResult {
+        references = List.copyOf(references);
+    }
     public record Variable(String name, String type, String storage) {}
 
     public record Reference(String address, String kind, String operation, String instruction) {}

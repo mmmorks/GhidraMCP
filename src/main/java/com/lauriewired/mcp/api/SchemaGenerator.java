@@ -4,7 +4,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.github.victools.jsonschema.generator.Option;
 import com.github.victools.jsonschema.generator.OptionPreset;
@@ -57,22 +56,20 @@ public final class SchemaGenerator {
 
         if (outputType == ListOutput.class) {
             // Generate schema for the item type, then wrap in pagination envelope
-            final JsonNode itemSchema = GENERATOR.generateSchema(responseType);
+            final ObjectNode itemSchema = GENERATOR.generateSchema(responseType);
             // Remove $schema from item-level schema (only needed at top level)
-            if (itemSchema instanceof ObjectNode on) {
-                on.remove("$schema");
-            }
+            itemSchema.remove("$schema");
             return Json.serialize(buildListEnvelope(itemSchema));
         }
 
-        final JsonNode schema = GENERATOR.generateSchema(responseType);
+        final ObjectNode schema = GENERATOR.generateSchema(responseType);
         return schema.toString();
     }
 
     /**
      * Build the pagination envelope schema wrapping item schemas.
      */
-    private static Map<String, Object> buildListEnvelope(final JsonNode itemSchema) {
+    private static Map<String, Object> buildListEnvelope(final ObjectNode itemSchema) {
         final Map<String, Object> schema = new LinkedHashMap<>();
         schema.put("$schema", SchemaVersion.DRAFT_2020_12.getIdentifier());
         schema.put("type", "object");
@@ -82,7 +79,7 @@ public final class SchemaGenerator {
         final Map<String, Object> itemsArray = new LinkedHashMap<>();
         itemsArray.put("type", "array");
         // Convert JsonNode to a Map so Jackson serializes it inline
-        itemsArray.put("items", Json.mapper().convertValue(itemSchema, Map.class));
+        itemsArray.put("items", Json.convertValue(itemSchema, Map.class));
         properties.put("items", itemsArray);
 
         properties.put("total_items", Map.of("type", "integer"));

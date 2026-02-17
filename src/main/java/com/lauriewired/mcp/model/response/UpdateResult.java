@@ -5,6 +5,9 @@ import java.util.List;
 import com.lauriewired.mcp.model.Displayable;
 
 public record UpdateResult(String name, List<String> results, Summary summary) implements Displayable {
+    public UpdateResult {
+        results = List.copyOf(results);
+    }
     public record Summary(int succeeded, int failed) {}
 
     @Override

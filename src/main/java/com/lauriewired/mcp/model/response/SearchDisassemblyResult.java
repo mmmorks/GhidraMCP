@@ -5,12 +5,20 @@ import java.util.List;
 import com.lauriewired.mcp.model.Displayable;
 
 public record SearchDisassemblyResult(String query, int matchCount, List<DisasmMatch> matches) implements Displayable {
+    public SearchDisassemblyResult {
+        matches = List.copyOf(matches);
+    }
+
     public record DisasmMatch(
         String address,
         String function,
         String matchedInstruction,
         List<ContextLine> context
-    ) {}
+    ) {
+        public DisasmMatch {
+            context = List.copyOf(context);
+        }
+    }
 
     public record ContextLine(String address, String text, boolean isMatch) {}
 

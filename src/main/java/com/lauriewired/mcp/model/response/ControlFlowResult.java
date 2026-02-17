@@ -9,12 +9,21 @@ public record ControlFlowResult(
     String entryPoint,
     List<Block> blocks
 ) implements Displayable {
+    public ControlFlowResult {
+        blocks = List.copyOf(blocks);
+    }
+
     public record Block(
         String address,
         Range range,
         List<Successor> successors,
         List<Instruction> instructions
-    ) {}
+    ) {
+        public Block {
+            successors = List.copyOf(successors);
+            instructions = List.copyOf(instructions);
+        }
+    }
 
     public record Range(String start, String end) {}
 

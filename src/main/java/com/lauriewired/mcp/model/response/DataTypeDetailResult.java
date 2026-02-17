@@ -12,6 +12,10 @@ public record DataTypeDetailResult(
     List<Field> fields,
     List<Value> values
 ) implements Displayable {
+    public DataTypeDetailResult {
+        fields = fields != null ? List.copyOf(fields) : null;
+        values = values != null ? List.copyOf(values) : null;
+    }
     public record Field(int offset, String name, String type, int size, String comment) {}
 
     public record Value(String name, long value) {}

@@ -5,12 +5,20 @@ import java.util.List;
 import com.lauriewired.mcp.model.Displayable;
 
 public record SearchDecompiledResult(String query, int matchCount, List<DecompiledMatch> matches) implements Displayable {
+    public SearchDecompiledResult {
+        matches = List.copyOf(matches);
+    }
+
     public record DecompiledMatch(
         String function,
         String address,
         String matchLine,
         List<String> context
-    ) {}
+    ) {
+        public DecompiledMatch {
+            context = List.copyOf(context);
+        }
+    }
 
     @Override
     public String toDisplayText() {

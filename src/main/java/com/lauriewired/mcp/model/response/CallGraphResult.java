@@ -12,12 +12,22 @@ public record CallGraphResult(
     List<CallGraphNode> callers,
     List<CallGraphNode> callees
 ) implements Displayable {
+    public CallGraphResult {
+        callers = callers != null ? List.copyOf(callers) : null;
+        callees = callees != null ? List.copyOf(callees) : null;
+    }
+
     public record CallGraphNode(
         String name,
         String address,
         List<CallGraphNode> callers,
         List<CallGraphNode> callees
-    ) {}
+    ) {
+        public CallGraphNode {
+            callers = callers != null ? List.copyOf(callers) : null;
+            callees = callees != null ? List.copyOf(callees) : null;
+        }
+    }
 
     @Override
     public String toDisplayText() {

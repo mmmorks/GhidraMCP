@@ -296,7 +296,7 @@ public class HttpUtils {
             final Map<String, Object> envelope = new java.util.LinkedHashMap<>();
             envelope.put("status", "success");
             // Parse the structured JSON back to an object so it's embedded inline
-            envelope.put("data", Json.mapper().readValue(output.toStructuredJson(), Object.class));
+            envelope.put("data", Json.readValue(output.toStructuredJson(), Object.class));
             envelope.put("text", output.toDisplayText());
             sendRawJson(exchange, 200, Json.serialize(envelope));
         }
@@ -324,7 +324,7 @@ public class HttpUtils {
         if (data != null && !data.isEmpty()) {
             final String trimmed = data.trim();
             if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
-                envelope.put("data", Json.mapper().readValue(trimmed, Object.class));
+                envelope.put("data", Json.readValue(trimmed, Object.class));
             } else {
                 envelope.put("data", data);
             }

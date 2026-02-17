@@ -154,7 +154,7 @@ public class ToolDef {
         final String schema = SchemaGenerator.generateSchema(responseType, outputType);
         if (schema != null) {
             try {
-                tool.put("outputSchema", Json.mapper().readValue(schema, Object.class));
+                tool.put("outputSchema", Json.readValue(schema, Object.class));
             } catch (Exception e) {
                 throw new RuntimeException("Failed to parse generated schema for tool: " + name, e);
             }

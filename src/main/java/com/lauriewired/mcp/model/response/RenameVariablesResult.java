@@ -5,6 +5,9 @@ import java.util.Map;
 import com.lauriewired.mcp.model.Displayable;
 
 public record RenameVariablesResult(String status, String function, Map<String, String> renamed, int count) implements Displayable {
+    public RenameVariablesResult {
+        renamed = Map.copyOf(renamed);
+    }
     @Override
     public String toDisplayText() {
         final StringBuilder sb = new StringBuilder();

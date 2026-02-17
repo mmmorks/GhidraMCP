@@ -12,6 +12,9 @@ public record SplitVariableResult(
     List<VarInfo> variables,
     String decompiled
 ) implements Displayable {
+    public SplitVariableResult {
+        variables = variables != null ? List.copyOf(variables) : null;
+    }
     public record VarInfo(String name, String dataType, String storage) {}
 
     @Override

@@ -5,6 +5,9 @@ import java.util.List;
 import com.lauriewired.mcp.model.Displayable;
 
 public record SearchMemoryResult(String query, int matchCount, List<MemoryMatch> matches) implements Displayable {
+    public SearchMemoryResult {
+        matches = List.copyOf(matches);
+    }
     public record MemoryMatch(String address, String block, String label, String context) {}
 
     @Override
