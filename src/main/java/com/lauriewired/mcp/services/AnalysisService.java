@@ -319,7 +319,9 @@ public class AnalysisService {
         sorted.sort(Comparator.comparing(Function::getName));
 
         for (final Function calledFunc : sorted) {
-            final List<CallGraphResult.CallGraphNode> childCallees = buildCalleeHierarchy(calledFunc, visited, currentDepth + 1, maxDepth);
+            final boolean atMaxDepth = currentDepth + 1 >= maxDepth;
+            final List<CallGraphResult.CallGraphNode> childCallees = atMaxDepth
+                    ? null : buildCalleeHierarchy(calledFunc, visited, currentDepth + 1, maxDepth);
             nodes.add(new CallGraphResult.CallGraphNode(
                     calledFunc.getName(),
                     calledFunc.getEntryPoint().toString(),
@@ -349,7 +351,9 @@ public class AnalysisService {
         sorted.sort(Comparator.comparing(Function::getName));
 
         for (final Function caller : sorted) {
-            final List<CallGraphResult.CallGraphNode> childCallers = buildCallerHierarchy(caller, visited, currentDepth + 1, maxDepth);
+            final boolean atMaxDepth = currentDepth + 1 >= maxDepth;
+            final List<CallGraphResult.CallGraphNode> childCallers = atMaxDepth
+                    ? null : buildCallerHierarchy(caller, visited, currentDepth + 1, maxDepth);
             nodes.add(new CallGraphResult.CallGraphNode(
                     caller.getName(),
                     caller.getEntryPoint().toString(),
