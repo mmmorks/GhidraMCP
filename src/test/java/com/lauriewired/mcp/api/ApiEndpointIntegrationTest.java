@@ -112,23 +112,23 @@ public class ApiEndpointIntegrationTest {
     // Memory Service Endpoints
     
     @Test
-    @DisplayName("set_address_data_type endpoint parses parameters correctly")
+    @DisplayName("set_address_data_type endpoint parses map and clear_existing correctly")
     void testSetMemoryDataTypeEndpoint_ParsesParameters() throws Exception {
         // Setup to capture the handler
         ArgumentCaptor<HttpHandler> handlerCaptor = ArgumentCaptor.forClass(HttpHandler.class);
-        
+
         // Register endpoints
         apiHandlerRegistry.registerAllEndpoints();
-        
+
         // Capture the handler for set_address_data_type
         verify(mockServer).createContext(eq("/set_address_data_type"), handlerCaptor.capture());
         HttpHandler handler = handlerCaptor.getValue();
-        
-        // Setup request body
-        String requestBody = "address=0x1000&data_type=int&clear_existing=true";
-        ByteArrayInputStream inputStream = new ByteArrayInputStream(requestBody.getBytes());
+
+        // Setup JSON request body with map and clear_existing
+        String jsonBody = "{\"types\":{\"0x1000\":\"int\"}, \"clear_existing\":true}";
+        ByteArrayInputStream inputStream = new ByteArrayInputStream(jsonBody.getBytes());
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-        
+
         // Setup mock exchange
         when(mockExchange.getRequestURI()).thenReturn(URI.create("/set_address_data_type"));
         when(mockExchange.getRequestMethod()).thenReturn("POST");
@@ -136,37 +136,40 @@ public class ApiEndpointIntegrationTest {
         when(mockExchange.getResponseBody()).thenReturn(outputStream);
         when(mockExchange.getResponseHeaders()).thenReturn(mockHeaders);
         when(mockExchange.getRequestHeaders()).thenReturn(mockHeaders);
-        when(mockHeaders.getFirst("Content-Type")).thenReturn("application/x-www-form-urlencoded");
-        
+        when(mockHeaders.getFirst("Content-Type")).thenReturn("application/json");
+
+        java.util.Map<String, String> expectedTypes = java.util.Map.of("0x1000", "int");
+
         // Setup mock service response
-        when(mockMemoryService.setAddressDataType("0x1000", "int", true))
-            .thenReturn(StatusOutput.ok("Data type 'int' (4 bytes) set at address 0x1000"));
-        
+        when(mockMemoryService.setAddressDataType(expectedTypes, true))
+            .thenReturn(new JsonOutput(new com.lauriewired.mcp.model.response.SetDataTypesResult(
+                "Data types set successfully", java.util.Map.of("0x1000", "int"), 1)));
+
         // Invoke the handler
         handler.handle(mockExchange);
-        
+
         // Verify the service was called with correct parameters
-        verify(mockMemoryService).setAddressDataType("0x1000", "int", true);
+        verify(mockMemoryService).setAddressDataType(expectedTypes, true);
     }
-    
+
     @Test
-    @DisplayName("set_address_data_type endpoint handles clear_existing=false")
-    void testSetMemoryDataTypeEndpoint_ClearExistingFalse() throws Exception {
+    @DisplayName("set_address_data_type endpoint defaults clear_existing to false")
+    void testSetMemoryDataTypeEndpoint_DefaultClearExisting() throws Exception {
         // Setup to capture the handler
         ArgumentCaptor<HttpHandler> handlerCaptor = ArgumentCaptor.forClass(HttpHandler.class);
-        
+
         // Register endpoints
         apiHandlerRegistry.registerAllEndpoints();
-        
+
         // Capture the handler
         verify(mockServer).createContext(eq("/set_address_data_type"), handlerCaptor.capture());
         HttpHandler handler = handlerCaptor.getValue();
-        
-        // Setup request body
-        String requestBody = "address=0x2000&data_type=char[20]&clear_existing=false";
-        ByteArrayInputStream inputStream = new ByteArrayInputStream(requestBody.getBytes());
+
+        // Setup JSON request body without clear_existing
+        String jsonBody = "{\"types\":{\"0x3000\":\"POINT\"}}";
+        ByteArrayInputStream inputStream = new ByteArrayInputStream(jsonBody.getBytes());
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-        
+
         // Setup mock exchange
         when(mockExchange.getRequestURI()).thenReturn(URI.create("/set_address_data_type"));
         when(mockExchange.getRequestMethod()).thenReturn("POST");
@@ -174,55 +177,20 @@ public class ApiEndpointIntegrationTest {
         when(mockExchange.getResponseBody()).thenReturn(outputStream);
         when(mockExchange.getResponseHeaders()).thenReturn(mockHeaders);
         when(mockExchange.getRequestHeaders()).thenReturn(mockHeaders);
-        when(mockHeaders.getFirst("Content-Type")).thenReturn("application/x-www-form-urlencoded");
-        
-        // Setup mock service response
-        when(mockMemoryService.setAddressDataType("0x2000", "char[20]", false))
-            .thenReturn(StatusOutput.ok("Data type 'char[20]' (20 bytes) set at address 0x2000"));
-        
-        // Invoke the handler
-        handler.handle(mockExchange);
-        
-        // Verify the service was called with correct parameters
-        verify(mockMemoryService).setAddressDataType("0x2000", "char[20]", false);
-    }
-    
-    @Test
-    @DisplayName("set_address_data_type endpoint handles missing clear_existing parameter")
-    void testSetMemoryDataTypeEndpoint_MissingClearExisting() throws Exception {
-        // Setup to capture the handler
-        ArgumentCaptor<HttpHandler> handlerCaptor = ArgumentCaptor.forClass(HttpHandler.class);
-        
-        // Register endpoints
-        apiHandlerRegistry.registerAllEndpoints();
-        
-        // Capture the handler
-        verify(mockServer).createContext(eq("/set_address_data_type"), handlerCaptor.capture());
-        HttpHandler handler = handlerCaptor.getValue();
-        
-        // Setup request body without clear_existing
-        String requestBody = "address=0x3000&data_type=POINT";
-        ByteArrayInputStream inputStream = new ByteArrayInputStream(requestBody.getBytes());
-        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-        
-        // Setup mock exchange
-        when(mockExchange.getRequestURI()).thenReturn(URI.create("/set_address_data_type"));
-        when(mockExchange.getRequestMethod()).thenReturn("POST");
-        when(mockExchange.getRequestBody()).thenReturn(inputStream);
-        when(mockExchange.getResponseBody()).thenReturn(outputStream);
-        when(mockExchange.getResponseHeaders()).thenReturn(mockHeaders);
-        when(mockExchange.getRequestHeaders()).thenReturn(mockHeaders);
-        when(mockHeaders.getFirst("Content-Type")).thenReturn("application/x-www-form-urlencoded");
-        
-        // Setup mock service response — default is false (backward compatible)
-        when(mockMemoryService.setAddressDataType("0x3000", "POINT", false))
-            .thenReturn(StatusOutput.ok("Data type 'POINT' (8 bytes) set at address 0x3000"));
+        when(mockHeaders.getFirst("Content-Type")).thenReturn("application/json");
+
+        java.util.Map<String, String> expectedTypes = java.util.Map.of("0x3000", "POINT");
+
+        // Setup mock service response — default clear_existing is false
+        when(mockMemoryService.setAddressDataType(expectedTypes, false))
+            .thenReturn(new JsonOutput(new com.lauriewired.mcp.model.response.SetDataTypesResult(
+                "Data types set successfully", java.util.Map.of("0x3000", "POINT"), 1)));
 
         // Invoke the handler
         handler.handle(mockExchange);
 
         // Verify the service was called with false as default
-        verify(mockMemoryService).setAddressDataType("0x3000", "POINT", false);
+        verify(mockMemoryService).setAddressDataType(expectedTypes, false);
     }
 
     // GET Endpoint Tests

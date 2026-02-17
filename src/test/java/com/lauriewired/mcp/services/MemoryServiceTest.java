@@ -470,11 +470,11 @@ public class MemoryServiceTest {
     }
 
     // Tests for setAddressDataType
-    
+
     @Test
     @DisplayName("setAddressDataType returns error when no program is loaded")
     void testSetMemoryDataType_NoProgram() {
-        String result = memoryService.setAddressDataType("0x1000", "int", true).toStructuredJson();
+        String result = memoryService.setAddressDataType(Map.of("0x1000", "int"), true).toStructuredJson();
         assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
@@ -487,10 +487,19 @@ public class MemoryServiceTest {
 
         // Create MemoryService without DataTypeService using TestMemoryService
         TestMemoryService memoryServiceNoDataType = new TestMemoryService(testProgramService);
-        String result = memoryServiceNoDataType.setAddressDataType("0x1000", "int", true).toStructuredJson();
+        String result = memoryServiceNoDataType.setAddressDataType(Map.of("0x1000", "int"), true).toStructuredJson();
         assertTrue(result.contains("\"message\":\"DataTypeService not available\""));
     }
 
+    @Test
+    @DisplayName("setAddressDataType returns error for empty map")
+    void testSetMemoryDataType_EmptyMap() {
+        when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
+        when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
+
+        String result = testMemoryService.setAddressDataType(Map.of(), true).toStructuredJson();
+        assertTrue(result.contains("No types specified"));
+    }
 
     @Test
     @DisplayName("setAddressDataType returns error for invalid address")
@@ -499,19 +508,17 @@ public class MemoryServiceTest {
         when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
         when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
         when(mockProgram.getAddressFactory()).thenReturn(mockAddressFactory);
+        when(mockProgram.getDataTypeManager()).thenReturn(mockDataTypeManager);
 
         // Mock invalid address
         when(mockAddressFactory.getAddress("invalid")).thenReturn(null);
 
-        // Mock transaction
-        when(mockProgram.startTransaction(anyString())).thenReturn(1);
-
-        // Execute
-        String result = testMemoryService.setAddressDataType("invalid", "int", true).toStructuredJson();
+        // Execute - pre-validation catches before transaction
+        String result = testMemoryService.setAddressDataType(Map.of("invalid", "int"), true).toStructuredJson();
 
         // Verify
-        assertTrue(result.contains("\"message\":\"Invalid address: invalid\""));
-        verify(mockProgram).endTransaction(1, false);
+        assertTrue(result.contains("Invalid address: invalid"));
+        verify(mockProgram, never()).startTransaction(anyString());
     }
 
     @Test
@@ -526,9 +533,6 @@ public class MemoryServiceTest {
         // Mock address
         when(mockAddressFactory.getAddress("0x1000")).thenReturn(mockDataAddr);
 
-        // Mock transaction
-        when(mockProgram.startTransaction(anyString())).thenReturn(1);
-
         // Create test service with null data type resolution
         TestDataTypeService mockTestDataTypeService = new TestDataTypeService(testProgramService) {
             @Override
@@ -538,13 +542,13 @@ public class MemoryServiceTest {
         };
         TestMemoryService testMemoryServiceWithMock = new TestMemoryService(testProgramService, mockTestDataTypeService);
 
-        // Execute
-        String result = testMemoryServiceWithMock.setAddressDataType("0x1000", "unknown_type", true).toStructuredJson();
+        // Execute - pre-validation catches before transaction
+        String result = testMemoryServiceWithMock.setAddressDataType(Map.of("0x1000", "unknown_type"), true).toStructuredJson();
 
         // Verify
-        assertTrue(result.contains("\"message\":\"Data type"));
+        assertTrue(result.contains("Data type"));
         assertTrue(result.contains("unknown_type"));
-        verify(mockProgram).endTransaction(1, false);
+        verify(mockProgram, never()).startTransaction(anyString());
     }
 
     // ===== Happy path tests for readMemory =====

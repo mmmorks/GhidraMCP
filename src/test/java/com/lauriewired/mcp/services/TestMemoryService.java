@@ -10,6 +10,7 @@ import com.lauriewired.mcp.model.ListOutput;
 import com.lauriewired.mcp.model.StatusOutput;
 import com.lauriewired.mcp.model.ToolOutput;
 import com.lauriewired.mcp.model.response.RenameDataResult;
+import com.lauriewired.mcp.model.response.SetDataTypesResult;
 import com.lauriewired.mcp.utils.HttpUtils;
 
 import ghidra.program.model.address.Address;
@@ -165,82 +166,66 @@ public class TestMemoryService extends MemoryService {
     }
     
     /**
-     * Set the data type at a specific memory address
+     * Set data types at memory addresses
      * For testing, we'll simplify this to avoid Swing threading issues
      *
-     * @param address address where to set the data type
-     * @param dataType name of the data type to set
-     * @param clearExisting whether to clear existing data at the address first
-     * @return status message
+     * @param types map of address to data type name
+     * @param clearExisting whether to clear existing data at addresses first
+     * @return structured result with applied types and count
      */
     @Override
-    public ToolOutput setAddressDataType(String address, String dataType, boolean clearExisting) {
+    public ToolOutput setAddressDataType(Map<String, String> types, boolean clearExisting) {
         Program program = testProgramService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
         if (testDataTypeService == null) return StatusOutput.error("DataTypeService not available");
+        if (types == null || types.isEmpty()) return StatusOutput.error("No types specified");
 
-        // For testing, we'll run directly without Swing
-        int tx = program.startTransaction("Set memory data type");
-        String resultMessage;
-        boolean success = false;
-
-        try {
-            Address addr = program.getAddressFactory().getAddress(address);
+        // Pre-validate all addresses and resolve all data types
+        DataTypeManager dtm = program.getDataTypeManager();
+        Map<Address, DataType> resolved = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : types.entrySet()) {
+            Address addr = program.getAddressFactory().getAddress(entry.getKey());
             if (addr == null) {
-                resultMessage = "Invalid address: " + address;
-                return StatusOutput.error(resultMessage);
+                return StatusOutput.error("Invalid address: " + entry.getKey());
             }
-
-            // Get the data type manager and resolve the type
-            DataTypeManager dtm = program.getDataTypeManager();
-            DataType resolvedDataType = testDataTypeService.resolveDataType(dtm, dataType);
-
+            DataType resolvedDataType = testDataTypeService.resolveDataType(dtm, entry.getValue());
             if (resolvedDataType == null) {
-                resultMessage = "Data type not found: " + dataType;
-                return StatusOutput.error(resultMessage);
+                return StatusOutput.error("Data type not found: " + entry.getValue());
             }
+            resolved.put(addr, resolvedDataType);
+        }
 
+        int tx = program.startTransaction("Set data types");
+        boolean success = false;
+        try {
             Listing listing = program.getListing();
+            Map<String, String> applied = new LinkedHashMap<>();
 
-            // Clear existing data if requested
-            if (clearExisting) {
-                Data existingData = listing.getDataAt(addr);
-                if (existingData != null) {
-                    listing.clearCodeUnits(addr, addr.add(existingData.getLength() - 1), false);
+            for (Map.Entry<Address, DataType> entry : resolved.entrySet()) {
+                Address addr = entry.getKey();
+                DataType resolvedDataType = entry.getValue();
+
+                if (clearExisting) {
+                    Data existingData = listing.getDataAt(addr);
+                    if (existingData != null) {
+                        listing.clearCodeUnits(addr, addr.add(existingData.getLength() - 1), false);
+                    }
+                }
+
+                try {
+                    listing.createData(addr, resolvedDataType);
+                    applied.put(addr.toString(), resolvedDataType.getName());
+                } catch (CodeUnitInsertionException e) {
+                    return StatusOutput.error("Failed at " + addr + ": " + e.getMessage());
                 }
             }
 
-            // Create the data at the address
-            try {
-                Data newData = listing.createData(addr, resolvedDataType);
-                resultMessage = String.format("Data type '%s' (%d bytes) set at address %s",
-                    resolvedDataType.getName(),
-                    newData.getLength(),
-                    addr.toString());
-                success = true;
-            } catch (CodeUnitInsertionException e) {
-                // Try to provide more specific error information
-                if (e.getMessage().contains("Conflicting")) {
-                    resultMessage = "Failed to set data type: Conflicting data exists at address. " +
-                                   "Try setting clear_existing=true to overwrite.";
-                } else if (e.getMessage().contains("Insufficient")) {
-                    resultMessage = "Failed to set data type: Insufficient space. " +
-                                   "The data type requires more bytes than available.";
-                } else {
-                    resultMessage = "Failed to set data type: " + e.getMessage();
-                }
-            }
-        }
-        catch (Exception e) {
-            resultMessage = "Failed to set memory data type: " + e.getMessage();
-        }
-        finally {
+            success = true;
+            return new JsonOutput(new SetDataTypesResult("Data types set successfully", applied, applied.size()));
+        } catch (Exception e) {
+            return StatusOutput.error("Failed to set data types: " + e.getMessage());
+        } finally {
             program.endTransaction(tx, success);
         }
-
-        if (success) {
-            return StatusOutput.ok(resultMessage);
-        }
-        return StatusOutput.error(resultMessage);
     }
 }

@@ -15,6 +15,7 @@ import com.lauriewired.mcp.model.response.MemoryPermissionsResult;
 import com.lauriewired.mcp.model.response.MemorySegmentItem;
 import com.lauriewired.mcp.model.response.ReadMemoryResult;
 import com.lauriewired.mcp.model.response.RenameDataResult;
+import com.lauriewired.mcp.model.response.SetDataTypesResult;
 import com.lauriewired.mcp.utils.HttpUtils;
 import com.lauriewired.mcp.utils.ProgramTransaction;
 
@@ -186,89 +187,98 @@ public class MemoryService {
     }
 
     @McpTool(post = true, description = """
-        Set the data type at a specific memory address.
+        Set data types at memory addresses in a single atomic transaction.
 
-        Creates or modifies data at the specified address with the given type.
-        Symmetric counterpart to get_address_data_type.
+        Accepts a map of address -> data type name pairs. All addresses and types are
+        validated before any changes are applied (all-or-nothing).
 
-        Returns: Success message with details or error message
+        Returns: Structured result with applied types and count
 
-        Note: The data type can be a built-in type, structure, enum, or array.
+        Note: Data types can be built-in types, structures, enums, or arrays.
         Array syntax: "type[size]" e.g., "char[256]" for a string buffer.
 
-        Example: set_address_data_type("00402000", "POINT") -> "Data type 'POINT' set at address 00402000" """,
-        outputType = StatusOutput.class, responseType = StatusOutput.class)
+        Example: set_address_data_type({"00402000": "POINT", "00403000": "int"}) """,
+        outputType = JsonOutput.class, responseType = SetDataTypesResult.class)
     public ToolOutput setAddressDataType(
-            @Param("final Memory address (e.g., \"00401000\" or \"ram:00401000\")") final String address,
-            @Param("Data type name (\"int\", \"char[20]\", \"POINT\", etc.)") final String dataType,
-            @Param(value = "Whether to clear existing data at the address first", defaultValue = "false") final boolean clearExisting) {
+            @Param("Map of memory addresses to data type names") final Map<String, String> types,
+            @Param(value = "Whether to clear existing data at addresses first", defaultValue = "false") final boolean clearExisting) {
         final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
         if (dataTypeService == null) return StatusOutput.error("DataTypeService not available");
+        if (types == null || types.isEmpty()) return StatusOutput.error("No types specified");
 
-        try (var tx = ProgramTransaction.start(program, "Set memory data type")) {
-            final Address addr = program.getAddressFactory().getAddress(address);
+        // Pre-validate all addresses and resolve all data types
+        final DataTypeManager dtm = program.getDataTypeManager();
+        final Map<Address, DataType> resolved = new LinkedHashMap<>();
+        for (final var entry : types.entrySet()) {
+            final Address addr = program.getAddressFactory().getAddress(entry.getKey());
             if (addr == null) {
-                return StatusOutput.error("Invalid address: " + address);
+                return StatusOutput.error("Invalid address: " + entry.getKey());
             }
 
-            final DataTypeManager dtm = program.getDataTypeManager();
-            final DataType resolvedDataType = dataTypeService.resolveDataType(dtm, dataType);
-
+            final String typeName = entry.getValue();
+            final DataType resolvedDataType = dataTypeService.resolveDataType(dtm, typeName);
             if (resolvedDataType == null) {
-                if (dataType.matches(".*\\[\\d+\\]$")) {
-                    return StatusOutput.error("Failed to create array data type '" + dataType +
+                if (typeName.matches(".*\\[\\d+\\]$")) {
+                    return StatusOutput.error("Failed to create array data type '" + typeName +
                             "': base type could not be resolved. Check that the base type exists.");
                 } else {
-                    return StatusOutput.error("Data type '" + dataType + "' not found. " +
+                    return StatusOutput.error("Data type '" + typeName + "' not found. " +
                             "Available types include: int, char, short, long, byte, etc.");
                 }
             }
+            resolved.put(addr, resolvedDataType);
+        }
 
+        try (var tx = ProgramTransaction.start(program, "Set data types")) {
             final Listing listing = program.getListing();
+            final Map<String, String> applied = new LinkedHashMap<>();
 
-            if (clearExisting) {
-                int sizeNeeded = resolvedDataType.getLength();
-                if (sizeNeeded <= 0) {
-                    sizeNeeded = 1;
-                }
-                final Address endAddr = addr.add(sizeNeeded - 1);
-                listing.clearCodeUnits(addr, endAddr, false);
-            }
+            for (final var entry : resolved.entrySet()) {
+                final Address addr = entry.getKey();
+                final DataType resolvedDataType = entry.getValue();
 
-            try {
-                final Data newData = listing.createData(addr, resolvedDataType);
-                tx.commit();
-                return StatusOutput.ok(String.format("Data type '%s' (%d bytes) set at address %s",
-                    resolvedDataType.getName(),
-                    newData.getLength(),
-                    addr.toString()));
-            } catch (CodeUnitInsertionException e) {
-                final String errorMsg = e.getMessage();
-                if (errorMsg.contains("Conflicting")) {
-                    final CodeUnit cu = listing.getCodeUnitAt(addr);
-                    if (cu instanceof Instruction) {
-                        return StatusOutput.error("Failed to set data type: Instructions exist at address. " +
-                               "Use clear_existing=true to overwrite instructions.");
-                    } else if (cu instanceof Data existingData) {
-                        return StatusOutput.error(String.format("Failed to set data type: Existing data '%s' at address. " +
-                               "Use clear_existing=true to overwrite.",
-                               existingData.getDataType().getName()));
-                    } else {
-                        return StatusOutput.error("Failed to set data type: Conflicting code units exist at address. " +
-                               "Try setting clear_existing=true to overwrite.");
+                if (clearExisting) {
+                    int sizeNeeded = resolvedDataType.getLength();
+                    if (sizeNeeded <= 0) {
+                        sizeNeeded = 1;
                     }
-                } else if (errorMsg.contains("Insufficient")) {
-                    return StatusOutput.error(String.format("Failed to set data type: Insufficient space. " +
-                           "The data type '%s' requires %d bytes but there's not enough space available.",
-                           resolvedDataType.getName(), resolvedDataType.getLength()));
-                } else {
-                    return StatusOutput.error("Failed to set data type: " + errorMsg);
+                    final Address endAddr = addr.add(sizeNeeded - 1);
+                    listing.clearCodeUnits(addr, endAddr, false);
+                }
+
+                try {
+                    listing.createData(addr, resolvedDataType);
+                    applied.put(addr.toString(), resolvedDataType.getName());
+                } catch (CodeUnitInsertionException e) {
+                    final String errorMsg = e.getMessage();
+                    if (errorMsg.contains("Conflicting")) {
+                        final CodeUnit cu = listing.getCodeUnitAt(addr);
+                        if (cu instanceof Instruction) {
+                            return StatusOutput.error("Failed at " + addr + ": Instructions exist. " +
+                                   "Use clear_existing=true to overwrite.");
+                        } else if (cu instanceof Data existingData) {
+                            return StatusOutput.error(String.format("Failed at %s: Existing data '%s'. " +
+                                   "Use clear_existing=true to overwrite.",
+                                   addr, existingData.getDataType().getName()));
+                        } else {
+                            return StatusOutput.error("Failed at " + addr + ": Conflicting code units. " +
+                                   "Try setting clear_existing=true.");
+                        }
+                    } else if (errorMsg.contains("Insufficient")) {
+                        return StatusOutput.error(String.format("Failed at %s: Insufficient space for '%s' (%d bytes).",
+                               addr, resolvedDataType.getName(), resolvedDataType.getLength()));
+                    } else {
+                        return StatusOutput.error("Failed at " + addr + ": " + errorMsg);
+                    }
                 }
             }
+
+            tx.commit();
+            return new JsonOutput(new SetDataTypesResult("Data types set successfully", applied, applied.size()));
         } catch (RuntimeException e) {
-            Msg.error(this, "Error setting memory data type", e);
-            return StatusOutput.error("Failed to set memory data type: " + e.getMessage());
+            Msg.error(this, "Error setting data types", e);
+            return StatusOutput.error("Failed to set data types: " + e.getMessage());
         }
     }
 
