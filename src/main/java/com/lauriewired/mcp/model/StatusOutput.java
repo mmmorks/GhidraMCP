@@ -22,4 +22,8 @@ public record StatusOutput(boolean success, String message) implements ToolOutpu
         return Json.serialize(this);
     }
 
+    @Override
+    public String toDisplayText() {
+        return message;
+    }
 }

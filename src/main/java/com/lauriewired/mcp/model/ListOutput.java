@@ -41,4 +41,36 @@ public record ListOutput(List<?> items, int totalItems, int offset, int limit) i
         return Json.serialize(this);
     }
 
+    @Override
+    public String toDisplayText() {
+        if (items.isEmpty()) {
+            return hasMore()
+                ? "No results in this page, but more results may be available. Try different offset values."
+                : "No results found.";
+        }
+
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < items.size(); i++) {
+            if (i > 0) sb.append("\n");
+            sb.append(String.valueOf(items.get(i)));
+        }
+
+        int startItem = offset + 1;
+        int endItem = offset + items.size();
+
+        sb.append("\n--- PAGINATION INFO ---\n");
+        sb.append(String.format("Showing items %d-%d of %d total items\n", startItem, endItem, totalItems));
+
+        if (hasMore()) {
+            int nextOffset = offset + limit;
+            sb.append(String.format("To see more results, call this API again with offset=%d&limit=%d\n",
+                nextOffset, limit));
+            sb.append(String.format("Remaining items: %d\n", totalItems - endItem));
+        } else {
+            sb.append("All results shown (no more pages)\n");
+        }
+
+        sb.append("--- END PAGINATION INFO ---");
+        return sb.toString();
+    }
 }

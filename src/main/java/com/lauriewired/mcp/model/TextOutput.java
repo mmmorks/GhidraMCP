@@ -12,4 +12,8 @@ public record TextOutput(String text) implements ToolOutput {
         return Json.serialize(this);
     }
 
+    @Override
+    public String toDisplayText() {
+        return text;
+    }
 }

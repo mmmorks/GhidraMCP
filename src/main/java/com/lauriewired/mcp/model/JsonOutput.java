@@ -17,4 +17,11 @@ public record JsonOutput(Object data) implements ToolOutput {
         return Json.serialize(data);
     }
 
+    @Override
+    public String toDisplayText() {
+        if (data instanceof Displayable d) {
+            return d.toDisplayText();
+        }
+        return toStructuredJson();
+    }
 }

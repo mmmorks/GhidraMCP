@@ -297,6 +297,7 @@ public class HttpUtils {
             envelope.put("status", "success");
             // Parse the structured JSON back to an object so it's embedded inline
             envelope.put("data", Json.mapper().readValue(output.toStructuredJson(), Object.class));
+            envelope.put("text", output.toDisplayText());
             sendRawJson(exchange, 200, Json.serialize(envelope));
         }
     }

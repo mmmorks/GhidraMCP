@@ -2,7 +2,9 @@ package com.lauriewired.mcp.model.response;
 
 import java.util.List;
 
-public record SearchDisassemblyResult(String query, int matchCount, List<DisasmMatch> matches) {
+import com.lauriewired.mcp.model.Displayable;
+
+public record SearchDisassemblyResult(String query, int matchCount, List<DisasmMatch> matches) implements Displayable {
     public record DisasmMatch(
         String address,
         String function,
@@ -11,4 +13,28 @@ public record SearchDisassemblyResult(String query, int matchCount, List<DisasmM
     ) {}
 
     public record ContextLine(String address, String text, boolean isMatch) {}
+
+    @Override
+    public String toDisplayText() {
+        if (matches.isEmpty()) {
+            return "No matches found for pattern: " + query;
+        }
+
+        StringBuilder sb = new StringBuilder();
+        for (DisasmMatch match : matches) {
+            if (match.function() != null) {
+                sb.append(String.format("Location: %s (in function %s)\n", match.address(), match.function()));
+            } else {
+                sb.append(String.format("Location: %s\n", match.address()));
+            }
+            sb.append("----------------------------------------\n");
+
+            for (ContextLine line : match.context()) {
+                String prefix = line.isMatch() ? "\u2192 " : "  ";
+                sb.append(prefix).append(line.address()).append(": ").append(line.text()).append("\n");
+            }
+            sb.append("\n");
+        }
+        return sb.toString();
+    }
 }

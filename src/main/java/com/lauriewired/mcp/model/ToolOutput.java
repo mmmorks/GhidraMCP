@@ -8,4 +8,7 @@ public sealed interface ToolOutput permits TextOutput, ListOutput, StatusOutput,
 
     /** Return the structured JSON representation of this output. */
     String toStructuredJson();
+
+    /** Return the human-readable display text for MCP content (backward-compatible with older clients). */
+    String toDisplayText();
 }
