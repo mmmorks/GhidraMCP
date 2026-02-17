@@ -140,7 +140,7 @@ public class MemoryService {
             @Param("final Data address (e.g., \"00401000\" or \"ram:00401000\")") final String address,
             @Param("New name to assign") final String newName) {
         final Program program = programService.getCurrentProgram();
-        if (program == null) return StatusOutput.error("Rename failed");
+        if (program == null) return StatusOutput.error("No program loaded");
 
         try (var tx = ProgramTransaction.start(program, "Rename data")) {
             final Address addr = program.getAddressFactory().getAddress(address);

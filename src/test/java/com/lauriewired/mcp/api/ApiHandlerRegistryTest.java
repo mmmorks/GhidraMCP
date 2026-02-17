@@ -280,38 +280,6 @@ class ApiHandlerRegistryTest {
     }
 
     @Test
-    void testFindUnescapedQuote_SimpleQuote() {
-        assertEquals(5, ApiHandlerRegistry.findUnescapedQuote("hello\"world", 0));
-    }
-
-    @Test
-    void testFindUnescapedQuote_EscapedQuote() {
-        String s = "hello\\\"world\"";
-        assertEquals(12, ApiHandlerRegistry.findUnescapedQuote(s, 0));
-    }
-
-    @Test
-    void testFindUnescapedQuote_DoubleBackslashThenQuote() {
-        String s = "hello\\\\\"world";
-        assertEquals(7, ApiHandlerRegistry.findUnescapedQuote(s, 0));
-    }
-
-    @Test
-    void testUnescapeJsonString_AllEscapes() {
-        assertEquals("a\"b\\c\nd", ApiHandlerRegistry.unescapeJsonString("a\\\"b\\\\c\\nd"));
-    }
-
-    @Test
-    void testUnescapeJsonString_Null() {
-        assertNull(ApiHandlerRegistry.unescapeJsonString(null));
-    }
-
-    @Test
-    void testUnescapeJsonString_NoEscapes() {
-        assertEquals("hello", ApiHandlerRegistry.unescapeJsonString("hello"));
-    }
-
-    @Test
     void testExtractJsonInt() {
         String json = """
             {"name": "MyStruct", "size": 64, "new_name": "Renamed"}""";

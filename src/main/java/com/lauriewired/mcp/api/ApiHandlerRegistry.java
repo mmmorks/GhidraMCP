@@ -102,6 +102,11 @@ public class ApiHandlerRegistry {
                 for (final Method method : clz.getDeclaredMethods()) {
                     final McpTool ann = method.getAnnotation(McpTool.class);
                     if (ann == null) continue;
+                    if (!ToolOutput.class.isAssignableFrom(method.getReturnType())) {
+                        Msg.error(this, "@McpTool method " + method.getName()
+                            + " must return ToolOutput, but returns " + method.getReturnType().getSimpleName());
+                        continue;
+                    }
                     method.setAccessible(true);
                     final ToolDef def = ToolDef.fromMethod(method, ann);
                     toolDefs.add(def);
@@ -165,12 +170,14 @@ public class ApiHandlerRegistry {
                 if (rawResult instanceof ToolOutput output) {
                     HttpUtils.sendStructuredResponse(exchange, output);
                 } else {
-                    HttpUtils.sendResponse(exchange, (String) rawResult);
+                    HttpUtils.sendResponse(exchange, String.valueOf(rawResult));
                 }
             } catch (java.lang.reflect.InvocationTargetException e) {
-                final Throwable cause = e.getCause();
-                HttpUtils.sendJsonErrorResponse(exchange, 500, "Error: " + (cause != null ? cause.getMessage() : e.getMessage()));
+                final Throwable cause = e.getCause() != null ? e.getCause() : e;
+                Msg.error(this, "Tool invocation failed: " + def.getName(), cause);
+                HttpUtils.sendJsonErrorResponse(exchange, 500, "Error: " + cause.getMessage());
             } catch (Exception e) {
+                Msg.error(this, "Unexpected error handling tool: " + def.getName(), e);
                 HttpUtils.sendJsonErrorResponse(exchange, 500, "Error: " + e.getMessage());
             }
         };
@@ -198,282 +205,88 @@ public class ApiHandlerRegistry {
 
     // =========================================================================
     // JSON extraction utilities (used by ToolDef.parseParams for complex types)
+    // Backed by Jackson's ObjectMapper via Json.readTree().
     // =========================================================================
 
-    static int findUnescapedQuote(final String s, final int fromIndex) {
-        int i = fromIndex;
-        while (i < s.length()) {
-            final int q = s.indexOf('"', i);
-            if (q < 0) return -1;
-            int backslashes = 0;
-            int j = q - 1;
-            while (j >= 0 && s.charAt(j) == '\\') {
-                backslashes++;
-                j--;
-            }
-            if (backslashes % 2 == 0) {
-                return q;
-            }
-            i = q + 1;
-        }
-        return -1;
-    }
-
-    static String unescapeJsonString(final String s) {
-        if (s == null || s.indexOf('\\') < 0) return s;
-        final StringBuilder sb = new StringBuilder(s.length());
-        for (int i = 0; i < s.length(); i++) {
-            final char c = s.charAt(i);
-            if (c == '\\' && i + 1 < s.length()) {
-                final char next = s.charAt(i + 1);
-                switch (next) {
-                    case '"':  sb.append('"');  i++; break;
-                    case '\\': sb.append('\\'); i++; break;
-                    case 'n':  sb.append('\n'); i++; break;
-                    case 'r':  sb.append('\r'); i++; break;
-                    case 't':  sb.append('\t'); i++; break;
-                    case 'b':  sb.append('\b'); i++; break;
-                    case 'f':  sb.append('\f'); i++; break;
-                    case '/':  sb.append('/');  i++; break;
-                    case 'u':
-                        if (i + 5 < s.length()) {
-                            try {
-                                final int cp = Integer.parseInt(s.substring(i + 2, i + 6), 16);
-                                sb.append((char) cp);
-                                i += 5;
-                            } catch (NumberFormatException e) {
-                                sb.append(c);
-                            }
-                        } else {
-                            sb.append(c);
-                        }
-                        break;
-                    default:
-                        sb.append(c);
-                        break;
-                }
-            } else {
-                sb.append(c);
-            }
-        }
-        return sb.toString();
-    }
-
     static String extractJsonString(final String json, final String key) {
-        final String searchKey = "\"" + key + "\"";
-        final int keyIndex = json.indexOf(searchKey);
-        if (keyIndex < 0) return null;
-
-        final int colonIndex = json.indexOf(':', keyIndex + searchKey.length());
-        if (colonIndex < 0) return null;
-
-        final int quoteStart = json.indexOf('"', colonIndex + 1);
-        if (quoteStart < 0) return null;
-
-        final int quoteEnd = findUnescapedQuote(json, quoteStart + 1);
-        if (quoteEnd < 0) return null;
-
-        return unescapeJsonString(json.substring(quoteStart + 1, quoteEnd));
+        final var node = Json.readTree(json);
+        if (node == null || !node.has(key)) return null;
+        final var value = node.get(key);
+        if (value.isNull()) return null;
+        return value.asText();
     }
 
     static Integer extractJsonInt(final String json, final String key) {
-        final String searchKey = "\"" + key + "\"";
-        final int keyIndex = json.indexOf(searchKey);
-        if (keyIndex < 0) return null;
-
-        final int colonIndex = json.indexOf(':', keyIndex + searchKey.length());
-        if (colonIndex < 0) return null;
-
-        int numStart = colonIndex + 1;
-        while (numStart < json.length() && Character.isWhitespace(json.charAt(numStart))) numStart++;
-
-        if (numStart < json.length() && json.charAt(numStart) == '"') {
-            final int quoteEnd = json.indexOf('"', numStart + 1);
-            if (quoteEnd < 0) return null;
-            try {
-                return Integer.parseInt(json.substring(numStart + 1, quoteEnd));
-            } catch (NumberFormatException e) {
-                return null;
-            }
-        }
-
-        int numEnd = numStart;
-        while (numEnd < json.length() && (Character.isDigit(json.charAt(numEnd)) ||
-               json.charAt(numEnd) == '-')) {
-            numEnd++;
-        }
-        if (numEnd == numStart) return null;
-
+        final var node = Json.readTree(json);
+        if (node == null || !node.has(key)) return null;
+        final var value = node.get(key);
+        if (value.isNull()) return null;
+        if (value.isNumber()) return value.asInt();
+        // Handle string-encoded integers
         try {
-            return Integer.parseInt(json.substring(numStart, numEnd));
+            return Integer.parseInt(value.asText());
         } catch (NumberFormatException e) {
             return null;
         }
     }
 
     static Map<String, String> extractJsonObject(final String json, final String key) {
-        final String searchKey = "\"" + key + "\"";
-        final int keyIndex = json.indexOf(searchKey);
-        if (keyIndex < 0) return Map.of();
-
-        final int braceStart = json.indexOf('{', keyIndex + searchKey.length());
-        if (braceStart < 0) return Map.of();
-
-        int depth = 1;
-        int braceEnd = braceStart + 1;
-        while (braceEnd < json.length() && depth > 0) {
-            final char c = json.charAt(braceEnd);
-            if (c == '{') depth++;
-            else if (c == '}') depth--;
-            braceEnd++;
-        }
-
-        final String inner = json.substring(braceStart + 1, braceEnd - 1).trim();
-        if (inner.isEmpty()) return Map.of();
+        final var node = Json.readTree(json);
+        if (node == null || !node.has(key)) return Map.of();
+        final var obj = node.get(key);
+        if (!obj.isObject()) return Map.of();
 
         final Map<String, String> result = new LinkedHashMap<>();
-        int i = 0;
-        while (i < inner.length()) {
-            final int qs1 = inner.indexOf('"', i);
-            if (qs1 < 0) break;
-            final int qe1 = findUnescapedQuote(inner, qs1 + 1);
-            if (qe1 < 0) break;
-            final String k = unescapeJsonString(inner.substring(qs1 + 1, qe1));
-
-            final int qs2 = inner.indexOf('"', qe1 + 1);
-            if (qs2 < 0) break;
-            final int qe2 = findUnescapedQuote(inner, qs2 + 1);
-            if (qe2 < 0) break;
-            final String v = unescapeJsonString(inner.substring(qs2 + 1, qe2));
-
-            result.put(k, v);
-            i = qe2 + 1;
+        final var fields = obj.fields();
+        while (fields.hasNext()) {
+            final var entry = fields.next();
+            result.put(entry.getKey(), entry.getValue().asText());
         }
         return result;
     }
 
     @SuppressWarnings("PMD.ReturnEmptyCollectionRatherThanNull")
     static List<String[]> extractJsonArrayOfPairs(final String json, final String key) {
-        final String searchKey = "\"" + key + "\"";
-        final int keyIndex = json.indexOf(searchKey);
-        if (keyIndex < 0) return null;
-
-        final int bracketStart = json.indexOf('[', keyIndex + searchKey.length());
-        if (bracketStart < 0) return null;
-
-        int depth = 1;
-        int bracketEnd = bracketStart + 1;
-        boolean inQuote = false;
-        while (bracketEnd < json.length() && depth > 0) {
-            final char c = json.charAt(bracketEnd);
-            if (c == '"' && (bracketEnd == 0 || json.charAt(bracketEnd - 1) != '\\')) {
-                inQuote = !inQuote;
-            } else if (!inQuote) {
-                if (c == '[') depth++;
-                else if (c == ']') depth--;
-            }
-            bracketEnd++;
-        }
-
-        final String inner = json.substring(bracketStart + 1, bracketEnd - 1).trim();
-        if (inner.isEmpty()) return List.of();
+        final var node = Json.readTree(json);
+        if (node == null || !node.has(key)) return null;
+        final var arr = node.get(key);
+        if (!arr.isArray()) return null;
+        if (arr.isEmpty()) return List.of();
 
         final List<String[]> result = new ArrayList<>();
-        int i = 0;
-        while (i < inner.length()) {
-            int arrStart = -1;
-            for (int j = i; j < inner.length(); j++) {
-                if (inner.charAt(j) == '[') { arrStart = j; break; }
-            }
-            if (arrStart < 0) break;
-
-            int arrDepth = 1;
-            int arrEnd = arrStart + 1;
-            boolean arrInQuote = false;
-            while (arrEnd < inner.length() && arrDepth > 0) {
-                final char c = inner.charAt(arrEnd);
-                if (c == '"' && (arrEnd == 0 || inner.charAt(arrEnd - 1) != '\\')) {
-                    arrInQuote = !arrInQuote;
-                } else if (!arrInQuote) {
-                    if (c == '[') arrDepth++;
-                    else if (c == ']') arrDepth--;
-                }
-                arrEnd++;
-            }
-
-            final String pair = inner.substring(arrStart + 1, arrEnd - 1);
-            final int qs1 = pair.indexOf('"');
-            if (qs1 < 0) { i = arrEnd; continue; }
-            final int qe1 = findUnescapedQuote(pair, qs1 + 1);
-            if (qe1 < 0) { i = arrEnd; continue; }
-            final int qs2 = pair.indexOf('"', qe1 + 1);
-            if (qs2 < 0) { i = arrEnd; continue; }
-            final int qe2 = findUnescapedQuote(pair, qs2 + 1);
-            if (qe2 < 0) { i = arrEnd; continue; }
-
-            result.add(new String[]{unescapeJsonString(pair.substring(qs1 + 1, qe1)), unescapeJsonString(pair.substring(qs2 + 1, qe2))});
-            i = arrEnd;
+        for (final var pair : arr) {
+            if (!pair.isArray() || pair.size() < 2) continue;
+            result.add(new String[]{pair.get(0).asText(), pair.get(1).asText()});
         }
         return result;
     }
 
     static Map<String, Long> extractJsonLongObject(final String json, final String key) {
-        final String searchKey = "\"" + key + "\"";
-        final int keyIndex = json.indexOf(searchKey);
-        if (keyIndex < 0) return Map.of();
-
-        final int braceStart = json.indexOf('{', keyIndex + searchKey.length());
-        if (braceStart < 0) return Map.of();
-
-        int depth = 1;
-        int braceEnd = braceStart + 1;
-        while (braceEnd < json.length() && depth > 0) {
-            final char c = json.charAt(braceEnd);
-            if (c == '{') depth++;
-            else if (c == '}') depth--;
-            braceEnd++;
-        }
-
-        final String inner = json.substring(braceStart + 1, braceEnd - 1).trim();
-        if (inner.isEmpty()) return Map.of();
+        final var node = Json.readTree(json);
+        if (node == null || !node.has(key)) return Map.of();
+        final var obj = node.get(key);
+        if (!obj.isObject()) return Map.of();
 
         final Map<String, Long> result = new LinkedHashMap<>();
-        int i = 0;
-        while (i < inner.length()) {
-            final int qs1 = inner.indexOf('"', i);
-            if (qs1 < 0) break;
-            final int qe1 = findUnescapedQuote(inner, qs1 + 1);
-            if (qe1 < 0) break;
-            final String k = unescapeJsonString(inner.substring(qs1 + 1, qe1));
-
-            final int colonIdx = inner.indexOf(':', qe1 + 1);
-            if (colonIdx < 0) break;
-
-            int numStart = colonIdx + 1;
-            while (numStart < inner.length() && Character.isWhitespace(inner.charAt(numStart))) numStart++;
-
-            int numEnd = numStart;
-            while (numEnd < inner.length() && (Character.isDigit(inner.charAt(numEnd)) ||
-                   inner.charAt(numEnd) == '-' || inner.charAt(numEnd) == 'x' ||
-                   inner.charAt(numEnd) == 'X' ||
-                   (inner.charAt(numEnd) >= 'a' && inner.charAt(numEnd) <= 'f') ||
-                   (inner.charAt(numEnd) >= 'A' && inner.charAt(numEnd) <= 'F'))) {
-                numEnd++;
-            }
-
-            final String numStr = inner.substring(numStart, numEnd).trim();
-            try {
-                long value;
-                if (numStr.startsWith("0x") || numStr.startsWith("0X")) {
-                    value = Long.parseLong(numStr.substring(2), 16);
-                } else {
-                    value = Long.parseLong(numStr);
+        final var fields = obj.fields();
+        while (fields.hasNext()) {
+            final var entry = fields.next();
+            final var value = entry.getValue();
+            if (value.isNumber()) {
+                result.put(entry.getKey(), value.asLong());
+            } else {
+                // Handle string-encoded longs (including hex)
+                final String numStr = value.asText().trim();
+                try {
+                    if (numStr.startsWith("0x") || numStr.startsWith("0X")) {
+                        result.put(entry.getKey(), Long.parseLong(numStr.substring(2), 16));
+                    } else {
+                        result.put(entry.getKey(), Long.parseLong(numStr));
+                    }
+                } catch (NumberFormatException ignored) {
+                    // skip entries with non-numeric values
                 }
-                result.put(k, value);
-            } catch (NumberFormatException ignored) {
-                // skip entries with non-numeric values
             }
-            i = numEnd;
         }
         return result;
     }

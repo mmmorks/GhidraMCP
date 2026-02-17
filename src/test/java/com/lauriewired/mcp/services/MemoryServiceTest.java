@@ -152,38 +152,38 @@ public class MemoryServiceTest {
     }
 
     @Test
-    @DisplayName("renameData returns 'Rename failed' when no program is loaded")
+    @DisplayName("renameData returns error when no program is loaded")
     void testRenameData_NoProgram() {
         String result = memoryService.renameData("0x1000", "newName").toStructuredJson();
-        assertTrue(result.contains("\"message\":\"Rename failed\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
-    @DisplayName("renameData returns 'Rename failed' for null address")
+    @DisplayName("renameData returns error for null address")
     void testRenameData_NullAddress() {
         String result = memoryService.renameData(null, "newName").toStructuredJson();
-        assertTrue(result.contains("\"message\":\"Rename failed\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
-    @DisplayName("renameData returns 'Rename failed' for empty address")
+    @DisplayName("renameData returns error for empty address")
     void testRenameData_EmptyAddress() {
         String result = memoryService.renameData("", "newName").toStructuredJson();
-        assertTrue(result.contains("\"message\":\"Rename failed\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
-    @DisplayName("renameData returns 'Rename failed' for null name")
+    @DisplayName("renameData returns error for null name")
     void testRenameData_NullName() {
         String result = memoryService.renameData("0x1000", null).toStructuredJson();
-        assertTrue(result.contains("\"message\":\"Rename failed\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
-    @DisplayName("renameData returns 'Rename failed' for empty name")
+    @DisplayName("renameData returns error for empty name")
     void testRenameData_EmptyName() {
         String result = memoryService.renameData("0x1000", "").toStructuredJson();
-        assertTrue(result.contains("\"message\":\"Rename failed\""));
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test

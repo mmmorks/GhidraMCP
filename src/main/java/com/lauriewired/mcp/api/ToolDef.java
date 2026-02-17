@@ -7,6 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.lauriewired.mcp.model.ToolOutput;
 import com.lauriewired.mcp.utils.HttpUtils;
 import com.lauriewired.mcp.utils.Json;
@@ -76,48 +77,92 @@ public class ToolDef {
         if (params.isEmpty()) return result;
 
         if (post && hasComplexTypes) {
-            // POST with complex types: read raw body and use extractJson* methods
-            final String body = new String(exchange.getRequestBody().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            // POST with complex types: parse JSON body once with Jackson
+            final String body = new String(HttpUtils.readRequestBody(exchange.getRequestBody()), java.nio.charset.StandardCharsets.UTF_8);
+            final JsonNode root = Json.readTree(body);
             for (final ToolParamDef p : params) {
+                final JsonNode fieldNode = (root != null) ? root.get(p.name()) : null;
                 final Object value = switch (p.type()) {
                     case STRING_MAP -> {
-                        final Map<String, String> map = ApiHandlerRegistry.extractJsonObject(body, p.name());
+                        if (fieldNode == null || !fieldNode.isObject()) {
+                            yield !p.required() ? p.defaultValue() : Map.of();
+                        }
+                        final Map<String, String> map = new LinkedHashMap<>();
+                        fieldNode.fields().forEachRemaining(e -> map.put(e.getKey(), e.getValue().asText()));
                         yield map.isEmpty() && !p.required() ? p.defaultValue() : map;
                     }
                     case LONG_MAP -> {
-                        final Map<String, Long> map = ApiHandlerRegistry.extractJsonLongObject(body, p.name());
-                        yield (map == null || map.isEmpty()) && !p.required() ? p.defaultValue() : map;
+                        if (fieldNode == null || !fieldNode.isObject()) {
+                            yield !p.required() ? p.defaultValue() : Map.of();
+                        }
+                        final Map<String, Long> map = new LinkedHashMap<>();
+                        fieldNode.fields().forEachRemaining(e -> {
+                            final var v = e.getValue();
+                            if (v.isNumber()) {
+                                map.put(e.getKey(), v.asLong());
+                            } else {
+                                final String numStr = v.asText().trim();
+                                try {
+                                    if (numStr.startsWith("0x") || numStr.startsWith("0X")) {
+                                        map.put(e.getKey(), Long.parseLong(numStr.substring(2), 16));
+                                    } else {
+                                        map.put(e.getKey(), Long.parseLong(numStr));
+                                    }
+                                } catch (NumberFormatException ignored) { /* skip */ }
+                            }
+                        });
+                        yield (map.isEmpty()) && !p.required() ? p.defaultValue() : map;
                     }
                     case STRING_PAIR_LIST -> {
-                        final List<String[]> list = ApiHandlerRegistry.extractJsonArrayOfPairs(body, p.name());
-                        yield list == null && !p.required() ? p.defaultValue() : list;
-                    }
-                    case STRING -> {
-                        final String s = ApiHandlerRegistry.extractJsonString(body, p.name());
-                        yield s != null ? s : (p.required() ? null : p.defaultValue());
-                    }
-                    case INTEGER -> {
-                        final Integer intVal = ApiHandlerRegistry.extractJsonInt(body, p.name());
-                        yield intVal != null ? intVal : (p.required() ? null : p.defaultValue());
-                    }
-                    case LONG -> {
-                        // Reuse extractJsonInt's number-finding logic, but parse as Long
-                        final String s = ApiHandlerRegistry.extractJsonString(body, p.name());
-                        if (s != null) {
-                            try {
-                                yield s.startsWith("0x") || s.startsWith("0X")
-                                    ? Long.parseLong(s.substring(2), 16)
-                                    : Long.parseLong(s);
-                            } catch (NumberFormatException e) {
-                                yield p.required() ? null : p.defaultValue();
+                        if (fieldNode == null || !fieldNode.isArray()) {
+                            yield !p.required() ? p.defaultValue() : null;
+                        }
+                        if (fieldNode.isEmpty()) yield List.of();
+                        final List<String[]> list = new ArrayList<>();
+                        for (final var pair : fieldNode) {
+                            if (pair.isArray() && pair.size() >= 2) {
+                                list.add(new String[]{pair.get(0).asText(), pair.get(1).asText()});
                             }
                         }
-                        final Integer intVal = ApiHandlerRegistry.extractJsonInt(body, p.name());
-                        yield intVal != null ? (long) intVal : (p.required() ? null : p.defaultValue());
+                        yield list;
+                    }
+                    case STRING -> {
+                        if (fieldNode == null || fieldNode.isNull()) {
+                            yield p.required() ? null : p.defaultValue();
+                        }
+                        yield fieldNode.asText();
+                    }
+                    case INTEGER -> {
+                        if (fieldNode == null || fieldNode.isNull()) {
+                            yield p.required() ? null : p.defaultValue();
+                        }
+                        if (fieldNode.isNumber()) yield fieldNode.asInt();
+                        try {
+                            yield Integer.parseInt(fieldNode.asText());
+                        } catch (NumberFormatException e) {
+                            yield p.required() ? null : p.defaultValue();
+                        }
+                    }
+                    case LONG -> {
+                        if (fieldNode == null || fieldNode.isNull()) {
+                            yield p.required() ? null : p.defaultValue();
+                        }
+                        if (fieldNode.isNumber()) yield fieldNode.asLong();
+                        final String s = fieldNode.asText();
+                        try {
+                            yield (s.startsWith("0x") || s.startsWith("0X"))
+                                ? Long.parseLong(s.substring(2), 16)
+                                : Long.parseLong(s);
+                        } catch (NumberFormatException e) {
+                            yield p.required() ? null : p.defaultValue();
+                        }
                     }
                     case BOOLEAN -> {
-                        final String s = ApiHandlerRegistry.extractJsonString(body, p.name());
-                        yield s != null ? Boolean.parseBoolean(s) : (p.required() ? null : p.defaultValue());
+                        if (fieldNode == null || fieldNode.isNull()) {
+                            yield p.required() ? null : p.defaultValue();
+                        }
+                        if (fieldNode.isBoolean()) yield fieldNode.asBoolean();
+                        yield Boolean.parseBoolean(fieldNode.asText());
                     }
                 };
                 result.put(p.name(), value);

@@ -79,7 +79,7 @@ public class McpServerManager {
         }
         
         // Create the HTTP server
-        server = HttpServer.create(new InetSocketAddress(port), 0);
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", port), 0);
         
         // Create a thread pool executor for handling concurrent requests
         final ThreadFactory threadFactory = new ThreadFactory() {
@@ -95,23 +95,11 @@ public class McpServerManager {
         
         executorService = Executors.newFixedThreadPool(threadPoolSize, threadFactory);
         server.setExecutor(executorService);
-        
-        new Thread(() -> {
-            try {
-                server.start();
-                Msg.info(this, "GhidraMCP HTTP server started on port " + port +
-                    " with " + threadPoolSize + " worker threads");
-            } catch (Exception e) {
-                Msg.error(this, "Failed to start HTTP server on port " + port + ". Port might be in use.", e);
-                server = null; // Ensure server isn't considered running
-                if (executorService != null) {
-                    executorService.shutdown();
-                    executorService = null;
-                }
-            }
-        }, "GhidraMCP-HTTP-Server").start();
-        
-        return server != null;
+
+        server.start();
+        Msg.info(this, "GhidraMCP HTTP server started on port " + port +
+            " with " + threadPoolSize + " worker threads");
+        return true;
     }
     
     /**

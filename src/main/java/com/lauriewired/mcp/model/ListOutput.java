@@ -10,6 +10,9 @@ import com.lauriewired.mcp.utils.Json;
  */
 public record ListOutput(List<?> items, int totalItems, int offset, int limit) implements ToolOutput {
 
+    /** Maximum allowed page size for any paginated endpoint. */
+    public static final int MAX_LIMIT = 1000;
+
     /** Defensive copy: ensure the list is unmodifiable. */
     public ListOutput {
         items = List.copyOf(items);
@@ -22,18 +25,20 @@ public record ListOutput(List<?> items, int totalItems, int offset, int limit) i
 
     /**
      * Factory method that slices a full list into a paginated ListOutput.
+     * The limit is clamped to MAX_LIMIT to prevent unbounded responses.
      */
     public static ListOutput paginate(final List<?> allItems, final int offset, final int limit) {
+        final int clampedLimit = Math.min(Math.max(1, limit), MAX_LIMIT);
         if (allItems == null || allItems.isEmpty()) {
-            return new ListOutput(List.of(), 0, offset, limit);
+            return new ListOutput(List.of(), 0, offset, clampedLimit);
         }
         final int start = Math.max(0, offset);
         if (start >= allItems.size()) {
-            return new ListOutput(List.of(), allItems.size(), offset, limit);
+            return new ListOutput(List.of(), allItems.size(), offset, clampedLimit);
         }
-        final int end = Math.min(start + limit, allItems.size());
+        final int end = Math.min(start + clampedLimit, allItems.size());
         final List<?> page = allItems.subList(start, end);
-        return new ListOutput(List.copyOf(page), allItems.size(), offset, limit);
+        return new ListOutput(List.copyOf(page), allItems.size(), offset, clampedLimit);
     }
 
     @Override

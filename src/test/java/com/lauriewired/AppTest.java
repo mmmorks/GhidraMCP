@@ -21,16 +21,33 @@ import com.lauriewired.mcp.utils.HttpUtils;
  * Unit test for simple App.
  */
 public class AppTest {
-    /**
-     * Rigourous Test :-)
-     */
     @Test
-    @DisplayName("Simple test that always passes")
-    public void testApp()
-    {
-        assertTrue(true);
+    @DisplayName("readRequestBody accepts body within size limit")
+    public void testReadRequestBody_WithinLimit() throws IOException {
+        final byte[] data = new byte[1024];
+        final InputStream is = new ByteArrayInputStream(data);
+        final byte[] result = HttpUtils.readRequestBody(is);
+        assertEquals(1024, result.length);
     }
-    
+
+    @Test
+    @DisplayName("readRequestBody rejects body exceeding size limit")
+    public void testReadRequestBody_ExceedsLimit() {
+        final byte[] data = new byte[HttpUtils.MAX_BODY_SIZE + 1];
+        final InputStream is = new ByteArrayInputStream(data);
+        assertThrows(IOException.class, () -> HttpUtils.readRequestBody(is));
+    }
+
+    @Test
+    @DisplayName("ListOutput.paginate clamps limit to MAX_LIMIT")
+    public void testPaginateMaxLimit() {
+        final List<String> items = new ArrayList<>();
+        for (int i = 0; i < 2000; i++) items.add("item" + i);
+        final var output = com.lauriewired.mcp.model.ListOutput.paginate(items, 0, 5000);
+        assertEquals(com.lauriewired.mcp.model.ListOutput.MAX_LIMIT, output.items().size());
+        assertEquals(com.lauriewired.mcp.model.ListOutput.MAX_LIMIT, output.limit());
+    }
+
     /**
      * Tests for paginateList method in HttpUtils
      */
@@ -68,9 +85,9 @@ public class AppTest {
         String negativeOffset = HttpUtils.paginateList(testList, -5, 3);
         assertEquals("item1\nitem2\nitem3", negativeOffset);
         
-        // Test zero limit (should return empty string)
+        // Test zero limit (clamped to 1, returns first item)
         String zeroLimit = HttpUtils.paginateList(testList, 0, 0);
-        assertTrue(zeroLimit.isEmpty());
+        assertEquals("item1", zeroLimit);
         
         // Test limit larger than list size
         String largeLimit = HttpUtils.paginateList(testList, 0, 20);

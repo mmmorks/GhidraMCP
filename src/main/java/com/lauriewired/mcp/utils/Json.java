@@ -62,4 +62,20 @@ public final class Json {
     public static <T> T convertValue(final JsonNode node, final Class<T> type) {
         return MAPPER.convertValue(node, type);
     }
+
+    /**
+     * Parse a JSON string into a JsonNode tree.
+     *
+     * @param json the JSON string to parse
+     * @return the parsed JsonNode, or null if the input is null or empty
+     * @throws RuntimeException if parsing fails
+     */
+    public static JsonNode readTree(final String json) {
+        if (json == null || json.isEmpty()) return null;
+        try {
+            return MAPPER.readTree(json);
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException("JSON parsing failed", e);
+        }
+    }
 }

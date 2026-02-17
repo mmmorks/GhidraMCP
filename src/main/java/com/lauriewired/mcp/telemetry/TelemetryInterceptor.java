@@ -44,7 +44,7 @@ public class TelemetryInterceptor implements HttpHandler {
             // Buffer the request body if it's a POST request
             byte[] requestBodyBytes = null;
             if ("POST".equalsIgnoreCase(exchange.getRequestMethod())) {
-                requestBodyBytes = exchange.getRequestBody().readAllBytes();
+                requestBodyBytes = com.lauriewired.mcp.utils.HttpUtils.readRequestBody(exchange.getRequestBody());
                 parameters.putAll(parsePostParams(exchange.getRequestHeaders().getFirst("Content-Type"), requestBodyBytes));
             }
             

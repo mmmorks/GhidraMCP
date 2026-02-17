@@ -28,6 +28,14 @@
     <Bug pattern="EI_EXPOSE_REP"/>
   </Match>
 
+  <!-- DecompilerCache.get() intentionally returns the shared DecompInterface instance — callers
+       must not dispose it; the cache owns the lifecycle -->
+  <Match>
+    <Class name="com.lauriewired.mcp.utils.DecompilerCache"/>
+    <Method name="get"/>
+    <Bug pattern="EI_EXPOSE_REP"/>
+  </Match>
+
   <!-- TimeoutHandler.shutdown() intentionally uses notify to wake the monitor thread
        after setting the shutdown flag -->
   <Match>

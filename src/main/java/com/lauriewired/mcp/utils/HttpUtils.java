@@ -1,6 +1,7 @@
 package com.lauriewired.mcp.utils;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -20,7 +21,21 @@ import ghidra.util.Msg;
  * Utility methods for HTTP operations in GhidraMCP
  */
 public class HttpUtils {
-    
+
+    /** Maximum allowed request body size (1 MB) */
+    public static final int MAX_BODY_SIZE = 1024 * 1024;
+
+    /**
+     * Read the request body with a size limit. Throws IOException if the body exceeds MAX_BODY_SIZE.
+     */
+    public static byte[] readRequestBody(final InputStream inputStream) throws IOException {
+        final byte[] body = inputStream.readNBytes(MAX_BODY_SIZE + 1);
+        if (body.length > MAX_BODY_SIZE) {
+            throw new IOException("Request body exceeds maximum allowed size of " + MAX_BODY_SIZE + " bytes");
+        }
+        return body;
+    }
+
     /**
      * Parse query parameters from the URL, e.g. ?offset=10&limit=100
      */
@@ -56,7 +71,7 @@ public class HttpUtils {
      * If body starts with '{', parses as JSON; otherwise parses as form-encoded.
      */
     public static Map<String, String> parsePostParams(final HttpExchange exchange) throws IOException {
-        final var body = exchange.getRequestBody().readAllBytes();
+        final var body = readRequestBody(exchange.getRequestBody());
         final var bodyStr = new String(body, StandardCharsets.UTF_8).trim();
 
         // Auto-detect JSON bodies
@@ -223,14 +238,15 @@ public class HttpUtils {
      * Convert a list of strings into one big newline-delimited string, applying offset & limit.
      */
     public static String paginateList(final List<String> items, final int offset, final int limit) {
-        if (limit <= 0 || items.isEmpty()) return "";
-        
+        final int clampedLimit = Math.min(Math.max(1, limit), com.lauriewired.mcp.model.ListOutput.MAX_LIMIT);
+        if (items.isEmpty()) return "";
+
         final var start = Math.max(0, offset);
         if (start >= items.size()) return "";
-        
+
         return items.stream()
             .skip(start)
-            .limit(limit)
+            .limit(clampedLimit)
             .collect(Collectors.joining("\n"));
     }
 
