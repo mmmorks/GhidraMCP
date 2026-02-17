@@ -1,5 +1,6 @@
 # Maven target directory
 /target/
+dependency-reduced-pom.xml
 
 # Ghidra JARs (copied from local Ghidra installation)
 /lib/
@@ -51,4 +52,10 @@ mvnw.cmd
 # Java crash logs (if any)
 hs_err_pid*
 replay_pid*
+
+# Python cache
+__pycache__/
+
+# Design/planning docs
+/plans/
 
