@@ -4,7 +4,8 @@ import java.util.Iterator;
 import java.util.Map;
 
 import com.lauriewired.mcp.model.StatusOutput;
-import com.lauriewired.mcp.model.TextOutput;
+import com.lauriewired.mcp.model.JsonOutput;
+import com.lauriewired.mcp.model.response.UpdateResult;
 import com.lauriewired.mcp.model.ToolOutput;
 
 import ghidra.program.model.data.DataType;
@@ -176,10 +177,8 @@ public class TestDataTypeService extends DataTypeService {
 
             success = true;
 
-            StringBuilder sb = new StringBuilder("Updated structure '" + name + "':\n");
-            for (String r : results) sb.append(r).append("\n");
-            sb.append("Summary: ").append(succeeded).append(" succeeded, ").append(failed).append(" failed");
-            return new TextOutput(sb.toString());
+            return new JsonOutput(new UpdateResult(name, results,
+                    new UpdateResult.Summary(succeeded, failed)));
         } catch (Exception e) {
             return StatusOutput.error("Failed to update structure: " + e.getMessage());
         } finally {
@@ -289,10 +288,8 @@ public class TestDataTypeService extends DataTypeService {
 
             success = true;
 
-            StringBuilder sb = new StringBuilder("Updated enum '" + name + "':\n");
-            for (String r : results) sb.append(r).append("\n");
-            sb.append("Summary: ").append(succeeded).append(" succeeded, ").append(failed).append(" failed");
-            return new TextOutput(sb.toString());
+            return new JsonOutput(new UpdateResult(name, results,
+                    new UpdateResult.Summary(succeeded, failed)));
         } catch (Exception e) {
             return StatusOutput.error("Failed to update enum: " + e.getMessage());
         } finally {

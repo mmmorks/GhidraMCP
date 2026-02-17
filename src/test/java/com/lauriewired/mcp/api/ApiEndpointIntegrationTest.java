@@ -20,7 +20,7 @@ import com.lauriewired.mcp.McpServerManager;
 import com.lauriewired.mcp.model.JsonOutput;
 import com.lauriewired.mcp.model.ListOutput;
 import com.lauriewired.mcp.model.StatusOutput;
-import com.lauriewired.mcp.model.TextOutput;
+import com.lauriewired.mcp.model.response.FunctionCodeResult;
 import com.lauriewired.mcp.services.AnalysisService;
 import com.lauriewired.mcp.services.CommentService;
 import com.lauriewired.mcp.services.DataTypeService;
@@ -246,7 +246,8 @@ public class ApiEndpointIntegrationTest {
         when(mockExchange.getResponseHeaders()).thenReturn(mockHeaders);
 
         when(mockFunctionService.getFunctionCode("main", "C"))
-            .thenReturn(new TextOutput("int main(int argc, char **argv) { ... }"));
+            .thenReturn(new JsonOutput(new FunctionCodeResult("main", "C",
+                java.util.List.of(new FunctionCodeResult.CodeLine(null, "int main(int argc, char **argv) { ... }", null)))));
 
         handler.handle(mockExchange);
 
@@ -273,7 +274,8 @@ public class ApiEndpointIntegrationTest {
         when(mockExchange.getResponseHeaders()).thenReturn(mockHeaders);
 
         when(mockFunctionService.getFunctionCode("main", "C"))
-            .thenReturn(new TextOutput("int main() { ... }"));
+            .thenReturn(new JsonOutput(new FunctionCodeResult("main", "C",
+                java.util.List.of(new FunctionCodeResult.CodeLine(null, "int main() { ... }", null)))));
 
         handler.handle(mockExchange);
 
@@ -335,7 +337,8 @@ public class ApiEndpointIntegrationTest {
         expectedRenames.put("local_14", "size");
 
         when(mockVariableService.renameVariables("main", expectedRenames))
-            .thenReturn(new JsonOutput("{\"status\":\"success\", \"renamed\":2}"));
+            .thenReturn(new JsonOutput(new com.lauriewired.mcp.model.response.RenameVariablesResult(
+                "Variables renamed successfully", "main", expectedRenames, 2)));
 
         handler.handle(mockExchange);
 

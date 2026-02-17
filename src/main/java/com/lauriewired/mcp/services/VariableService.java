@@ -6,7 +6,6 @@ import com.lauriewired.mcp.utils.GhidraUtils;
 import com.lauriewired.mcp.utils.ProgramTransaction;
 import com.lauriewired.mcp.model.JsonOutput;
 import com.lauriewired.mcp.model.StatusOutput;
-import com.lauriewired.mcp.model.TextOutput;
 import com.lauriewired.mcp.model.ToolOutput;
 import com.lauriewired.mcp.model.response.RenameVariablesResult;
 import com.lauriewired.mcp.model.response.SetVariableTypesResult;
@@ -351,7 +350,7 @@ public class VariableService {
         } catch (Exception e) {
             final String errorMsg = "Variable renamed, but failed to collect variable info: " + e.getMessage();
             Msg.error(this, errorMsg, e);
-            return new TextOutput("Variable renamed");
+            return StatusOutput.ok("Variable renamed");
         }
     }
 

@@ -5,7 +5,6 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-import com.lauriewired.mcp.model.TextOutput;
 import com.lauriewired.mcp.model.ToolOutput;
 
 /**
@@ -26,7 +25,7 @@ public @interface McpTool {
     boolean post() default false;
 
     /** Output type for this tool — determines fallback outputSchema in /mcp/tools. */
-    Class<? extends ToolOutput> outputType() default TextOutput.class;
+    Class<? extends ToolOutput> outputType() default ToolOutput.class;
 
     /** Response record type — used to derive outputSchema via reflection. Void.class means no typed schema. */
     Class<?> responseType() default Void.class;

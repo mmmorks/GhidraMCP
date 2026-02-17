@@ -54,8 +54,7 @@ LLM Client → (MCP/stdio) → bridge_mcp_ghidra.py → (HTTP) → GhidraMCPPlug
 - `SchemaGenerator` — generates JSON Schema from Java record types at runtime via victools/jsonschema-generator; used by `/mcp/tools` to emit `outputSchema` for each tool
 
 **Typed output model** (in `com.lauriewired.mcp.model`):
-- `ToolOutput` — sealed interface with `toStructuredJson()` and `toDisplayText()` methods; permits `TextOutput`, `ListOutput`, `StatusOutput`, `JsonOutput`
-- `TextOutput` — free-form text (decompiled code, hex dumps, analysis results)
+- `ToolOutput` — sealed interface with `toStructuredJson()` and `toDisplayText()` methods; permits `ListOutput`, `StatusOutput`, `JsonOutput`
 - `ListOutput` — paginated lists of typed record items with defensive copying; serialized via Jackson
 - `StatusOutput` — mutation results (success/failure) with convenience factories
 - `JsonOutput` — holds a typed `Object` (typically a response record); serialized via Jackson; delegates `toDisplayText()` to `Displayable` if the data record implements it

@@ -10,10 +10,6 @@ public record JsonOutput(Object data) implements ToolOutput {
 
     @Override
     public String toStructuredJson() {
-        if (data instanceof String s) {
-            // Legacy support: if data is already a JSON string, return as-is
-            return s;
-        }
         return Json.serialize(data);
     }
 
