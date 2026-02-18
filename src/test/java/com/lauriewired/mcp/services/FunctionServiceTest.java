@@ -3,177 +3,293 @@ package com.lauriewired.mcp.services;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import org.junit.jupiter.api.BeforeEach;
+
+import java.util.Map;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.lauriewired.mcp.model.JsonOutput;
+import com.lauriewired.mcp.model.ListOutput;
 import com.lauriewired.mcp.model.ToolOutput;
+import com.lauriewired.mcp.model.response.FunctionByAddressResult;
 import com.lauriewired.mcp.model.response.FunctionCodeResult;
+import com.lauriewired.mcp.model.response.FunctionSearchItem;
+import com.lauriewired.mcp.model.response.RenameFunctionsResult;
 
-import ghidra.app.services.ProgramManager;
-import ghidra.program.model.address.Address;
-import ghidra.program.model.address.AddressFactory;
-import ghidra.program.model.address.AddressSetView;
+import ghidra.program.database.ProgramBuilder;
+import ghidra.program.database.ProgramDB;
+import ghidra.program.model.data.DataType;
 import ghidra.program.model.listing.CommentType;
 import ghidra.program.model.listing.Function;
-import ghidra.program.model.listing.FunctionIterator;
-import ghidra.program.model.listing.FunctionManager;
-import ghidra.program.model.listing.Instruction;
-import ghidra.program.model.listing.InstructionIterator;
-import ghidra.program.model.listing.Listing;
-import ghidra.program.model.listing.Program;
 
 /**
- * Unit tests for FunctionService with mocked Ghidra components
+ * Integration tests for FunctionService using ProgramBuilder with real Ghidra programs.
+ * Null/error-path tests use a null ProgramService (no Ghidra boot needed).
  */
-@ExtendWith(MockitoExtension.class)
 public class FunctionServiceTest {
 
-    @Mock
-    private MockablePluginTool mockTool;
-    
-    @Mock
-    private ProgramManager mockProgramManager;
-    
-    @Mock
-    private Program mockProgram;
-    
-    @Mock
-    private FunctionManager mockFunctionManager;
-    
-    @Mock
-    private FunctionIterator mockFunctionIterator;
-    
-    @Mock
-    private AddressFactory mockAddressFactory;
-    
-    @Mock
-    private Address mockAddress;
+    private ProgramBuilder builder;
 
-    private TestFunctionService functionService;
-    private TestProgramService programService;
-
-    @BeforeEach
-    void setUp() {
-        // Setup ProgramService with mocked tool
-        programService = new TestProgramService(mockTool);
-        functionService = new TestFunctionService(mockTool, programService);
-    }
-    
-    private void setupDefaultMocks() {
-        when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
-        when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
-        when(mockProgram.getFunctionManager()).thenReturn(mockFunctionManager);
-    }
-    
-    private void setupProgramMocks() {
-        when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
-        when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
+    @BeforeAll
+    static void initGhidra() {
+        GhidraTestEnv.initialize();
     }
 
-    // ===== Tests for null/no program cases =====
-    
+    @AfterEach
+    void tearDown() {
+        if (builder != null) {
+            builder.dispose();
+        }
+    }
+
+    // --- Helper to create a FunctionService backed by a real program ---
+
+    private FunctionService serviceFor(ProgramDB program) {
+        return new FunctionService(null, GhidraTestEnv.programService(program));
+    }
+
+    private FunctionService nullProgramService() {
+        return new FunctionService(null, new ProgramService(null));
+    }
+
+    // ===== Null / error-path tests (no ProgramBuilder needed) =====
+
     @Test
-    @DisplayName("listFunctions returns empty string when no program is loaded")
+    @DisplayName("listFunctions returns error when no program is loaded")
     void testGetAllFunctionNames_NoProgram() {
-        when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
-        when(mockProgramManager.getCurrentProgram()).thenReturn(null);
-        
-        String result = functionService.listFunctions(0, 10).toStructuredJson();
+        FunctionService service = nullProgramService();
+        String result = service.listFunctions(0, 10).toStructuredJson();
         assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
     @DisplayName("getFunctionCode returns error when no program is loaded")
     void testGetFunctionCode_NoProgram() {
-        when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
-        when(mockProgramManager.getCurrentProgram()).thenReturn(null);
-
-        String result = functionService.getFunctionCode("testFunction", "C").toStructuredJson();
+        FunctionService service = nullProgramService();
+        String result = service.getFunctionCode("testFunction", "C").toStructuredJson();
         assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
     @DisplayName("getFunctionCode returns error for null identifier")
     void testGetFunctionCode_NullIdentifier() {
-        when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
-        when(mockProgramManager.getCurrentProgram()).thenReturn(null);
-
-        String result = functionService.getFunctionCode(null, "C").toStructuredJson();
+        FunctionService service = nullProgramService();
+        String result = service.getFunctionCode(null, "C").toStructuredJson();
         assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
     @DisplayName("getFunctionCode returns error for empty identifier")
-    void testGetFunctionCode_EmptyIdentifier() {
-        when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
-        when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
+    void testGetFunctionCode_EmptyIdentifier() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        FunctionService service = serviceFor(builder.getProgram());
 
-        String result = functionService.getFunctionCode("", "C").toStructuredJson();
+        String result = service.getFunctionCode("", "C").toStructuredJson();
         assertTrue(result.contains("\"message\":\"Function identifier is required\""));
     }
 
-    // ===== Happy path tests for listFunctions =====
-    
+    @Test
+    @DisplayName("renameFunctions returns error when no program is loaded")
+    void testRenameFunctions_NoProgram() {
+        FunctionService service = nullProgramService();
+        String result = service.renameFunctions(Map.of("oldName", "newName")).toStructuredJson();
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
+    }
+
+    @Test
+    @DisplayName("renameFunctions returns error for null map")
+    void testRenameFunctions_NullMap() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        FunctionService service = serviceFor(builder.getProgram());
+
+        String result = service.renameFunctions(null).toStructuredJson();
+        assertTrue(result.contains("\"message\":\"No renames specified\""));
+    }
+
+    @Test
+    @DisplayName("renameFunctions returns error for empty map")
+    void testRenameFunctions_EmptyMap() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        FunctionService service = serviceFor(builder.getProgram());
+
+        String result = service.renameFunctions(Map.of()).toStructuredJson();
+        assertTrue(result.contains("\"message\":\"No renames specified\""));
+    }
+
+    @Test
+    @DisplayName("getFunctionByAddress returns error when no program loaded")
+    void testGetFunctionByAddress_NoProgram() {
+        FunctionService service = nullProgramService();
+        String result = service.getFunctionByAddress("0x401000").toStructuredJson();
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
+    }
+
+    @Test
+    @DisplayName("getFunctionByAddress returns error for null address")
+    void testGetFunctionByAddress_NullAddress() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        FunctionService service = serviceFor(builder.getProgram());
+
+        String result = service.getFunctionByAddress(null).toStructuredJson();
+        assertTrue(result.contains("\"message\":\"Address is required\""));
+    }
+
+    @Test
+    @DisplayName("setFunctionPrototype returns error when no program loaded")
+    void testSetFunctionPrototype_NoProgram() {
+        FunctionService service = nullProgramService();
+        String result = service.setFunctionPrototype("0x401000", "int test(void)").toStructuredJson();
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
+    }
+
+    @Test
+    @DisplayName("setFunctionPrototype returns error for null identifier")
+    void testSetFunctionPrototype_NullIdentifier() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        FunctionService service = serviceFor(builder.getProgram());
+
+        String result = service.setFunctionPrototype(null, "int test(void)").toStructuredJson();
+        assertTrue(result.contains("\"message\":\"Function identifier is required\""));
+    }
+
+    @Test
+    @DisplayName("setFunctionPrototype returns error for empty identifier")
+    void testSetFunctionPrototype_EmptyIdentifier() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        FunctionService service = serviceFor(builder.getProgram());
+
+        String result = service.setFunctionPrototype("", "int test(void)").toStructuredJson();
+        assertTrue(result.contains("\"message\":\"Function identifier is required\""));
+    }
+
+    @Test
+    @DisplayName("setFunctionPrototype returns error for null prototype")
+    void testSetFunctionPrototype_NullPrototype() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        FunctionService service = serviceFor(builder.getProgram());
+
+        String result = service.setFunctionPrototype("0x401000", null).toStructuredJson();
+        assertTrue(result.contains("\"message\":\"Function prototype is required\""));
+    }
+
+    @Test
+    @DisplayName("setFunctionPrototype returns error for empty prototype")
+    void testSetFunctionPrototype_EmptyPrototype() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        FunctionService service = serviceFor(builder.getProgram());
+
+        String result = service.setFunctionPrototype("0x401000", "").toStructuredJson();
+        assertTrue(result.contains("\"message\":\"Function prototype is required\""));
+    }
+
+    @Test
+    @DisplayName("Constructor accepts null tool without throwing")
+    void testConstructor_NullTool() {
+        assertDoesNotThrow(() -> new FunctionService(null, new ProgramService(null)));
+    }
+
+    @Test
+    @DisplayName("listFunctions handles null tool gracefully")
+    void testGetAllFunctionNames_NullTool() {
+        FunctionService service = new FunctionService(null, new ProgramService(null));
+        String result = service.listFunctions(0, 10).toStructuredJson();
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
+    }
+
+    @Test
+    @DisplayName("getFunctionCode defaults to C mode for null mode")
+    void testGetFunctionCode_NullMode() {
+        FunctionService service = nullProgramService();
+        String result = service.getFunctionCode("main", null).toStructuredJson();
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
+    }
+
+    @Test
+    @DisplayName("getFunctionCode accepts assembly mode alias 'asm'")
+    void testGetFunctionCode_AsmAlias() {
+        FunctionService service = nullProgramService();
+        String result = service.getFunctionCode("main", "asm").toStructuredJson();
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
+    }
+
+    // ===== resolveFunction null/error paths =====
+
+    @Test
+    @DisplayName("resolveFunction returns null for null program")
+    void testResolveFunction_NullProgram() {
+        FunctionService service = nullProgramService();
+        assertNull(service.resolveFunction(null, "main"));
+    }
+
+    @Test
+    @DisplayName("resolveFunction returns null for null identifier")
+    void testResolveFunction_NullIdentifier() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        FunctionService service = serviceFor(builder.getProgram());
+
+        assertNull(service.resolveFunction(builder.getProgram(), null));
+    }
+
+    @Test
+    @DisplayName("resolveFunction returns null for empty identifier")
+    void testResolveFunction_EmptyIdentifier() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        FunctionService service = serviceFor(builder.getProgram());
+
+        assertNull(service.resolveFunction(builder.getProgram(), ""));
+    }
+
+    // ===== ProgramBuilder-based integration tests =====
+
     @Test
     @DisplayName("listFunctions returns function names successfully")
-    void testGetAllFunctionNames_Success() {
-        setupDefaultMocks();
-        
-        // Setup mock functions
-        Function func1 = mock(Function.class);
-        Function func2 = mock(Function.class);
-        Function func3 = mock(Function.class);
-        
-        when(func1.getName()).thenReturn("main");
-        when(func2.getName()).thenReturn("helper_function");
-        when(func3.getName()).thenReturn("init");
-        
-        // Mock the iterator method to return a new iterator for the for-each loop
-        when(mockFunctionIterator.iterator()).thenReturn(mockFunctionIterator);
-        when(mockFunctionIterator.hasNext()).thenReturn(true, true, true, false);
-        when(mockFunctionIterator.next()).thenReturn(func1, func2, func3);
-        
-        when(mockFunctionManager.getFunctions(true)).thenReturn(mockFunctionIterator);
-        
-        String result = functionService.listFunctions(0, 10).toStructuredJson();
+    void testGetAllFunctionNames_Success() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        builder.createEmptyFunction("main", "0x401000", 0x50, DataType.DEFAULT);
+        builder.createEmptyFunction("helper_function", "0x401100", 0x30, DataType.DEFAULT);
+        builder.createEmptyFunction("init", "0x401200", 0x20, DataType.DEFAULT);
+
+        FunctionService service = serviceFor(builder.getProgram());
+        String result = service.listFunctions(0, 10).toStructuredJson();
 
         assertTrue(result.contains("main"));
         assertTrue(result.contains("helper_function"));
         assertTrue(result.contains("init"));
-        verify(mockFunctionManager).getFunctions(true);
     }
-    
+
     @Test
     @DisplayName("listFunctions respects offset and limit parameters")
-    void testGetAllFunctionNames_WithPagination() {
-        setupDefaultMocks();
-        
-        // Setup 5 mock functions
-        Function[] functions = new Function[5];
-        for (int i = 0; i < 5; i++) {
-            functions[i] = mock(Function.class);
-            when(functions[i].getName()).thenReturn("function_" + i);
-        }
-        
-        // Mock the iterator method to return a new iterator for the for-each loop
-        when(mockFunctionIterator.iterator()).thenReturn(mockFunctionIterator);
-        when(mockFunctionIterator.hasNext()).thenReturn(true, true, true, true, true, false);
-        when(mockFunctionIterator.next()).thenReturn(functions[0], functions[1], functions[2], functions[3], functions[4]);
-        when(mockFunctionManager.getFunctions(true)).thenReturn(mockFunctionIterator);
-        
+    void testGetAllFunctionNames_WithPagination() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        builder.createEmptyFunction("function_0", "0x401000", 0x10, DataType.DEFAULT);
+        builder.createEmptyFunction("function_1", "0x401020", 0x10, DataType.DEFAULT);
+        builder.createEmptyFunction("function_2", "0x401040", 0x10, DataType.DEFAULT);
+        builder.createEmptyFunction("function_3", "0x401060", 0x10, DataType.DEFAULT);
+        builder.createEmptyFunction("function_4", "0x401080", 0x10, DataType.DEFAULT);
+
+        FunctionService service = serviceFor(builder.getProgram());
+
         // Test with offset=2, limit=2 (should get function_2 and function_3)
-        String result = functionService.listFunctions(2, 2).toStructuredJson();
+        String result = service.listFunctions(2, 2).toStructuredJson();
 
         assertFalse(result.contains("function_0"));
         assertFalse(result.contains("function_1"));
@@ -181,422 +297,365 @@ public class FunctionServiceTest {
         assertTrue(result.contains("function_3"));
         assertFalse(result.contains("function_4"));
     }
-    
+
     @Test
     @DisplayName("listFunctions handles empty function list")
-    void testGetAllFunctionNames_NoFunctions() {
-        setupDefaultMocks();
-        
-        // Create an empty iterator
-        FunctionIterator emptyIterator = mock(FunctionIterator.class);
-        when(emptyIterator.iterator()).thenReturn(emptyIterator);
-        when(emptyIterator.hasNext()).thenReturn(false);
-        when(mockFunctionManager.getFunctions(true)).thenReturn(emptyIterator);
-        
-        String result = functionService.listFunctions(0, 10).toStructuredJson();
+    void testGetAllFunctionNames_NoFunctions() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+
+        FunctionService service = serviceFor(builder.getProgram());
+        String result = service.listFunctions(0, 10).toStructuredJson();
 
         assertTrue(result.contains("\"total_items\":0"));
-        verify(mockFunctionManager).getFunctions(true);
-    }
-    
-    // ===== Tests for renameFunctions =====
-
-    @Test
-    @DisplayName("renameFunctions returns error when no program is loaded")
-    void testRenameFunctions_NoProgram() {
-        when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
-        when(mockProgramManager.getCurrentProgram()).thenReturn(null);
-
-        String result = functionService.renameFunctions(java.util.Map.of("oldName", "newName")).toStructuredJson();
-        assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
-
-    @Test
-    @DisplayName("renameFunctions returns error for null map")
-    void testRenameFunctions_NullMap() {
-        when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
-        when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
-
-        String result = functionService.renameFunctions(null).toStructuredJson();
-        assertTrue(result.contains("\"message\":\"No renames specified\""));
-    }
-
-    @Test
-    @DisplayName("renameFunctions returns error for empty map")
-    void testRenameFunctions_EmptyMap() {
-        when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
-        when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
-
-        String result = functionService.renameFunctions(java.util.Map.of()).toStructuredJson();
-        assertTrue(result.contains("\"message\":\"No renames specified\""));
-    }
-    
-    // ===== Tests for getFunctionCode modes =====
-
-    @Test
-    @DisplayName("getFunctionCode defaults to C mode for null mode")
-    void testGetFunctionCode_NullMode() {
-        when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
-        when(mockProgramManager.getCurrentProgram()).thenReturn(null);
-
-        String result = functionService.getFunctionCode("main", null).toStructuredJson();
-        assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
-
-    @Test
-    @DisplayName("getFunctionCode accepts assembly mode alias 'asm'")
-    void testGetFunctionCode_AsmAlias() {
-        when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
-        when(mockProgramManager.getCurrentProgram()).thenReturn(null);
-
-        String result = functionService.getFunctionCode("main", "asm").toStructuredJson();
-        assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
     @DisplayName("getFunctionCode returns 'Function not found' when function does not exist")
-    void testGetFunctionCode_FunctionNotFound() {
-        setupDefaultMocks();
+    void testGetFunctionCode_FunctionNotFound() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
 
-        when(mockProgram.getAddressFactory()).thenReturn(mockAddressFactory);
-        when(mockAddressFactory.getAddress("nonexistent")).thenReturn(null);
+        FunctionService service = serviceFor(builder.getProgram());
+        String result = service.getFunctionCode("nonexistent", "C").toStructuredJson();
 
-        // Empty function iterator for name lookup fallback
-        FunctionIterator emptyIterator = mock(FunctionIterator.class);
-        when(emptyIterator.iterator()).thenReturn(emptyIterator);
-        when(emptyIterator.hasNext()).thenReturn(false);
-        when(mockFunctionManager.getFunctions(true)).thenReturn(emptyIterator);
-
-        String result = functionService.getFunctionCode("nonexistent", "C").toStructuredJson();
         assertTrue(result.contains("\"message\":\"Function not found: nonexistent\""));
-    }
-    
-    // ===== Happy path tests for getFunctionByAddress =====
-    
-    @Test
-    @DisplayName("getFunctionByAddress returns function details successfully")
-    void testGetFunctionByAddress_Success() {
-        // This test verifies the basic setup
-        // We can't fully test this without mocking static methods
-        assertNotNull(mockTool);
-        assertNotNull(mockProgramManager);
-        assertNotNull(mockProgram);
-        assertNotNull(mockAddressFactory);
-        assertNotNull(mockAddress);
-    }
-    
-    @Test
-    @DisplayName("getFunctionByAddress returns error when no program loaded")
-    void testGetFunctionByAddress_NoProgram() {
-        when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
-        when(mockProgramManager.getCurrentProgram()).thenReturn(null);
-        
-        String result = functionService.getFunctionByAddress("0x401000").toStructuredJson();
-        assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
-
-    @Test
-    @DisplayName("getFunctionByAddress returns error for null address")
-    void testGetFunctionByAddress_NullAddress() {
-        when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
-        when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
-
-        String result = functionService.getFunctionByAddress(null).toStructuredJson();
-        assertTrue(result.contains("\"message\":\"Address is required\""));
-    }
-    
-    // ===== Happy path tests for setFunctionPrototype =====
-    
-    @Test
-    @DisplayName("setFunctionPrototype returns error when no program loaded")
-    void testSetFunctionPrototype_NoProgram() {
-        when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
-        when(mockProgramManager.getCurrentProgram()).thenReturn(null);
-
-        String result = functionService.setFunctionPrototype("0x401000", "int test(void)").toStructuredJson();
-        assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
-
-    @Test
-    @DisplayName("setFunctionPrototype returns error for null identifier")
-    void testSetFunctionPrototype_NullIdentifier() {
-        when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
-        when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
-
-        String result = functionService.setFunctionPrototype(null, "int test(void)").toStructuredJson();
-        assertTrue(result.contains("\"message\":\"Function identifier is required\""));
-    }
-
-    @Test
-    @DisplayName("setFunctionPrototype returns error for empty identifier")
-    void testSetFunctionPrototype_EmptyIdentifier() {
-        when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
-        when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
-
-        String result = functionService.setFunctionPrototype("", "int test(void)").toStructuredJson();
-        assertTrue(result.contains("\"message\":\"Function identifier is required\""));
-    }
-
-    @Test
-    @DisplayName("setFunctionPrototype returns error for null prototype")
-    void testSetFunctionPrototype_NullPrototype() {
-        when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
-        when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
-
-        String result = functionService.setFunctionPrototype("0x401000", null).toStructuredJson();
-        assertTrue(result.contains("\"message\":\"Function prototype is required\""));
-    }
-
-    @Test
-    @DisplayName("setFunctionPrototype returns error for empty prototype")
-    void testSetFunctionPrototype_EmptyPrototype() {
-        when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
-        when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
-
-        String result = functionService.setFunctionPrototype("0x401000", "").toStructuredJson();
-        assertTrue(result.contains("\"message\":\"Function prototype is required\""));
-    }
-    
-    // ===== Tests for resolveFunction =====
-
-    @Test
-    @DisplayName("resolveFunction returns null for null program")
-    void testResolveFunction_NullProgram() {
-        var result = functionService.resolveFunction(null, "main");
-        assertNull(result);
-    }
-
-    @Test
-    @DisplayName("resolveFunction returns null for null identifier")
-    void testResolveFunction_NullIdentifier() {
-        var result = functionService.resolveFunction(mockProgram, null);
-        assertNull(result);
-    }
-
-    @Test
-    @DisplayName("resolveFunction returns null for empty identifier")
-    void testResolveFunction_EmptyIdentifier() {
-        var result = functionService.resolveFunction(mockProgram, "");
-        assertNull(result);
-    }
-    
-    // ===== Test with null tool =====
-    
-    @Test
-    @DisplayName("Constructor accepts null tool without throwing")
-    void testConstructor_NullTool() {
-        assertDoesNotThrow(() -> new TestFunctionService((MockablePluginTool) null, new TestProgramService((MockablePluginTool) null)));
-    }
-    
-    @Test
-    @DisplayName("listFunctions handles null tool gracefully")
-    void testGetAllFunctionNames_NullTool() {
-        TestFunctionService serviceWithNullTool = new TestFunctionService((MockablePluginTool) null, new TestProgramService((MockablePluginTool) null));
-        String result = serviceWithNullTool.listFunctions(0, 10).toStructuredJson();
-        assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
-
-    // ===== Happy path tests for getFunctionCode assembly mode =====
-
-    private Function setupFunctionWithInstructions() {
-        setupDefaultMocks();
-        when(mockProgram.getAddressFactory()).thenReturn(mockAddressFactory);
-
-        // resolveFunction tries address first, then falls back to name lookup
-        when(mockAddressFactory.getAddress("main")).thenReturn(null);
-
-        Function func = mock(Function.class);
-        when(func.getName()).thenReturn("main");
-
-        Address entryAddr = mock(Address.class);
-        when(func.getEntryPoint()).thenReturn(entryAddr);
-
-        AddressSetView body = mock(AddressSetView.class);
-        Address endAddr = mock(Address.class);
-        when(body.getMaxAddress()).thenReturn(endAddr);
-        when(func.getBody()).thenReturn(body);
-
-        // Wire up function lookup by name
-        FunctionIterator funcIter = mock(FunctionIterator.class);
-        when(funcIter.iterator()).thenReturn(funcIter);
-        when(funcIter.hasNext()).thenReturn(true, false);
-        when(funcIter.next()).thenReturn(func);
-        when(mockFunctionManager.getFunctions(true)).thenReturn(funcIter);
-
-        return func;
     }
 
     @Test
     @DisplayName("getFunctionCode assembly mode returns address-keyed line entries")
-    void testGetFunctionCode_Assembly_Success() {
-        Function func = setupFunctionWithInstructions();
-        Address endAddr = func.getBody().getMaxAddress();
+    void testGetFunctionCode_Assembly_Success() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        // x86-64: push rbp; mov rbp,rsp; nop; pop rbp; ret
+        builder.setBytes("0x401000", "55 48 89 e5 90 5d c3", true);
+        builder.createFunction("0x401000");
 
-        Listing listing = mock(Listing.class);
-        when(mockProgram.getListing()).thenReturn(listing);
+        ProgramDB program = builder.getProgram();
+        FunctionService service = serviceFor(program);
 
-        // Create mock instructions
-        Address addr1 = mock(Address.class);
-        when(addr1.toString()).thenReturn("00401000");
-        when(addr1.compareTo(endAddr)).thenReturn(-1);
-
-        Address addr2 = mock(Address.class);
-        when(addr2.toString()).thenReturn("00401002");
-        when(addr2.compareTo(endAddr)).thenReturn(0);
-
-        Instruction instr1 = mock(Instruction.class);
-        when(instr1.getAddress()).thenReturn(addr1);
-        when(instr1.toString()).thenReturn("push ebp");
-
-        Instruction instr2 = mock(Instruction.class);
-        when(instr2.getAddress()).thenReturn(addr2);
-        when(instr2.toString()).thenReturn("mov ebp,esp");
-
-        InstructionIterator instrIter = mock(InstructionIterator.class);
-        when(instrIter.hasNext()).thenReturn(true, true, false);
-        when(instrIter.next()).thenReturn(instr1, instr2);
-        when(listing.getInstructions(func.getEntryPoint(), true)).thenReturn(instrIter);
-
-        when(listing.getComment(CommentType.EOL, addr1)).thenReturn(null);
-        when(listing.getComment(CommentType.EOL, addr2)).thenReturn(null);
-
-        ToolOutput result = functionService.getFunctionCode("main", "assembly");
+        ToolOutput result = service.getFunctionCode("0x401000", "assembly");
         assertTrue(result instanceof JsonOutput);
 
         String json = result.toStructuredJson();
-        assertTrue(json.contains("\"function\":\"main\""));
         assertTrue(json.contains("\"format\":\"assembly\""));
-        assertTrue(json.contains("\"00401000\":\"push ebp\""));
-        assertTrue(json.contains("\"00401002\":\"mov ebp,esp\""));
 
-        // Verify structured data
         FunctionCodeResult data = (FunctionCodeResult) ((JsonOutput) result).data();
-        assertEquals("main", data.function());
         assertEquals("assembly", data.format());
-        assertEquals(2, data.lines().size());
-        assertEquals("push ebp", data.lines().get(0).get("00401000"));
-        assertEquals("mov ebp,esp", data.lines().get(1).get("00401002"));
+        assertNotNull(data.function());
+        assertTrue(data.lines().size() >= 5, "Expected at least 5 instructions (push, mov, nop, pop, ret)");
+
+        // Verify the first instruction contains PUSH
+        Map<String, String> firstLine = data.lines().get(0);
+        String firstCode = firstLine.values().iterator().next();
+        assertTrue(firstCode.toUpperCase().contains("PUSH"), "First instruction should be PUSH, got: " + firstCode);
     }
 
     @Test
     @DisplayName("getFunctionCode assembly mode includes EOL comments")
-    void testGetFunctionCode_Assembly_WithComments() {
-        Function func = setupFunctionWithInstructions();
-        Address endAddr = func.getBody().getMaxAddress();
+    void testGetFunctionCode_Assembly_WithComments() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        // x86-64: push rbp; mov rbp,rsp; nop; pop rbp; ret
+        builder.setBytes("0x401000", "55 48 89 e5 90 5d c3", true);
+        builder.createFunction("0x401000");
+        builder.createComment("0x401000", "save frame pointer", CommentType.EOL);
 
-        Listing listing = mock(Listing.class);
-        when(mockProgram.getListing()).thenReturn(listing);
+        ProgramDB program = builder.getProgram();
+        FunctionService service = serviceFor(program);
 
-        Address addr1 = mock(Address.class);
-        when(addr1.toString()).thenReturn("00401000");
-        when(addr1.compareTo(endAddr)).thenReturn(-1);
-
-        Instruction instr1 = mock(Instruction.class);
-        when(instr1.getAddress()).thenReturn(addr1);
-        when(instr1.toString()).thenReturn("call 0x00402000");
-
-        InstructionIterator instrIter = mock(InstructionIterator.class);
-        when(instrIter.hasNext()).thenReturn(true, false);
-        when(instrIter.next()).thenReturn(instr1);
-        when(listing.getInstructions(func.getEntryPoint(), true)).thenReturn(instrIter);
-
-        when(listing.getComment(CommentType.EOL, addr1)).thenReturn("call to helper");
-
-        ToolOutput result = functionService.getFunctionCode("main", "asm");
+        ToolOutput result = service.getFunctionCode("0x401000", "asm");
         FunctionCodeResult data = (FunctionCodeResult) ((JsonOutput) result).data();
 
         assertEquals("assembly", data.format());
-        assertEquals(1, data.lines().size());
-        assertEquals("call 0x00402000 ; call to helper", data.lines().get(0).get("00401000"));
+        assertTrue(data.lines().size() >= 1);
+
+        // First instruction should include the EOL comment
+        Map<String, String> firstLine = data.lines().get(0);
+        String firstCode = firstLine.values().iterator().next();
+        assertTrue(firstCode.contains("; save frame pointer"),
+            "First line should contain EOL comment, got: " + firstCode);
     }
 
     @Test
     @DisplayName("getFunctionCode assembly mode preserves instruction order")
-    void testGetFunctionCode_Assembly_PreservesOrder() {
-        Function func = setupFunctionWithInstructions();
-        Address endAddr = func.getBody().getMaxAddress();
+    void testGetFunctionCode_Assembly_PreservesOrder() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        // x86-64: push rbp; mov rbp,rsp; nop; pop rbp; ret
+        builder.setBytes("0x401000", "55 48 89 e5 90 5d c3", true);
+        builder.createFunction("0x401000");
 
-        Listing listing = mock(Listing.class);
-        when(mockProgram.getListing()).thenReturn(listing);
+        ProgramDB program = builder.getProgram();
+        FunctionService service = serviceFor(program);
 
-        // Create 4 instructions in specific order
-        String[] addresses = {"00401000", "00401002", "00401004", "00401006"};
-        String[] mnemonics = {"push ebp", "mov ebp,esp", "sub esp,0x10", "ret"};
-        Instruction[] instrs = new Instruction[4];
-
-        Instruction prev = null;
-        for (int i = addresses.length - 1; i >= 0; i--) {
-            Address addr = mock(Address.class);
-            when(addr.toString()).thenReturn(addresses[i]);
-            when(addr.compareTo(endAddr)).thenReturn(i < 3 ? -1 : 0);
-
-            instrs[i] = mock(Instruction.class);
-            when(instrs[i].getAddress()).thenReturn(addr);
-            when(instrs[i].toString()).thenReturn(mnemonics[i]);
-            when(listing.getComment(CommentType.EOL, addr)).thenReturn(null);
-        }
-
-        InstructionIterator instrIter = mock(InstructionIterator.class);
-        when(instrIter.hasNext()).thenReturn(true, true, true, true, false);
-        when(instrIter.next()).thenReturn(instrs[0], instrs[1], instrs[2], instrs[3]);
-        when(listing.getInstructions(func.getEntryPoint(), true)).thenReturn(instrIter);
-
-        ToolOutput result = functionService.getFunctionCode("main", "assembly");
+        ToolOutput result = service.getFunctionCode("0x401000", "assembly");
         FunctionCodeResult data = (FunctionCodeResult) ((JsonOutput) result).data();
 
-        assertEquals(4, data.lines().size());
-        for (int i = 0; i < 4; i++) {
-            assertEquals(mnemonics[i], data.lines().get(i).get(addresses[i]));
+        assertTrue(data.lines().size() >= 5, "Expected at least 5 instructions");
+
+        // Verify order: PUSH, MOV, NOP, POP, RET
+        String[] expectedMnemonics = {"PUSH", "MOV", "NOP", "POP", "RET"};
+        for (int i = 0; i < expectedMnemonics.length; i++) {
+            String code = data.lines().get(i).values().iterator().next().toUpperCase();
+            assertTrue(code.contains(expectedMnemonics[i]),
+                "Instruction " + i + " should contain " + expectedMnemonics[i] + ", got: " + code);
+        }
+
+        // Verify addresses are monotonically increasing
+        long prevAddr = -1;
+        for (Map<String, String> line : data.lines()) {
+            String addrStr = line.keySet().iterator().next();
+            long addr = Long.parseUnsignedLong(addrStr, 16);
+            assertTrue(addr > prevAddr, "Addresses should be monotonically increasing");
+            prevAddr = addr;
         }
     }
 
     @Test
     @DisplayName("getFunctionCode assembly mode toDisplayText reproduces readable format")
-    void testGetFunctionCode_Assembly_DisplayText() {
-        Function func = setupFunctionWithInstructions();
-        Address endAddr = func.getBody().getMaxAddress();
+    void testGetFunctionCode_Assembly_DisplayText() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        // x86-64: push rbp; mov rbp,rsp; nop; pop rbp; ret
+        builder.setBytes("0x401000", "55 48 89 e5 90 5d c3", true);
+        builder.createFunction("0x401000");
+        builder.createComment("0x401000", "function entry", CommentType.EOL);
 
-        Listing listing = mock(Listing.class);
-        when(mockProgram.getListing()).thenReturn(listing);
+        ProgramDB program = builder.getProgram();
+        FunctionService service = serviceFor(program);
 
-        Address addr1 = mock(Address.class);
-        when(addr1.toString()).thenReturn("00401000");
-        when(addr1.compareTo(endAddr)).thenReturn(0);
-
-        Instruction instr1 = mock(Instruction.class);
-        when(instr1.getAddress()).thenReturn(addr1);
-        when(instr1.toString()).thenReturn("ret");
-
-        InstructionIterator instrIter = mock(InstructionIterator.class);
-        when(instrIter.hasNext()).thenReturn(true, false);
-        when(instrIter.next()).thenReturn(instr1);
-        when(listing.getInstructions(func.getEntryPoint(), true)).thenReturn(instrIter);
-
-        when(listing.getComment(CommentType.EOL, addr1)).thenReturn("function return");
-
-        ToolOutput result = functionService.getFunctionCode("main", "assembly");
+        ToolOutput result = service.getFunctionCode("0x401000", "assembly");
         String display = result.toDisplayText();
 
-        assertTrue(display.contains("00401000: ret ; function return\n"));
+        // Display text should contain address: instruction format
+        assertTrue(display.contains("; function entry"), "Display text should contain the EOL comment");
+        // Each line should follow the "address: instruction" pattern
+        String[] lines = display.split("\n");
+        assertTrue(lines.length >= 5, "Display text should have at least 5 lines");
+        for (String line : lines) {
+            if (!line.isEmpty()) {
+                assertTrue(line.contains(": "), "Each line should have 'address: code' format, got: " + line);
+            }
+        }
     }
 
     @Test
     @DisplayName("getFunctionCode assembly mode handles empty function body")
-    void testGetFunctionCode_Assembly_EmptyBody() {
-        Function func = setupFunctionWithInstructions();
+    void testGetFunctionCode_Assembly_EmptyBody() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        // Create a function with no bytes (empty body, no instructions)
+        builder.createEmptyFunction("emptyFunc", "0x401000", 1, DataType.DEFAULT);
 
-        Listing listing = mock(Listing.class);
-        when(mockProgram.getListing()).thenReturn(listing);
+        ProgramDB program = builder.getProgram();
+        FunctionService service = serviceFor(program);
 
-        InstructionIterator instrIter = mock(InstructionIterator.class);
-        when(instrIter.hasNext()).thenReturn(false);
-        when(listing.getInstructions(func.getEntryPoint(), true)).thenReturn(instrIter);
-
-        ToolOutput result = functionService.getFunctionCode("main", "assembly");
+        ToolOutput result = service.getFunctionCode("emptyFunc", "assembly");
         FunctionCodeResult data = (FunctionCodeResult) ((JsonOutput) result).data();
 
-        assertEquals("main", data.function());
+        assertEquals("emptyFunc", data.function());
         assertEquals("assembly", data.format());
         assertEquals(0, data.lines().size());
+    }
+
+    @Test
+    @DisplayName("getFunctionByAddress returns function details successfully")
+    void testGetFunctionByAddress_Success() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        builder.createEmptyFunction("main", "0x401000", 0x50, DataType.DEFAULT);
+
+        ProgramDB program = builder.getProgram();
+        FunctionService service = serviceFor(program);
+
+        ToolOutput result = service.getFunctionByAddress("0x401000");
+        assertTrue(result instanceof JsonOutput);
+
+        FunctionByAddressResult data = (FunctionByAddressResult) ((JsonOutput) result).data();
+        assertEquals("main", data.name());
+        assertNotNull(data.signature());
+        assertNotNull(data.entryPoint());
+        assertNotNull(data.bodyStart());
+        assertNotNull(data.bodyEnd());
+    }
+
+    @Test
+    @DisplayName("resolveFunction finds function by name")
+    void testResolveFunction_ByName() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        builder.createEmptyFunction("myFunc", "0x401000", 0x50, DataType.DEFAULT);
+
+        ProgramDB program = builder.getProgram();
+        FunctionService service = serviceFor(program);
+
+        Function resolved = service.resolveFunction(program, "myFunc");
+        assertNotNull(resolved);
+        assertEquals("myFunc", resolved.getName());
+    }
+
+    @Test
+    @DisplayName("resolveFunction finds function by address")
+    void testResolveFunction_ByAddress() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        builder.createEmptyFunction("myFunc", "0x401000", 0x50, DataType.DEFAULT);
+
+        ProgramDB program = builder.getProgram();
+        FunctionService service = serviceFor(program);
+
+        Function resolved = service.resolveFunction(program, "0x401000");
+        assertNotNull(resolved);
+        assertEquals("myFunc", resolved.getName());
+    }
+
+    @Test
+    @DisplayName("resolveFunction returns null for nonexistent function")
+    void testResolveFunction_NotFound() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+
+        ProgramDB program = builder.getProgram();
+        FunctionService service = serviceFor(program);
+
+        assertNull(service.resolveFunction(program, "doesNotExist"));
+    }
+
+    // ===== renameFunctions happy-path tests =====
+
+    @Test
+    @DisplayName("renameFunctions renames a single function by name")
+    void testRenameFunctions_ByName() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        builder.createEmptyFunction("oldName", "0x401000", 0x50, DataType.DEFAULT);
+
+        ProgramDB program = builder.getProgram();
+        FunctionService service = serviceFor(program);
+
+        ToolOutput result = service.renameFunctions(Map.of("oldName", "newName"));
+        assertInstanceOf(JsonOutput.class, result);
+
+        RenameFunctionsResult data = (RenameFunctionsResult) ((JsonOutput) result).data();
+        assertEquals("Renamed successfully", data.status());
+        assertEquals(1, data.count());
+        assertEquals("newName", data.renamed().get("oldName"));
+
+        // Verify the rename actually took effect on the program
+        assertNotNull(program.getFunctionManager().getFunctionAt(builder.addr("0x401000")));
+        assertEquals("newName", program.getFunctionManager().getFunctionAt(builder.addr("0x401000")).getName());
+    }
+
+    @Test
+    @DisplayName("renameFunctions renames multiple functions atomically")
+    void testRenameFunctions_Multiple() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        builder.createEmptyFunction("func_a", "0x401000", 0x20, DataType.DEFAULT);
+        builder.createEmptyFunction("func_b", "0x401100", 0x20, DataType.DEFAULT);
+
+        ProgramDB program = builder.getProgram();
+        FunctionService service = serviceFor(program);
+
+        var renames = new java.util.LinkedHashMap<String, String>();
+        renames.put("func_a", "process_input");
+        renames.put("func_b", "validate_data");
+
+        ToolOutput result = service.renameFunctions(renames);
+        RenameFunctionsResult data = (RenameFunctionsResult) ((JsonOutput) result).data();
+        assertEquals(2, data.count());
+        assertEquals("process_input", data.renamed().get("func_a"));
+        assertEquals("validate_data", data.renamed().get("func_b"));
+    }
+
+    @Test
+    @DisplayName("renameFunctions renames by address")
+    void testRenameFunctions_ByAddress() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        builder.createEmptyFunction("myFunc", "0x401000", 0x50, DataType.DEFAULT);
+
+        ProgramDB program = builder.getProgram();
+        FunctionService service = serviceFor(program);
+
+        ToolOutput result = service.renameFunctions(Map.of("0x401000", "renamed_func"));
+        RenameFunctionsResult data = (RenameFunctionsResult) ((JsonOutput) result).data();
+        assertEquals(1, data.count());
+        assertEquals("renamed_func", program.getFunctionManager().getFunctionAt(builder.addr("0x401000")).getName());
+    }
+
+    @Test
+    @DisplayName("renameFunctions returns error when function not found")
+    void testRenameFunctions_FunctionNotFound() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+
+        FunctionService service = serviceFor(builder.getProgram());
+        String result = service.renameFunctions(Map.of("nonexistent", "newName")).toStructuredJson();
+        assertTrue(result.contains("Function not found: nonexistent"));
+    }
+
+    // ===== searchFunctionsByName happy-path tests =====
+
+    @Test
+    @DisplayName("searchFunctionsByName finds functions matching substring")
+    void testSearchFunctionsByName_Success() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        builder.createEmptyFunction("process_input", "0x401000", 0x20, DataType.DEFAULT);
+        builder.createEmptyFunction("process_output", "0x401040", 0x20, DataType.DEFAULT);
+        builder.createEmptyFunction("validate_data", "0x401080", 0x20, DataType.DEFAULT);
+
+        FunctionService service = serviceFor(builder.getProgram());
+        ToolOutput result = service.searchFunctionsByName("process", 0, 100);
+        assertInstanceOf(ListOutput.class, result);
+
+        String json = result.toStructuredJson();
+        assertTrue(json.contains("process_input"));
+        assertTrue(json.contains("process_output"));
+        assertFalse(json.contains("validate_data"));
+    }
+
+    @Test
+    @DisplayName("searchFunctionsByName is case-insensitive")
+    void testSearchFunctionsByName_CaseInsensitive() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        builder.createEmptyFunction("MyFunction", "0x401000", 0x20, DataType.DEFAULT);
+
+        FunctionService service = serviceFor(builder.getProgram());
+        String json = service.searchFunctionsByName("myfunction", 0, 100).toStructuredJson();
+        assertTrue(json.contains("MyFunction"));
+    }
+
+    @Test
+    @DisplayName("searchFunctionsByName returns empty when no matches")
+    void testSearchFunctionsByName_NoMatches() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        builder.createEmptyFunction("alpha", "0x401000", 0x20, DataType.DEFAULT);
+
+        FunctionService service = serviceFor(builder.getProgram());
+        String json = service.searchFunctionsByName("zzz_not_found", 0, 100).toStructuredJson();
+        assertTrue(json.contains("\"total_items\":0"));
+    }
+
+    @Test
+    @DisplayName("searchFunctionsByName respects pagination")
+    void testSearchFunctionsByName_Pagination() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        builder.createEmptyFunction("test_a", "0x401000", 0x10, DataType.DEFAULT);
+        builder.createEmptyFunction("test_b", "0x401020", 0x10, DataType.DEFAULT);
+        builder.createEmptyFunction("test_c", "0x401040", 0x10, DataType.DEFAULT);
+
+        FunctionService service = serviceFor(builder.getProgram());
+        ToolOutput result = service.searchFunctionsByName("test", 1, 1);
+        assertInstanceOf(ListOutput.class, result);
+
+        ListOutput list = (ListOutput) result;
+        assertEquals(1, list.items().size());
+        assertTrue(list.hasMore());
     }
 }

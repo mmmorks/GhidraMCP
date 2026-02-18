@@ -1,25 +1,25 @@
 package com.lauriewired.mcp.services;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.List;
+import java.util.Map;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import static org.mockito.Mockito.when;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import ghidra.program.model.listing.Program;
 
 import com.lauriewired.mcp.model.JsonOutput;
 import com.lauriewired.mcp.model.response.FunctionCodeResult;
 import com.lauriewired.mcp.model.response.SplitVariableResult;
 
-import java.util.List;
-import java.util.Map;
+import ghidra.program.database.ProgramBuilder;
+import ghidra.program.database.ProgramDB;
 
 /**
  * Unit tests for VariableService
@@ -179,102 +179,114 @@ public class VariableServiceTest {
         assertTrue(result.contains("\"message\":\"No variable types specified\""));
     }
 
-    // ===== Tests with mocked services (real logic) =====
+    // ===== ProgramBuilder-based integration tests =====
 
     @Nested
-    @ExtendWith(MockitoExtension.class)
-    class WithMockedProgram {
+    @DisplayName("ProgramBuilder integration tests")
+    class ProgramBuilderIntegrationTest {
 
-        @Mock
-        private ProgramService mockProgramService;
-
-        @Mock
-        private FunctionService mockFunctionService;
-
-        @Mock
-        private Program mockProgram;
-
+        private ProgramBuilder builder;
+        private ProgramDB program;
         private VariableService svc;
 
-        @BeforeEach
-        void init() {
-            svc = new VariableService(mockProgramService, mockFunctionService);
+        @BeforeAll
+        static void initGhidra() {
+            GhidraTestEnv.initialize();
         }
 
-        // --- renameVariables ---
+        @BeforeEach
+        void setUp() throws Exception {
+            builder = new ProgramBuilder("test", ProgramBuilder._X64);
+            builder.createMemory(".text", "0x401000", 0x1000);
+
+            // x86-64: push rbp; mov rbp,rsp; nop; pop rbp; ret
+            builder.setBytes("0x401000", "55 48 89 E5 90 5D C3", true);
+            builder.createFunction("0x401000");
+
+            program = builder.getProgram();
+
+            ProgramService ps = GhidraTestEnv.programService(program);
+            FunctionService fs = new FunctionService(null, ps);
+            svc = new VariableService(ps, fs);
+        }
+
+        @AfterEach
+        void tearDown() {
+            if (builder != null) {
+                builder.dispose();
+            }
+        }
+
+        // --- renameVariables validation with real program ---
 
         @Test
         @DisplayName("renameVariables returns error for null renames with loaded program")
         void testRenameVariables_NullRenames_ProgramLoaded() {
-            when(mockProgramService.getCurrentProgram()).thenReturn(mockProgram);
             String result = svc.renameVariables("main", null).toStructuredJson();
-            assertTrue(result.contains("\"message\":\"No renames specified\""));
+            assertTrue(result.contains("\"message\":\"No renames specified\""),
+                    "Should return 'No renames specified' with loaded program, got: " + result);
         }
 
         @Test
         @DisplayName("renameVariables returns error for empty renames with loaded program")
         void testRenameVariables_EmptyRenames_ProgramLoaded() {
-            when(mockProgramService.getCurrentProgram()).thenReturn(mockProgram);
             String result = svc.renameVariables("main", java.util.Map.of()).toStructuredJson();
-            assertTrue(result.contains("\"message\":\"No renames specified\""));
+            assertTrue(result.contains("\"message\":\"No renames specified\""),
+                    "Should return 'No renames specified' with loaded program, got: " + result);
         }
 
         @Test
         @DisplayName("renameVariables returns 'Function not found' for unknown function")
         void testRenameVariables_FunctionNotFound() {
-            when(mockProgramService.getCurrentProgram()).thenReturn(mockProgram);
-            when(mockFunctionService.resolveFunction(mockProgram, "nonexistent")).thenReturn(null);
-
             String result = svc.renameVariables("nonexistent",
                 java.util.Map.of("local_10", "buffer")).toStructuredJson();
-            assertTrue(result.contains("\"message\":\"Function not found: nonexistent\""));
+            assertTrue(result.contains("\"message\":\"Function not found: nonexistent\""),
+                    "Should return 'Function not found' error, got: " + result);
         }
 
-        // --- setVariableTypes ---
+        // --- setVariableTypes validation with real program ---
 
         @Test
         @DisplayName("setVariableTypes returns error for null identifier with loaded program")
         void testSetVariableTypes_NullIdentifier_ProgramLoaded() {
             // Validation happens before getCurrentProgram() is called
             String result = svc.setVariableTypes(null, java.util.Map.of("x", "int")).toStructuredJson();
-            assertTrue(result.contains("\"message\":\"Function identifier is required\""));
+            assertTrue(result.contains("\"message\":\"Function identifier is required\""),
+                    "Should return 'Function identifier is required', got: " + result);
         }
 
         @Test
         @DisplayName("setVariableTypes returns error for empty identifier with loaded program")
         void testSetVariableTypes_EmptyIdentifier_ProgramLoaded() {
             String result = svc.setVariableTypes("", java.util.Map.of("x", "int")).toStructuredJson();
-            assertTrue(result.contains("\"message\":\"Function identifier is required\""));
+            assertTrue(result.contains("\"message\":\"Function identifier is required\""),
+                    "Should return 'Function identifier is required', got: " + result);
         }
 
         @Test
         @DisplayName("setVariableTypes returns error for null types with loaded program")
         void testSetVariableTypes_NullTypes_ProgramLoaded() {
             String result = svc.setVariableTypes("main", null).toStructuredJson();
-            assertTrue(result.contains("\"message\":\"No variable types specified\""));
+            assertTrue(result.contains("\"message\":\"No variable types specified\""),
+                    "Should return 'No variable types specified', got: " + result);
         }
 
         @Test
         @DisplayName("setVariableTypes returns error for empty types with loaded program")
         void testSetVariableTypes_EmptyTypes_ProgramLoaded() {
             String result = svc.setVariableTypes("main", java.util.Map.of()).toStructuredJson();
-            assertTrue(result.contains("\"message\":\"No variable types specified\""));
+            assertTrue(result.contains("\"message\":\"No variable types specified\""),
+                    "Should return 'No variable types specified', got: " + result);
         }
 
         @Test
         @DisplayName("setVariableTypes returns 'Function not found' for unknown function")
         void testSetVariableTypes_FunctionNotFound() {
-            when(mockProgramService.getCurrentProgram()).thenReturn(mockProgram);
-            when(mockFunctionService.resolveFunction(mockProgram, "nonexistent")).thenReturn(null);
-
             String result = svc.setVariableTypes("nonexistent",
                 java.util.Map.of("local_10", "int")).toStructuredJson();
-            assertTrue(result.contains("\"message\":\"Function not found: nonexistent\""));
+            assertTrue(result.contains("\"message\":\"Function not found: nonexistent\""),
+                    "Should return 'Function not found' error, got: " + result);
         }
-
-        // Note: splitVariable happy-path tests with mocked program are not feasible
-        // because DecompInterface.openProgram() casts to SleighLanguage internally.
-        // See SplitVariableResultTests for output format coverage.
     }
 
     // ===== SplitVariableResult output format tests =====

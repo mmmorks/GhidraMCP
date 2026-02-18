@@ -1,10 +1,22 @@
 package com.lauriewired.mcp.services;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+
+import com.lauriewired.mcp.model.JsonOutput;
+import com.lauriewired.mcp.model.StatusOutput;
+import com.lauriewired.mcp.model.ToolOutput;
+
+import ghidra.program.database.ProgramBuilder;
+import ghidra.program.database.ProgramDB;
 
 /**
  * Unit tests for CommentService
@@ -140,6 +152,140 @@ public class CommentServiceTest {
         assertDoesNotThrow(() -> new CommentService(null));
     }
 
-    // Note: Testing with actual Program would require a full Ghidra environment
-    // These tests verify the service handles null/error cases properly
+    // -----------------------------------------------------------------------
+    // ProgramBuilder-based happy-path tests
+    // -----------------------------------------------------------------------
+
+    @Nested
+    @DisplayName("ProgramBuilder-based happy-path tests")
+    class HappyPathTests {
+
+        private ProgramBuilder builder;
+        private CommentService svc;
+
+        @BeforeAll
+        static void initGhidra() {
+            GhidraTestEnv.initialize();
+        }
+
+        @BeforeEach
+        void setUp() throws Exception {
+            builder = new ProgramBuilder("test", ProgramBuilder._X64);
+            builder.createMemory(".text", "0x401000", 0x1000);
+            // Create a code unit by setting bytes and disassembling (NOP instruction)
+            builder.setBytes("0x401000", "90", true);
+
+            ProgramDB program = builder.getProgram();
+            ProgramService ps = GhidraTestEnv.programService(program);
+            svc = new CommentService(ps);
+        }
+
+        @AfterEach
+        void tearDown() {
+            if (builder != null) {
+                builder.dispose();
+            }
+        }
+
+        @Test
+        @DisplayName("setComment sets a pre comment successfully")
+        void testSetComment_Pre_Success() {
+            ToolOutput result = svc.setComment("0x401000", "Pre comment text", "pre");
+            assertInstanceOf(StatusOutput.class, result);
+            assertTrue(result.toStructuredJson().contains("Comment set successfully"));
+        }
+
+        @Test
+        @DisplayName("setComment sets an EOL comment successfully")
+        void testSetComment_Eol_Success() {
+            ToolOutput result = svc.setComment("0x401000", "EOL comment text", "eol");
+            assertInstanceOf(StatusOutput.class, result);
+            assertTrue(result.toStructuredJson().contains("Comment set successfully"));
+        }
+
+        @Test
+        @DisplayName("setComment sets a post comment successfully")
+        void testSetComment_Post_Success() {
+            ToolOutput result = svc.setComment("0x401000", "Post comment text", "post");
+            assertInstanceOf(StatusOutput.class, result);
+            assertTrue(result.toStructuredJson().contains("Comment set successfully"));
+        }
+
+        @Test
+        @DisplayName("setComment sets a plate comment successfully")
+        void testSetComment_Plate_Success() {
+            ToolOutput result = svc.setComment("0x401000", "Plate comment text", "plate");
+            assertInstanceOf(StatusOutput.class, result);
+            assertTrue(result.toStructuredJson().contains("Comment set successfully"));
+        }
+
+        @Test
+        @DisplayName("setComment sets a repeatable comment successfully")
+        void testSetComment_Repeatable_Success() {
+            ToolOutput result = svc.setComment("0x401000", "Repeatable comment text", "repeatable");
+            assertInstanceOf(StatusOutput.class, result);
+            assertTrue(result.toStructuredJson().contains("Comment set successfully"));
+        }
+
+        @Test
+        @DisplayName("getComment retrieves all comment types set at an address")
+        void testGetComment_Success() {
+            // Set multiple comment types
+            svc.setComment("0x401000", "My pre comment", "pre");
+            svc.setComment("0x401000", "My eol comment", "eol");
+            svc.setComment("0x401000", "My post comment", "post");
+            svc.setComment("0x401000", "My plate comment", "plate");
+            svc.setComment("0x401000", "My repeatable comment", "repeatable");
+
+            ToolOutput result = svc.getComment("0x401000");
+            assertInstanceOf(JsonOutput.class, result);
+
+            String json = result.toStructuredJson();
+            assertTrue(json.contains("My pre comment"));
+            assertTrue(json.contains("My eol comment"));
+            assertTrue(json.contains("My post comment"));
+            assertTrue(json.contains("My plate comment"));
+            assertTrue(json.contains("My repeatable comment"));
+        }
+
+        @Test
+        @DisplayName("getComment returns error when address has no code unit")
+        void testGetComment_NoCodeUnit() {
+            // 0x900000 is outside all memory blocks so getCodeUnitAt returns null
+            ToolOutput result = svc.getComment("0x900000");
+            assertInstanceOf(StatusOutput.class, result);
+            assertTrue(result.toStructuredJson().contains("No code unit at address"));
+        }
+
+        @Test
+        @DisplayName("getComment returns error for invalid address string")
+        void testGetComment_InvalidAddress() {
+            ToolOutput result = svc.getComment("not_an_address");
+            assertInstanceOf(StatusOutput.class, result);
+            String json = result.toStructuredJson();
+            // Should get an error — either "Invalid address" or a caught exception message
+            assertTrue(json.contains("\"success\":false"));
+        }
+
+        @Test
+        @DisplayName("setComment overwrites an existing comment")
+        void testSetComment_Overwrite() {
+            // Set initial comment
+            svc.setComment("0x401000", "Original comment", "pre");
+
+            // Verify original was set
+            String json1 = svc.getComment("0x401000").toStructuredJson();
+            assertTrue(json1.contains("Original comment"));
+
+            // Overwrite with new comment
+            ToolOutput result = svc.setComment("0x401000", "Replacement comment", "pre");
+            assertTrue(result.toStructuredJson().contains("Comment set successfully"));
+
+            // Verify overwrite
+            String json2 = svc.getComment("0x401000").toStructuredJson();
+            assertTrue(json2.contains("Replacement comment"));
+            // Original should be gone
+            assertTrue(!json2.contains("Original comment"));
+        }
+    }
 }

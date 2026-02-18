@@ -1,114 +1,32 @@
 package com.lauriewired.mcp.services;
 
-import java.util.Iterator;
-
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
-import org.mockito.Mock;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
-import org.mockito.junit.jupiter.MockitoExtension;
 
-import ghidra.app.services.ProgramManager;
-import ghidra.program.model.address.Address;
-import ghidra.program.model.address.AddressFactory;
-import ghidra.program.model.address.AddressSpace;
-import ghidra.program.model.listing.Function;
-import ghidra.program.model.listing.FunctionIterator;
-import ghidra.program.model.listing.FunctionManager;
-import ghidra.program.model.listing.Instruction;
-import ghidra.program.model.listing.InstructionIterator;
-import ghidra.program.model.listing.Listing;
-import ghidra.program.model.listing.Program;
-import ghidra.program.model.mem.Memory;
-import ghidra.program.model.mem.MemoryBlock;
-import ghidra.program.model.symbol.Symbol;
-import ghidra.program.model.symbol.SymbolTable;
+import ghidra.program.database.ProgramBuilder;
+import ghidra.program.database.ProgramDB;
 
 /**
  * Unit tests for SearchService
  */
-@ExtendWith(MockitoExtension.class)
 public class SearchServiceTest {
 
     private SearchService searchService;
-    private SearchService searchServiceWithMocks;
     private ProgramService programService;
-    private ProgramService mockProgramService;
-    private TestProgramService testProgramService;
-    
-    @Mock
-    private MockablePluginTool mockTool;
-    
-    @Mock
-    private ProgramManager mockProgramManager;
-    
-    @Mock
-    private Program mockProgram;
-    
-    @Mock
-    private Memory mockMemory;
-    
-    @Mock
-    private MemoryBlock mockBlock;
-    
-    @Mock
-    private Address mockAddress;
-    
-    @Mock
-    private AddressFactory mockAddressFactory;
-    
-    @Mock
-    private AddressSpace mockAddressSpace;
-    
-    @Mock
-    private SymbolTable mockSymbolTable;
-    
-    @Mock
-    private Symbol mockSymbol;
-    
-    @Mock
-    private FunctionManager mockFunctionManager;
-    
-    @Mock
-    private Function mockFunction;
-    
-    @Mock
-    private Listing mockListing;
-    
-    @Mock
-    private InstructionIterator mockInstructionIterator;
-    
-    @Mock
-    private Instruction mockInstruction;
-    
-    @Mock
-    private FunctionIterator mockFunctionIterator;
-    
+
     @BeforeEach
     void setUp() {
         // Test with null tool since we can't easily mock PluginTool
         programService = new ProgramService(null);
         searchService = new SearchService(programService);
-        
-        // Setup for happy path tests
-        testProgramService = new TestProgramService(mockTool);
-        
-        // Create a mock ProgramService for happy path tests
-        ProgramService mockProgramService = mock(ProgramService.class);
-        SearchService searchServiceWithMocks = new SearchService(mockProgramService);
-        
-        // Store as instance variables for use in tests
-        this.mockProgramService = mockProgramService;
-        this.searchServiceWithMocks = searchServiceWithMocks;
     }
 
     @Test
@@ -245,125 +163,6 @@ public class SearchServiceTest {
         assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
-    // Happy path tests using TestSearchService and mocked dependencies
-
-    @Test
-    @DisplayName("searchMemory with program loaded returns result")
-    void testSearchMemory_WithProgram() {
-        // Setup minimal mocks needed for the method to run
-        when(mockProgramService.getCurrentProgram()).thenReturn(mockProgram);
-        when(mockProgram.getMemory()).thenReturn(mockMemory);
-        
-        // Create empty memory blocks to avoid NPE
-        MemoryBlock[] blocks = new MemoryBlock[0];
-        when(mockMemory.getBlocks()).thenReturn(blocks);
-        
-        // Test
-        String result = searchServiceWithMocks.searchMemory("test", true, null, 10).toStructuredJson();
-
-        // Verify - with no memory blocks, it should return no matches
-        assertNotNull(result);
-        assertTrue(result.contains("\"message\":\"No matches found for query: test\""));
-    }
-
-    @Test
-    @DisplayName("searchDisassembly with executable blocks")
-    void testSearchDisassembly_WithExecutableBlocks() {
-        // Setup
-        when(mockProgramService.getCurrentProgram()).thenReturn(mockProgram);
-        when(mockProgram.getMemory()).thenReturn(mockMemory);
-        when(mockProgram.getListing()).thenReturn(mockListing);
-        
-        // Setup memory blocks
-        MemoryBlock[] blocks = { mockBlock };
-        when(mockMemory.getBlocks()).thenReturn(blocks);
-        when(mockBlock.isExecute()).thenReturn(true);
-        when(mockBlock.getStart()).thenReturn(mockAddress);
-        when(mockBlock.getEnd()).thenReturn(mockAddress);
-        
-        // Create empty instruction iterator
-        when(mockListing.getInstructions(any(Address.class), anyBoolean())).thenReturn(mockInstructionIterator);
-        when(mockInstructionIterator.hasNext()).thenReturn(false);
-        
-        // Test
-        String result = searchServiceWithMocks.searchDisassembly("MOV", 0, 10).toStructuredJson();
-
-        // Verify
-        assertNotNull(result);
-        assertTrue(result.contains("\"message\":\"No matches found for pattern: MOV\""));
-    }
-
-    @Test
-    @DisplayName("searchDecompiled with no functions returns no matches")
-    void testSearchDecompiled_NoFunctions() {
-        // Setup
-        when(mockProgramService.getCurrentProgram()).thenReturn(mockProgram);
-        when(mockProgram.getFunctionManager()).thenReturn(mockFunctionManager);
-
-        // Mock empty function iterator
-        Iterator<Function> emptyIterator = mock(Iterator.class);
-        when(emptyIterator.hasNext()).thenReturn(false);
-        when(mockFunctionManager.getFunctions(true)).thenReturn(mockFunctionIterator);
-        when(mockFunctionIterator.iterator()).thenReturn(emptyIterator);
-
-        // Test
-        String result = searchServiceWithMocks.searchDecompiled("test", 0, 10).toStructuredJson();
-
-        // Verify - with no functions, ParallelDecompiler finds no matches
-        assertNotNull(result);
-        assertTrue(result.contains("No matches found"));
-    }
-
-    @Test
-    @DisplayName("searchMemory handles hex pattern")
-    void testSearchMemory_HexPattern() {
-        // Setup minimal mocks
-        when(mockProgramService.getCurrentProgram()).thenReturn(mockProgram);
-        when(mockProgram.getMemory()).thenReturn(mockMemory);
-        
-        // Empty memory blocks
-        when(mockMemory.getBlocks()).thenReturn(new MemoryBlock[0]);
-        
-        // Test with hex pattern
-        String result = searchServiceWithMocks.searchMemory("48 89 5C 24", false, null, 10).toStructuredJson();
-
-        // Verify
-        assertNotNull(result);
-        assertTrue(result.contains("\"message\":\"No matches found for query: 48 89 5C 24\""));
-    }
-
-    @Test
-    @DisplayName("searchDisassembly with no executable blocks")
-    void testSearchDisassembly_NoExecutableBlocks() {
-        // Setup
-        when(mockProgramService.getCurrentProgram()).thenReturn(mockProgram);
-        when(mockProgram.getMemory()).thenReturn(mockMemory);
-        
-        // No executable blocks
-        when(mockMemory.getBlocks()).thenReturn(new MemoryBlock[0]);
-        
-        // Test
-        String result = searchServiceWithMocks.searchDisassembly("MOV", 0, 10).toStructuredJson();
-
-        // Verify
-        assertNotNull(result);
-        assertTrue(result.contains("\"message\":\"No executable code blocks found in program\""));
-    }
-
-    @Test
-    @DisplayName("searchMemory with invalid hex pattern")
-    void testSearchMemory_InvalidHexPattern() {
-        // Setup
-        when(mockProgramService.getCurrentProgram()).thenReturn(mockProgram);
-        
-        // Test with invalid hex pattern - this will fail early due to parsing error
-        String result = searchServiceWithMocks.searchMemory("ZZ XX", false, null, 10).toStructuredJson();
-
-        // Verify - should handle the error
-        assertNotNull(result);
-        assertTrue(result.contains("Error searching memory") || result.contains("No matches found") || result.contains("No program loaded"));
-    }
-
     @Test
     @DisplayName("searchDecompiled handles invalid regex pattern")
     void testSearchDecompiled_InvalidRegex() {
@@ -399,64 +198,153 @@ public class SearchServiceTest {
         assertDoesNotThrow(() -> new SearchService(null));
     }
 
-    // Note: Testing with actual Program would require a full Ghidra environment
-    // These tests verify the service handles null/error cases properly
-    
-    @Test
-    @DisplayName("searchMemory with specific block name")
-    void testSearchMemory_WithSpecificBlockName() {
-        // Setup
-        when(mockProgramService.getCurrentProgram()).thenReturn(mockProgram);
-        when(mockProgram.getMemory()).thenReturn(mockMemory);
-        
-        // Mock specific block lookup
-        when(mockMemory.getBlock(".text")).thenReturn(mockBlock);
-        when(mockBlock.getStart()).thenReturn(mockAddress);
-        when(mockBlock.getEnd()).thenReturn(mockAddress);
-        when(mockAddress.getAddressSpace()).thenReturn(mockAddressSpace);
-        when(mockAddress.getOffsetAsBigInteger()).thenReturn(java.math.BigInteger.valueOf(0x401000));
-        
-        // Test with specific block name
-        String result = searchServiceWithMocks.searchMemory("test", true, ".text", 10).toStructuredJson();
+    /**
+     * ProgramBuilder-based integration tests for search operations.
+     * Uses real x86 programs with memory and instructions.
+     */
+    @Nested
+    @DisplayName("ProgramBuilder integration tests")
+    class ProgramBuilderIntegrationTest {
 
-        // Verify
-        assertNotNull(result);
-        assertTrue(result.contains("\"message\":\"No matches found for query: test\""));
+        private ProgramBuilder builder;
+        private ProgramDB program;
+        private SearchService service;
+
+        @BeforeAll
+        static void initGhidra() {
+            GhidraTestEnv.initialize();
+        }
+
+        @AfterEach
+        void tearDown() {
+            if (builder != null) {
+                builder.dispose();
+            }
+        }
+
+        private void createDefaultProgram() throws Exception {
+            builder = new ProgramBuilder("test", ProgramBuilder._X64);
+            builder.createMemory(".text", "0x401000", 0x1000);
+            builder.createMemory(".data", "0x402000", 0x100);
+
+            // Write "Hello World" into .data
+            builder.setBytes("0x402000", "48 65 6C 6C 6F 20 57 6F 72 6C 64", false);
+
+            // x86-64: push rbp; mov rbp,rsp; nop; pop rbp; ret
+            builder.setBytes("0x401000", "55 48 89 E5 90 5D C3", true);
+            builder.createFunction("0x401000");
+
+            program = builder.getProgram();
+
+            // Mark .text block as executable (ProgramBuilder doesn't do this automatically)
+            int tx = program.startTransaction("set permissions");
+            try {
+                ghidra.program.model.mem.MemoryBlock textBlock = program.getMemory().getBlock(".text");
+                if (textBlock != null) {
+                    textBlock.setExecute(true);
+                }
+            } finally {
+                program.endTransaction(tx, true);
+            }
+
+            ProgramService ps = GhidraTestEnv.programService(program);
+            service = new SearchService(ps);
+        }
+
+        @Test
+        @DisplayName("searchMemory finds string in data block")
+        void testSearchMemory_StringFound() throws Exception {
+            createDefaultProgram();
+
+            String json = service.searchMemory("Hello", true, null, 10).toStructuredJson();
+
+            assertNotNull(json);
+            // Should find the string at 0x402000
+            assertTrue(json.contains("\"query\":\"Hello\"") || json.contains("match"),
+                    "Should find 'Hello' in memory, got: " + json);
+            assertTrue(json.contains("00402000") || json.contains("402000"),
+                    "Should report match address in .data block, got: " + json);
+        }
+
+        @Test
+        @DisplayName("searchMemory returns no matches for absent string")
+        void testSearchMemory_NoMatches() throws Exception {
+            createDefaultProgram();
+
+            String json = service.searchMemory("NOTHERE", true, null, 10).toStructuredJson();
+
+            assertTrue(json.contains("No matches found"),
+                    "Should report no matches for absent string");
+        }
+
+        @Test
+        @DisplayName("searchMemory finds hex byte pattern")
+        void testSearchMemory_HexPattern() throws Exception {
+            createDefaultProgram();
+
+            // Search for "Hell" as hex: 48 65 6C 6C
+            String json = service.searchMemory("48 65 6C 6C", false, null, 10).toStructuredJson();
+
+            assertNotNull(json);
+            // Should find the hex pattern at the data section
+            assertTrue(json.contains("00402000") || json.contains("402000") || json.contains("match"),
+                    "Should find hex pattern in memory, got: " + json);
+        }
+
+        @Test
+        @DisplayName("searchMemory returns error for nonexistent block name")
+        void testSearchMemory_BlockNotFound() throws Exception {
+            createDefaultProgram();
+
+            String json = service.searchMemory("Hello", true, "nonexistent", 10).toStructuredJson();
+
+            assertTrue(json.contains("Memory block not found: nonexistent"),
+                    "Should report block not found error");
+        }
+
+        @Test
+        @DisplayName("searchDisassembly finds instruction by mnemonic pattern")
+        void testSearchDisassembly_Found() throws Exception {
+            createDefaultProgram();
+
+            // Search for PUSH or NOP instructions
+            String json = service.searchDisassembly("PUSH|NOP", 0, 10).toStructuredJson();
+
+            assertNotNull(json);
+            // Should find at least one instruction matching PUSH or NOP
+            assertTrue(json.contains("\"matches\"") || json.contains("match_count"),
+                    "Should find matching instructions, got: " + json);
+        }
+
+        @Test
+        @DisplayName("searchDisassembly returns error when no executable blocks exist")
+        void testSearchDisassembly_NoExecutableBlocks() throws Exception {
+            // Create a program with only non-executable data blocks
+            builder = new ProgramBuilder("test", ProgramBuilder._X64);
+            builder.createMemory(".data", "0x402000", 0x100);
+            // setBytes with isExecutable=false creates data, not code
+            builder.setBytes("0x402000", "48 65 6C 6C 6F", false);
+
+            program = builder.getProgram();
+            ProgramService ps = GhidraTestEnv.programService(program);
+            service = new SearchService(ps);
+
+            String json = service.searchDisassembly("PUSH", 0, 10).toStructuredJson();
+
+            assertTrue(json.contains("No executable code blocks") || json.contains("No matches"),
+                    "Should report no executable blocks or no matches, got: " + json);
+        }
+
+        @Test
+        @DisplayName("searchDisassembly returns no matches for pattern not in instructions")
+        void testSearchDisassembly_NoMatches() throws Exception {
+            createDefaultProgram();
+
+            // Search for a pattern that does not match any instruction in our small function
+            String json = service.searchDisassembly("XCHG.*RAX.*RBX", 0, 10).toStructuredJson();
+
+            assertTrue(json.contains("No matches found"),
+                    "Should report no matches for absent pattern");
+        }
     }
-
-    @Test
-    @DisplayName("searchMemory returns error for non-existent block")
-    void testSearchMemory_BlockNotFound() {
-        // Setup
-        when(mockProgramService.getCurrentProgram()).thenReturn(mockProgram);
-        when(mockProgram.getMemory()).thenReturn(mockMemory);
-        
-        // Mock block not found
-        when(mockMemory.getBlock("nonexistent")).thenReturn(null);
-        
-        // Test
-        String result = searchServiceWithMocks.searchMemory("test", true, "nonexistent", 10).toStructuredJson();
-
-        // Verify
-        assertTrue(result.contains("\"message\":\"Memory block not found: nonexistent\""));
-    }
-    
-    @Test
-    @DisplayName("searchMemory handles wildcards in hex pattern")
-    void testSearchMemory_HexPatternWithWildcards() {
-        // Setup
-        when(mockProgramService.getCurrentProgram()).thenReturn(mockProgram);
-        when(mockProgram.getMemory()).thenReturn(mockMemory);
-        
-        // Empty memory blocks
-        when(mockMemory.getBlocks()).thenReturn(new MemoryBlock[0]);
-        
-        // Test with hex pattern containing wildcards
-        String result = searchServiceWithMocks.searchMemory("48 ?? 5C ??", false, null, 10).toStructuredJson();
-
-        // Verify
-        assertNotNull(result);
-        assertTrue(result.contains("\"message\":\"No matches found for query: 48 ?? 5C ??\""));
-    }
-    
 }

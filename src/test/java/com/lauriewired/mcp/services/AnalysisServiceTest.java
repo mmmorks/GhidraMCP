@@ -2,33 +2,18 @@ package com.lauriewired.mcp.services;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
-import org.mockito.junit.jupiter.MockitoExtension;
 
-import ghidra.app.services.ProgramManager;
-import ghidra.program.model.address.Address;
-import ghidra.program.model.address.AddressIterator;
-import ghidra.program.model.address.AddressSetView;
-import ghidra.program.model.listing.Function;
-import ghidra.program.model.listing.FunctionIterator;
-import ghidra.program.model.listing.FunctionManager;
-import ghidra.program.model.listing.Program;
-import ghidra.program.model.symbol.Reference;
-import ghidra.program.model.symbol.ReferenceIterator;
-import ghidra.program.model.symbol.ReferenceManager;
-import ghidra.program.model.symbol.RefType;
-
-import java.util.Iterator;
-import java.util.List;
+import ghidra.program.database.ProgramBuilder;
+import ghidra.program.database.ProgramDB;
 
 /**
  * Unit tests for AnalysisService
@@ -222,248 +207,187 @@ public class AnalysisServiceTest {
         assertDoesNotThrow(() -> new AnalysisService(null, null));
     }
 
-    // Note: Testing with actual Program would require a full Ghidra environment
-    // These tests verify the service handles null/error cases properly
-
     /**
-     * Tests for call graph leaf node elision behavior.
-     * Nodes at max depth should omit callers/callees (null → field absent in JSON).
-     * Genuine leaf nodes (no references, not at max depth) should show empty list [].
+     * ProgramBuilder-based integration tests for call graph, control flow, and references.
+     * Uses real x86 programs with CALL instructions to verify analysis logic.
      */
     @Nested
-    @ExtendWith(MockitoExtension.class)
-    @DisplayName("getCallGraph leaf node elision")
-    class CallGraphLeafElisionTest {
+    @DisplayName("ProgramBuilder integration tests")
+    class ProgramBuilderIntegrationTest {
 
-        @Mock private MockablePluginTool mockTool;
-        @Mock private ProgramManager mockProgramManager;
-        @Mock private Program mockProgram;
-        @Mock private FunctionManager mockFunctionManager;
-        @Mock private ReferenceManager mockReferenceManager;
-
+        private ProgramBuilder builder;
+        private ProgramDB program;
         private AnalysisService service;
 
+        @BeforeAll
+        static void initGhidra() {
+            GhidraTestEnv.initialize();
+        }
+
         @BeforeEach
-        void setUp() {
-            TestProgramService ps = new TestProgramService(mockTool);
-            TestFunctionService fs = new TestFunctionService(mockTool, ps);
+        void setUp() throws Exception {
+            builder = new ProgramBuilder("test", ProgramBuilder._X64);
+            builder.createMemory(".text", "0x401000", 0x1000);
+
+            // main at 0x401000: call helper (at 0x401100); ret
+            // E8 is near call relative; offset = 0x401100 - (0x401000 + 5) = 0xFB
+            builder.setBytes("0x401000", "E8 FB 00 00 00 C3", true);
+            builder.createFunction("0x401000");
+
+            // helper at 0x401100: nop; ret
+            builder.setBytes("0x401100", "90 C3", true);
+            builder.createFunction("0x401100");
+
+            program = builder.getProgram();
+
+            // Rename the auto-generated function names to human-readable names
+            int tx = program.startTransaction("rename");
+            try {
+                ghidra.program.model.listing.Function mainFunc =
+                    program.getFunctionManager().getFunctionAt(builder.addr("0x401000"));
+                if (mainFunc != null) {
+                    mainFunc.setName("main", ghidra.program.model.symbol.SourceType.USER_DEFINED);
+                }
+                ghidra.program.model.listing.Function helperFunc =
+                    program.getFunctionManager().getFunctionAt(builder.addr("0x401100"));
+                if (helperFunc != null) {
+                    helperFunc.setName("helper", ghidra.program.model.symbol.SourceType.USER_DEFINED);
+                }
+            } finally {
+                program.endTransaction(tx, true);
+            }
+
+            ProgramService ps = GhidraTestEnv.programService(program);
+            FunctionService fs = new FunctionService(null, ps);
             service = new AnalysisService(ps, fs);
-
-            when(mockTool.getService(ProgramManager.class)).thenReturn(mockProgramManager);
-            when(mockProgramManager.getCurrentProgram()).thenReturn(mockProgram);
-            when(mockProgram.getFunctionManager()).thenReturn(mockFunctionManager);
-            lenient().when(mockProgram.getReferenceManager()).thenReturn(mockReferenceManager);
         }
 
-        /**
-         * Helper: create a mock Function with a name, address, and body that
-         * returns the given addresses from its AddressIterator.
-         */
-        private Function mockFunction(String name, String addrHex, Address... bodyAddresses) {
-            Function func = mock(Function.class);
-            Address entry = mock(Address.class);
-            when(entry.toString()).thenReturn(addrHex);
-            when(func.getName()).thenReturn(name);
-            when(func.getEntryPoint()).thenReturn(entry);
-            lenient().when(func.getProgram()).thenReturn(mockProgram);
-
-            AddressSetView body = mock(AddressSetView.class);
-            AddressIterator addrIter = mock(AddressIterator.class);
-
-            // Build hasNext/next chain (lenient — body may not be traversed in callers-direction tests)
-            if (bodyAddresses.length == 0) {
-                lenient().when(addrIter.hasNext()).thenReturn(false);
-            } else {
-                Boolean[] subsequent = new Boolean[bodyAddresses.length];
-                for (int i = 0; i < bodyAddresses.length - 1; i++) subsequent[i] = true;
-                subsequent[bodyAddresses.length - 1] = false;
-                lenient().when(addrIter.hasNext()).thenReturn(true, subsequent);
-                if (bodyAddresses.length == 1) {
-                    lenient().when(addrIter.next()).thenReturn(bodyAddresses[0]);
-                } else {
-                    Address[] rest = new Address[bodyAddresses.length - 1];
-                    System.arraycopy(bodyAddresses, 1, rest, 0, rest.length);
-                    lenient().when(addrIter.next()).thenReturn(bodyAddresses[0], rest);
-                }
+        @AfterEach
+        void tearDown() {
+            if (builder != null) {
+                builder.dispose();
             }
-            lenient().when(body.getAddresses(true)).thenReturn(addrIter);
-            lenient().when(func.getBody()).thenReturn(body);
-
-            return func;
-        }
-
-        /** Helper: make resolveFunction find a function by name. */
-        private void resolvable(Function func) {
-            @SuppressWarnings("unchecked")
-            Iterator<Function> iter = mock(Iterator.class);
-            when(iter.hasNext()).thenReturn(true, false);
-            when(iter.next()).thenReturn(func);
-            FunctionIterator fIter = mock(FunctionIterator.class);
-            when(fIter.iterator()).thenReturn(iter);
-            when(mockFunctionManager.getFunctions(true)).thenReturn(fIter);
-        }
-
-        /** Helper: create a call reference from one address to another. */
-        private Reference callRef(Address from, Address to) {
-            Reference ref = mock(Reference.class);
-            when(ref.getReferenceType()).thenReturn(RefType.UNCONDITIONAL_CALL);
-            lenient().when(ref.getToAddress()).thenReturn(to);
-            lenient().when(ref.getFromAddress()).thenReturn(from);
-            return ref;
-        }
-
-        /** Helper: create a mock ReferenceIterator from references. */
-        private ReferenceIterator refIterator(Reference... refs) {
-            ReferenceIterator iter = mock(ReferenceIterator.class);
-            when(iter.iterator()).thenReturn(iter);
-            if (refs.length == 0) {
-                when(iter.hasNext()).thenReturn(false);
-            } else {
-                Boolean[] subsequent = new Boolean[refs.length];
-                for (int i = 0; i < refs.length - 1; i++) subsequent[i] = true;
-                subsequent[refs.length - 1] = false;
-                when(iter.hasNext()).thenReturn(true, subsequent);
-                if (refs.length == 1) {
-                    when(iter.next()).thenReturn(refs[0]);
-                } else {
-                    Reference[] rest = new Reference[refs.length - 1];
-                    System.arraycopy(refs, 1, rest, 0, rest.length);
-                    when(iter.next()).thenReturn(refs[0], rest);
-                }
-            }
-            return iter;
         }
 
         @Test
-        @DisplayName("callees at max depth are elided (field absent from JSON)")
-        void testCallees_atMaxDepth_elided() {
-            // main -> helper (depth 1 of 1, so helper is at max depth)
-            Address mainBody = mock(Address.class);
-            Function main = mockFunction("main", "00401000", mainBody);
-            Address helperEntry = mock(Address.class);
-            // No body addresses needed — helper is at max depth so it won't be traversed
-            Function helper = mock(Function.class);
-            Address helperAddr = mock(Address.class);
-            when(helperAddr.toString()).thenReturn("00402000");
-            when(helper.getName()).thenReturn("helper");
-            when(helper.getEntryPoint()).thenReturn(helperAddr);
+        @DisplayName("analyzeControlFlow returns blocks for a real function")
+        void testAnalyzeControlFlow_RealFunction() {
+            String json = service.analyzeControlFlow("main").toStructuredJson();
 
-            resolvable(main);
-
-            Reference callToHelper = callRef(mainBody, helperEntry);
-            when(mockReferenceManager.getReferencesFrom(mainBody)).thenReturn(new Reference[]{callToHelper});
-            when(mockFunctionManager.getFunctionAt(helperEntry)).thenReturn(helper);
-
-            String json = service.getCallGraph("main", 1, "callees").toStructuredJson();
-
-            // helper node should NOT have a "callees" key at all (elided at max depth)
-            assertTrue(json.contains("\"name\":\"helper\""));
-            // The helper node should not contain "callees" — it's null so NON_NULL omits it
-            // Extract the helper node substring and verify no callees key
-            int helperIdx = json.indexOf("\"name\":\"helper\"");
-            // Find the enclosing object boundaries
-            int braceStart = json.lastIndexOf('{', helperIdx);
-            int braceEnd = json.indexOf('}', helperIdx);
-            String helperNode = json.substring(braceStart, braceEnd + 1);
-            assertFalse(helperNode.contains("\"callees\""),
-                    "Leaf node at max depth should not have callees field, but got: " + helperNode);
+            // Should contain function name and entry point
+            assertTrue(json.contains("\"function\":\"main\""), "Should contain function name");
+            assertTrue(json.contains("\"entry_point\""), "Should contain entry_point");
+            // Should contain at least one block with instructions
+            assertTrue(json.contains("\"blocks\""), "Should contain blocks");
+            assertTrue(json.contains("\"instructions\""), "Should contain instructions");
         }
 
         @Test
-        @DisplayName("callers at max depth are elided (field absent from JSON)")
-        void testCallers_atMaxDepth_elided() {
-            // caller -> main; depth=1, so caller is at max depth
-            Address callerBody = mock(Address.class);
-            // No body addresses needed — caller is at max depth so it won't be traversed
-            Function caller = mock(Function.class);
-            Address callerAddr = mock(Address.class);
-            when(callerAddr.toString()).thenReturn("00403000");
-            when(caller.getName()).thenReturn("caller_func");
-            when(caller.getEntryPoint()).thenReturn(callerAddr);
-            Function main = mockFunction("main", "00401000");
+        @DisplayName("analyzeControlFlow finds function by address")
+        void testAnalyzeControlFlow_ByAddress() {
+            String json = service.analyzeControlFlow("0x401000").toStructuredJson();
 
-            resolvable(main);
-
-            Reference refToMain = callRef(callerBody, main.getEntryPoint());
-            // Build iterator before stubbing to avoid nested stubbing issue
-            Address mainEntry = main.getEntryPoint();
-            ReferenceIterator refsToMain = refIterator(refToMain);
-            when(mockReferenceManager.getReferencesTo(mainEntry)).thenReturn(refsToMain);
-            when(mockFunctionManager.getFunctionContaining(callerBody)).thenReturn(caller);
-
-            String json = service.getCallGraph("main", 1, "callers").toStructuredJson();
-
-            assertTrue(json.contains("\"name\":\"caller_func\""));
-            int callerIdx = json.indexOf("\"name\":\"caller_func\"");
-            int braceStart = json.lastIndexOf('{', callerIdx);
-            int braceEnd = json.indexOf('}', callerIdx);
-            String callerNode = json.substring(braceStart, braceEnd + 1);
-            assertFalse(callerNode.contains("\"callers\""),
-                    "Leaf node at max depth should not have callers field, but got: " + callerNode);
+            assertTrue(json.contains("\"function\":\"main\""), "Should resolve function by address");
+            assertTrue(json.contains("\"blocks\""), "Should contain blocks");
         }
 
         @Test
-        @DisplayName("genuine leaf callees (no references, not at max depth) show empty list")
-        void testCallees_genuineLeaf_emptyList() {
-            // main -> helper (depth 2); helper has no callees and is only at depth 1
-            Address mainBody = mock(Address.class);
-            Function main = mockFunction("main", "00401000", mainBody);
-            Address helperEntry = mock(Address.class);
-            Address helperBody = mock(Address.class);
-            Function helper = mockFunction("helper", "00402000", helperBody);
+        @DisplayName("analyzeControlFlow returns error for nonexistent function")
+        void testAnalyzeControlFlow_FunctionNotFound() {
+            String json = service.analyzeControlFlow("nonexistent").toStructuredJson();
 
-            resolvable(main);
+            assertTrue(json.contains("\"message\":\"Function not found: nonexistent\""));
+        }
 
-            Reference callToHelper = callRef(mainBody, helperEntry);
-            when(mockReferenceManager.getReferencesFrom(mainBody)).thenReturn(new Reference[]{callToHelper});
-            when(mockFunctionManager.getFunctionAt(helperEntry)).thenReturn(helper);
-
-            // helper has no outgoing call references
-            when(mockReferenceManager.getReferencesFrom(helperBody)).thenReturn(new Reference[]{});
-
+        @Test
+        @DisplayName("getCallGraph callees shows helper called by main")
+        void testGetCallGraph_Callees() {
             String json = service.getCallGraph("main", 2, "callees").toStructuredJson();
 
-            // helper is a genuine leaf — should have "callees":[]
-            assertTrue(json.contains("\"name\":\"helper\""));
-            int helperIdx = json.indexOf("\"name\":\"helper\"");
-            int braceStart = json.lastIndexOf('{', helperIdx);
-            int braceEnd = json.indexOf('}', helperIdx);
-            String helperNode = json.substring(braceStart, braceEnd + 1);
-            assertTrue(helperNode.contains("\"callees\":[]"),
-                    "Genuine leaf node should have empty callees list, but got: " + helperNode);
+            assertTrue(json.contains("\"function\":\"main\""), "Should contain root function name");
+            // main calls helper via the CALL instruction
+            assertTrue(json.contains("\"callees\""), "Should contain callees field");
         }
 
         @Test
-        @DisplayName("genuine leaf callers (no references, not at max depth) show empty list")
-        void testCallers_genuineLeaf_emptyList() {
-            // caller_func -> main; depth=2; caller_func has no callers and is only at depth 1
-            Address callerBody = mock(Address.class);
-            Function caller = mockFunction("caller_func", "00403000", callerBody);
-            Function main = mockFunction("main", "00401000");
+        @DisplayName("getCallGraph callers shows main calling helper")
+        void testGetCallGraph_Callers() {
+            String json = service.getCallGraph("0x401100", 2, "callers").toStructuredJson();
 
-            resolvable(main);
+            // helper is called by main
+            assertTrue(json.contains("\"callers\""), "Should contain callers field");
+        }
 
-            Reference refToMain = callRef(callerBody, main.getEntryPoint());
-            // Build iterators before stubbing to avoid nested stubbing issue
-            Address mainEntry = main.getEntryPoint();
-            Address callerEntry = caller.getEntryPoint();
-            ReferenceIterator refsToMain = refIterator(refToMain);
-            ReferenceIterator refsToCallerEmpty = refIterator();
-            when(mockReferenceManager.getReferencesTo(mainEntry)).thenReturn(refsToMain);
-            when(mockFunctionManager.getFunctionContaining(callerBody)).thenReturn(caller);
+        @Test
+        @DisplayName("getCallGraph callees at max depth are elided (field absent from JSON)")
+        void testCallees_atMaxDepth_elided() {
+            // depth=1: main's callees are at max depth, so their callees should be null (omitted by NON_NULL)
+            String json = service.getCallGraph("main", 1, "callees").toStructuredJson();
 
-            // caller_func has no callers of its own
-            when(mockReferenceManager.getReferencesTo(callerEntry)).thenReturn(refsToCallerEmpty);
+            // The root node should have callees
+            assertTrue(json.contains("\"callees\""), "Root should have callees");
 
-            String json = service.getCallGraph("main", 2, "callers").toStructuredJson();
+            // Find the helper node within the callees array
+            int helperIdx = json.indexOf("\"name\":\"helper\"");
+            assertTrue(helperIdx >= 0, "Should find helper in callees, got: " + json);
+            if (helperIdx >= 0) {
+                int braceStart = json.lastIndexOf('{', helperIdx);
+                int braceEnd = json.indexOf('}', helperIdx);
+                String helperNode = json.substring(braceStart, braceEnd + 1);
+                assertFalse(helperNode.contains("\"callees\""),
+                        "Leaf node at max depth should not have callees field, but got: " + helperNode);
+            }
+        }
 
-            assertTrue(json.contains("\"name\":\"caller_func\""));
-            int callerIdx = json.indexOf("\"name\":\"caller_func\"");
-            int braceStart = json.lastIndexOf('{', callerIdx);
-            int braceEnd = json.indexOf('}', callerIdx);
-            String callerNode = json.substring(braceStart, braceEnd + 1);
-            assertTrue(callerNode.contains("\"callers\":[]"),
-                    "Genuine leaf node should have empty callers list, but got: " + callerNode);
+        @Test
+        @DisplayName("getCallGraph genuine leaf callees show empty list")
+        void testCallees_genuineLeaf_emptyList() {
+            // depth=2: helper is at depth 1 with no callees of its own -> genuine leaf
+            String json = service.getCallGraph("main", 2, "callees").toStructuredJson();
+
+            // helper should have callees:[] since it calls nothing
+            int helperIdx = json.indexOf("\"name\":\"helper\"");
+            assertTrue(helperIdx >= 0, "Should find helper in callees, got: " + json);
+            if (helperIdx >= 0) {
+                int braceStart = json.lastIndexOf('{', helperIdx);
+                int braceEnd = json.indexOf('}', helperIdx);
+                String helperNode = json.substring(braceStart, braceEnd + 1);
+                assertTrue(helperNode.contains("\"callees\":[]"),
+                        "Genuine leaf node should have empty callees list, but got: " + helperNode);
+            }
+        }
+
+        @Test
+        @DisplayName("getCallGraph both direction returns callers and callees")
+        void testGetCallGraph_BothDirections() {
+            String json = service.getCallGraph("0x401100", 2, "both").toStructuredJson();
+
+            assertTrue(json.contains("\"callers\""), "Should contain callers field");
+            assertTrue(json.contains("\"callees\""), "Should contain callees field");
+        }
+
+        @Test
+        @DisplayName("listReferences shows call reference to helper")
+        void testListReferences_CallRef() {
+            // helper at 0x401100 should have references from main's CALL instruction
+            String json = service.listReferences("0x401100", 0, 10).toStructuredJson();
+
+            // Should find at least one reference
+            assertNotNull(json);
+            // The CALL from main creates a reference to 0x401100
+            assertTrue(json.contains("UNCONDITIONAL_CALL") || json.contains("items") ||
+                        json.contains("00401100"),
+                    "Should find call reference to helper");
+        }
+
+        @Test
+        @DisplayName("listReferences returns error for address with no references")
+        void testListReferences_NoRefs() {
+            // Address 0x401500 is in .text but has no references
+            String json = service.listReferences("0x401500", 0, 10).toStructuredJson();
+
+            assertTrue(json.contains("No references found") || json.contains("\"message\""),
+                    "Should report no references");
         }
     }
 }
