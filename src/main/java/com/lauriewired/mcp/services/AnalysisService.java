@@ -68,7 +68,7 @@ public class AnalysisService {
 
         Creates a textual control flow graph (CFG) showing how basic blocks connect.
 
-        Returns: Detailed CFG with blocks, jumps, and instructions
+        Returns: CFG with blocks, successors, and instructions as {address: text} maps
 
         Note: Basic blocks are instruction sequences with single entry/exit points.
         Essential for understanding branching and loops.
@@ -118,12 +118,12 @@ public class AnalysisService {
                 }
 
                 // Build instructions list
-                final List<ControlFlowResult.Instruction> instrList = new ArrayList<>();
+                final List<Map<String, String>> instrList = new ArrayList<>();
                 final Listing listing = program.getListing();
                 final InstructionIterator instructions = listing.getInstructions(block, true);
                 while (instructions.hasNext()) {
                     final Instruction instr = instructions.next();
-                    instrList.add(new ControlFlowResult.Instruction(
+                    instrList.add(ControlFlowResult.instruction(
                             instr.getAddress().toString(),
                             instr.toString()));
                 }

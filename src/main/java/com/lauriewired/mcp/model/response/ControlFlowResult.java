@@ -1,6 +1,8 @@
 package com.lauriewired.mcp.model.response;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import com.lauriewired.mcp.model.Displayable;
 
@@ -17,7 +19,7 @@ public record ControlFlowResult(
         String address,
         Range range,
         List<Successor> successors,
-        List<Instruction> instructions
+        List<Map<String, String>> instructions
     ) {
         public Block {
             successors = List.copyOf(successors);
@@ -29,7 +31,11 @@ public record ControlFlowResult(
 
     public record Successor(String type, String target) {}
 
-    public record Instruction(String address, String text) {}
+    public static Map<String, String> instruction(final String address, final String text) {
+        final Map<String, String> entry = new LinkedHashMap<>(1);
+        entry.put(address != null ? address : "", text);
+        return entry;
+    }
 
     @Override
     public String toDisplayText() {
@@ -52,9 +58,10 @@ public record ControlFlowResult(
             }
 
             sb.append("  Instructions:\n");
-            for (final Instruction instr : block.instructions()) {
-                sb.append("    ").append(instr.address()).append(": ")
-                  .append(instr.text()).append("\n");
+            for (final Map<String, String> instr : block.instructions()) {
+                final var e = instr.entrySet().iterator().next();
+                sb.append("    ").append(e.getKey()).append(": ")
+                  .append(e.getValue()).append("\n");
             }
             sb.append("\n");
         }
