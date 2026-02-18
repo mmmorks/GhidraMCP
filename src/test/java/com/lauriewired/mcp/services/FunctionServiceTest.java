@@ -427,7 +427,7 @@ public class FunctionServiceTest {
     }
 
     @Test
-    @DisplayName("getFunctionCode assembly mode returns structured CodeLine list")
+    @DisplayName("getFunctionCode assembly mode returns address-keyed line entries")
     void testGetFunctionCode_Assembly_Success() {
         Function func = setupFunctionWithInstructions();
         Address endAddr = func.getBody().getMaxAddress();
@@ -466,21 +466,16 @@ public class FunctionServiceTest {
         String json = result.toStructuredJson();
         assertTrue(json.contains("\"function\":\"main\""));
         assertTrue(json.contains("\"format\":\"assembly\""));
-        assertTrue(json.contains("\"address\":\"00401000\""));
-        assertTrue(json.contains("\"code\":\"push ebp\""));
-        assertTrue(json.contains("\"address\":\"00401002\""));
-        assertTrue(json.contains("\"code\":\"mov ebp,esp\""));
+        assertTrue(json.contains("\"00401000\":\"push ebp\""));
+        assertTrue(json.contains("\"00401002\":\"mov ebp,esp\""));
 
         // Verify structured data
         FunctionCodeResult data = (FunctionCodeResult) ((JsonOutput) result).data();
         assertEquals("main", data.function());
         assertEquals("assembly", data.format());
         assertEquals(2, data.lines().size());
-        assertEquals("00401000", data.lines().get(0).address());
-        assertEquals("push ebp", data.lines().get(0).code());
-        assertNull(data.lines().get(0).comment());
-        assertEquals("00401002", data.lines().get(1).address());
-        assertEquals("mov ebp,esp", data.lines().get(1).code());
+        assertEquals("push ebp", data.lines().get(0).get("00401000"));
+        assertEquals("mov ebp,esp", data.lines().get(1).get("00401002"));
     }
 
     @Test
@@ -512,7 +507,7 @@ public class FunctionServiceTest {
 
         assertEquals("assembly", data.format());
         assertEquals(1, data.lines().size());
-        assertEquals("call to helper", data.lines().get(0).comment());
+        assertEquals("call 0x00402000 ; call to helper", data.lines().get(0).get("00401000"));
     }
 
     @Test
@@ -551,8 +546,7 @@ public class FunctionServiceTest {
 
         assertEquals(4, data.lines().size());
         for (int i = 0; i < 4; i++) {
-            assertEquals(addresses[i], data.lines().get(i).address());
-            assertEquals(mnemonics[i], data.lines().get(i).code());
+            assertEquals(mnemonics[i], data.lines().get(i).get(addresses[i]));
         }
     }
 
@@ -583,7 +577,7 @@ public class FunctionServiceTest {
         ToolOutput result = functionService.getFunctionCode("main", "assembly");
         String display = result.toDisplayText();
 
-        assertTrue(display.contains("00401000: ret ; function return"));
+        assertTrue(display.contains("00401000: ret ; function return\n"));
     }
 
     @Test

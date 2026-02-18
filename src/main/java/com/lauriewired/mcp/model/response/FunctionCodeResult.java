@@ -1,37 +1,36 @@
 package com.lauriewired.mcp.model.response;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import com.lauriewired.mcp.model.Displayable;
 
 public record FunctionCodeResult(
     String function,
     String format,
-    List<CodeLine> lines
+    List<Map<String, String>> lines
 ) implements Displayable {
     public FunctionCodeResult {
         lines = List.copyOf(lines);
     }
 
-    /**
-     * A single line of code output.
-     * @param address  memory address associated with this line (null if none)
-     * @param code     the instruction, decompiled code, or pcode text
-     * @param comment  end-of-line comment (assembly only, null otherwise)
-     */
-    public record CodeLine(String address, String code, String comment) {}
+    public static Map<String, String> line(final String address, final String code) {
+        final Map<String, String> entry = new LinkedHashMap<>(1);
+        entry.put(address != null ? address : "", code);
+        return entry;
+    }
 
     @Override
     public String toDisplayText() {
         final StringBuilder sb = new StringBuilder();
-        for (final CodeLine line : lines) {
-            if (line.address() != null) {
-                sb.append(line.address()).append(": ");
+        for (final Map<String, String> entry : lines) {
+            final var e = entry.entrySet().iterator().next();
+            final String addr = e.getKey();
+            if (!addr.isEmpty()) {
+                sb.append(addr).append(": ");
             }
-            sb.append(line.code());
-            if (line.comment() != null) {
-                sb.append(" ; ").append(line.comment());
-            }
+            sb.append(e.getValue());
             sb.append('\n');
         }
         return sb.toString();

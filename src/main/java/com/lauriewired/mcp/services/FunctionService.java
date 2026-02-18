@@ -91,7 +91,7 @@ public class FunctionService {
 
         Resolves the function by name or address, then returns the requested output.
 
-        Returns: Structured list of code lines with address and code text
+        Returns: Array of single-entry {address: code} objects. Empty string key "" means no mapped address. Assembly comments are inlined as "code ; comment".
 
         Examples:
             get_function_code("main") -> C pseudocode for main
@@ -111,7 +111,7 @@ public class FunctionService {
         final String normalizedMode = (mode == null || mode.isEmpty()) ? "c" : mode.toLowerCase().trim();
 
         final String effectiveFormat;
-        final List<FunctionCodeResult.CodeLine> lines;
+        final List<Map<String, String>> lines;
         switch (normalizedMode) {
             case "assembly", "asm", "disassembly" -> {
                 effectiveFormat = "assembly";
@@ -130,21 +130,21 @@ public class FunctionService {
         return new JsonOutput(new FunctionCodeResult(func.getName(), effectiveFormat, lines));
     }
 
-    private List<FunctionCodeResult.CodeLine> getDecompiledCLines(final Program program, final Function func) {
+    private List<Map<String, String>> getDecompiledCLines(final Program program, final Function func) {
         final DecompInterface decomp = new DecompInterface();
         decomp.openProgram(program);
         final DecompileResults result = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
         if (result == null || !result.decompileCompleted()) {
-            return List.of(new FunctionCodeResult.CodeLine(null, "Decompilation failed", null));
+            return List.of(FunctionCodeResult.line(null, "Decompilation failed"));
         }
 
         // Use the token tree to get per-line address mappings
         final ClangTokenGroup markup = result.getCCodeMarkup();
         if (markup == null) {
             // Fallback to plain text if no markup available
-            final List<FunctionCodeResult.CodeLine> lines = new ArrayList<>();
+            final List<Map<String, String>> lines = new ArrayList<>();
             for (final String line : result.getDecompiledFunction().getC().split("\n", -1)) {
-                lines.add(new FunctionCodeResult.CodeLine(null, line, null));
+                lines.add(FunctionCodeResult.line(null, line));
             }
             return lines;
         }
@@ -152,7 +152,7 @@ public class FunctionService {
         final PrettyPrinter printer = new PrettyPrinter(func, markup, null);
         final List<ClangLine> clangLines = printer.getLines();
 
-        final List<FunctionCodeResult.CodeLine> lines = new ArrayList<>();
+        final List<Map<String, String>> lines = new ArrayList<>();
         for (final ClangLine line : clangLines) {
             // Find the first address on this line from any token
             Address lineAddr = null;
@@ -161,16 +161,15 @@ public class FunctionService {
                 if (lineAddr != null) break;
             }
 
-            lines.add(new FunctionCodeResult.CodeLine(
+            lines.add(FunctionCodeResult.line(
                     lineAddr != null ? lineAddr.toString() : null,
-                    PrettyPrinter.getText(line),
-                    null));
+                    PrettyPrinter.getText(line)));
         }
         return lines;
     }
 
-    private List<FunctionCodeResult.CodeLine> getAssemblyLines(final Program program, final Function func) {
-        final List<FunctionCodeResult.CodeLine> lines = new ArrayList<>();
+    private List<Map<String, String>> getAssemblyLines(final Program program, final Function func) {
+        final List<Map<String, String>> lines = new ArrayList<>();
         final Listing listing = program.getListing();
         final Address start = func.getEntryPoint();
         final Address end = func.getBody().getMaxAddress();
@@ -181,33 +180,31 @@ public class FunctionService {
             if (instr.getAddress().compareTo(end) > 0) break;
 
             final String comment = listing.getComment(CommentType.EOL, instr.getAddress());
-            lines.add(new FunctionCodeResult.CodeLine(
-                    instr.getAddress().toString(),
-                    instr.toString(),
-                    comment));
+            final String code = comment != null ? instr.toString() + " ; " + comment : instr.toString();
+            lines.add(FunctionCodeResult.line(instr.getAddress().toString(), code));
         }
         return lines;
     }
 
-    private List<FunctionCodeResult.CodeLine> getPcodeLines(final Program program, final Function func) {
+    private List<Map<String, String>> getPcodeLines(final Program program, final Function func) {
         final DecompInterface decomp = new DecompInterface();
         decomp.openProgram(program);
         final DecompileResults result = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
         if (result == null || !result.decompileCompleted()) {
-            return List.of(new FunctionCodeResult.CodeLine(null, "Decompilation failed", null));
+            return List.of(FunctionCodeResult.line(null, "Decompilation failed"));
         }
 
         final var highFunction = result.getHighFunction();
         if (highFunction == null) {
-            return List.of(new FunctionCodeResult.CodeLine(null, "No high function available", null));
+            return List.of(FunctionCodeResult.line(null, "No high function available"));
         }
 
-        final List<FunctionCodeResult.CodeLine> lines = new ArrayList<>();
+        final List<Map<String, String>> lines = new ArrayList<>();
         final var iter = highFunction.getPcodeOps();
         while (iter.hasNext()) {
             final var op = iter.next();
             final String addr = op.getSeqnum().getTarget().toString();
-            lines.add(new FunctionCodeResult.CodeLine(addr, op.toString(), null));
+            lines.add(FunctionCodeResult.line(addr, op.toString()));
         }
         return lines;
     }
