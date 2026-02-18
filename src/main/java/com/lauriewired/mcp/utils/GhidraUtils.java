@@ -109,14 +109,14 @@ public class GhidraUtils {
         final ClangTokenGroup markup = result.getCCodeMarkup();
         if (markup == null) {
             return Stream.of(result.getDecompiledFunction().getC().split("\n", -1))
-                    .filter(line -> !line.isEmpty())
+                    .filter(line -> !line.isBlank())
                     .map(line -> FunctionCodeResult.line(null, line))
                     .toList();
         }
 
         final PrettyPrinter printer = new PrettyPrinter(func, markup, null);
         return printer.getLines().stream()
-                .filter(line -> !PrettyPrinter.getText(line).isEmpty())
+                .filter(line -> !PrettyPrinter.getText(line).isBlank())
                 .map(line -> {
                     final String addr = line.getAllTokens().stream()
                             .map(ClangToken::getMinAddress)
