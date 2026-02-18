@@ -32,6 +32,23 @@ mvn test -Dtest=FunctionServiceTest#testDecompileFunction
 
 # Install Python bridge dependencies
 pip install -r requirements.txt
+
+# --- Code Coverage (run `mvn test` first to generate data) ---
+
+# Summary table of all classes sorted by line coverage %
+python scripts/coverage.py
+
+# Only show classes below 60% line coverage
+python scripts/coverage.py --below 60
+
+# Show uncovered line numbers for a specific source file
+python scripts/coverage.py --file FunctionService.java
+
+# Show uncovered lines with source context (> = uncovered, ~ = partial branch)
+python scripts/coverage.py --file FunctionService.java --source
+
+# Show uncovered lines for all files in a package
+python scripts/coverage.py --package services
 ```
 
 ## Architecture
