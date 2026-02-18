@@ -92,6 +92,7 @@ LLM Client → (MCP/stdio) → bridge_mcp_ghidra.py → (HTTP) → GhidraMCPPlug
 - **All Ghidra state access goes through `ProgramService.getCurrentProgram()`** — services never cache the Program reference.
 - **Write operations** (rename, create struct, set type, etc.) must use `ProgramTransaction` or manual `startTransaction`/`endTransaction`.
 - **Batch mutation tools** — `rename_data`, `rename_functions`, `set_address_data_type`, `rename_variables`, and `set_variable_types` accept a `Map<String, String>` to apply multiple changes in one atomic transaction. Pre-validate all inputs before starting the transaction (all-or-nothing). Return a structured result record (e.g., `RenameDataResult`, `RenameFunctionsResult`, `SetDataTypesResult`) with status, applied map, and count.
+- **Code listing format** — `get_function_code` returns `lines` as an array of single-entry `{address: code}` maps. Empty string key `""` means the line has no mapped address (e.g., function signature, braces, variable declarations in C mode). Assembly EOL comments are inlined into the code value as `"instruction ; comment"`. Built via `FunctionCodeResult.line(address, code)` factory method.
 - **Pagination** — list endpoints accept `offset`/`limit` query params and return LLM-friendly pagination hints in the response.
 
 ## Dependencies
