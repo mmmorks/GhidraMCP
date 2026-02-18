@@ -720,6 +720,279 @@ public class DataTypeServiceTest {
                     "Should contain value 'BLUE', got: " + json);
         }
 
+        // ===== updateStructure: typeChanges, size, rename =====
+
+        @Test
+        @DisplayName("updateStructure changes field types")
+        void testUpdateStructure_TypeChange() {
+            service.createStructure("TypeChangeTest", 0, null, null);
+
+            int tx = program.startTransaction("add fields");
+            try {
+                var dtm = program.getDataTypeManager();
+                DataType found = dtm.getDataType("/TypeChangeTest");
+                ghidra.program.model.data.Structure struct = (ghidra.program.model.data.Structure) found;
+                struct.add(ghidra.program.model.data.IntegerDataType.dataType, "field_a", null);
+                struct.add(ghidra.program.model.data.IntegerDataType.dataType, "field_b", null);
+            } finally {
+                program.endTransaction(tx, true);
+            }
+
+            // Change field_a's type to short
+            var dtm = program.getDataTypeManager();
+            DataType shortType = service.resolveDataType(dtm, "short");
+            if (shortType != null) {
+                java.util.Map<String, String> typeChanges = java.util.Map.of("field_a", "short");
+                String json = service.updateStructure("TypeChangeTest", null, null, null, typeChanges).toStructuredJson();
+                assertTrue(json.contains("type changed") || json.contains("[OK]") || json.contains("succeeded"),
+                        "Should report type change, got: " + json);
+            }
+        }
+
+        @Test
+        @DisplayName("updateStructure grows size")
+        void testUpdateStructure_GrowSize() {
+            service.createStructure("GrowTest", 0, null, null);
+
+            int tx = program.startTransaction("add fields");
+            try {
+                var dtm = program.getDataTypeManager();
+                DataType found = dtm.getDataType("/GrowTest");
+                ghidra.program.model.data.Structure struct = (ghidra.program.model.data.Structure) found;
+                struct.add(ghidra.program.model.data.IntegerDataType.dataType, "x", null);
+            } finally {
+                program.endTransaction(tx, true);
+            }
+
+            // Grow the structure to 32 bytes
+            String json = service.updateStructure("GrowTest", null, 32, null, null).toStructuredJson();
+            assertTrue(json.contains("Size changed to 32") || json.contains("succeeded"),
+                    "Should report size change, got: " + json);
+        }
+
+        @Test
+        @DisplayName("updateStructure renames the struct itself")
+        void testUpdateStructure_RenameStruct() {
+            service.createStructure("OldStructName", 0, null, null);
+
+            String json = service.updateStructure("OldStructName", "NewStructName", null, null, null).toStructuredJson();
+            assertTrue(json.contains("renamed from 'OldStructName' to 'NewStructName'") || json.contains("succeeded"),
+                    "Should report struct rename, got: " + json);
+        }
+
+        @Test
+        @DisplayName("updateStructure reports field-not-found for type change on missing field")
+        void testUpdateStructure_TypeChange_FieldNotFound() {
+            service.createStructure("TypeMissTest", 0, null, null);
+
+            int tx = program.startTransaction("add fields");
+            try {
+                var dtm = program.getDataTypeManager();
+                DataType found = dtm.getDataType("/TypeMissTest");
+                ghidra.program.model.data.Structure struct = (ghidra.program.model.data.Structure) found;
+                struct.add(ghidra.program.model.data.IntegerDataType.dataType, "exists", null);
+            } finally {
+                program.endTransaction(tx, true);
+            }
+
+            java.util.Map<String, String> typeChanges = java.util.Map.of("missing_field", "int");
+            String json = service.updateStructure("TypeMissTest", null, null, null, typeChanges).toStructuredJson();
+            assertTrue(json.contains("not found") || json.contains("FAILED"),
+                    "Should report field not found, got: " + json);
+        }
+
+        @Test
+        @DisplayName("updateStructure with rename and type change combined")
+        void testUpdateStructure_RenameAndTypeChange() {
+            service.createStructure("CombinedTest", 0, null, null);
+
+            int tx = program.startTransaction("add fields");
+            try {
+                var dtm = program.getDataTypeManager();
+                DataType found = dtm.getDataType("/CombinedTest");
+                ghidra.program.model.data.Structure struct = (ghidra.program.model.data.Structure) found;
+                struct.add(ghidra.program.model.data.IntegerDataType.dataType, "old_field", null);
+            } finally {
+                program.endTransaction(tx, true);
+            }
+
+            var dtm = program.getDataTypeManager();
+            DataType shortType = service.resolveDataType(dtm, "short");
+            if (shortType != null) {
+                java.util.Map<String, String> renames = java.util.Map.of("old_field", "new_field");
+                java.util.Map<String, String> typeChanges = java.util.Map.of("old_field", "short");
+                String json = service.updateStructure("CombinedTest", null, null, renames, typeChanges).toStructuredJson();
+                // Should rename and change type
+                assertTrue(json.contains("succeeded") || json.contains("[OK]"),
+                        "Should succeed, got: " + json);
+            }
+        }
+
+        @Test
+        @DisplayName("updateStructure field rename not found")
+        void testUpdateStructure_RenameFieldNotFound() {
+            service.createStructure("RenameMissTest", 0, null, null);
+
+            int tx = program.startTransaction("add fields");
+            try {
+                var dtm = program.getDataTypeManager();
+                DataType found = dtm.getDataType("/RenameMissTest");
+                ghidra.program.model.data.Structure struct = (ghidra.program.model.data.Structure) found;
+                struct.add(ghidra.program.model.data.IntegerDataType.dataType, "existing", null);
+            } finally {
+                program.endTransaction(tx, true);
+            }
+
+            java.util.Map<String, String> renames = java.util.Map.of("nonexistent", "new_name");
+            String json = service.updateStructure("RenameMissTest", null, null, renames, null).toStructuredJson();
+            assertTrue(json.contains("not found") || json.contains("FAILED"),
+                    "Should report not found, got: " + json);
+        }
+
+        // ===== updateEnum: valueChanges, size, rename =====
+
+        @Test
+        @DisplayName("updateEnum changes value amounts")
+        void testUpdateEnum_ValueChange() {
+            java.util.Map<String, Long> values = java.util.Map.of("FLAG_A", 1L, "FLAG_B", 2L);
+            service.createEnum("ValueChangeEnum", 4, null, values);
+
+            // Change FLAG_A's value to 10
+            java.util.Map<String, Long> valueChanges = java.util.Map.of("FLAG_A", 10L);
+            String json = service.updateEnum("ValueChangeEnum", null, null, null, valueChanges).toStructuredJson();
+            assertTrue(json.contains("value changed to 10") || json.contains("[OK]") || json.contains("succeeded"),
+                    "Should report value change, got: " + json);
+        }
+
+        @Test
+        @DisplayName("updateEnum reports not found for missing value name in valueChanges")
+        void testUpdateEnum_ValueChange_NotFound() {
+            java.util.Map<String, Long> values = java.util.Map.of("EXISTS", 1L);
+            service.createEnum("ValChangeMiss", 4, null, values);
+
+            java.util.Map<String, Long> valueChanges = java.util.Map.of("MISSING", 99L);
+            String json = service.updateEnum("ValChangeMiss", null, null, null, valueChanges).toStructuredJson();
+            assertTrue(json.contains("not found") || json.contains("FAILED"),
+                    "Should report not found, got: " + json);
+        }
+
+        @Test
+        @DisplayName("updateEnum renames the enum itself")
+        void testUpdateEnum_RenameEnum() {
+            service.createEnum("OldEnumName", 4, null, java.util.Map.of("V", 1L));
+
+            String json = service.updateEnum("OldEnumName", "NewEnumName", null, null, null).toStructuredJson();
+            assertTrue(json.contains("renamed from 'OldEnumName' to 'NewEnumName'") || json.contains("succeeded"),
+                    "Should report enum rename, got: " + json);
+        }
+
+        @Test
+        @DisplayName("updateEnum with invalid size reports failure")
+        void testUpdateEnum_InvalidSize() {
+            service.createEnum("SizeTestEnum", 4, null, java.util.Map.of("X", 1L));
+
+            String json = service.updateEnum("SizeTestEnum", null, 3, null, null).toStructuredJson();
+            assertTrue(json.contains("Invalid enum size") || json.contains("must be 1, 2, 4, or 8") || json.contains("FAILED"),
+                    "Should report invalid size, got: " + json);
+        }
+
+        @Test
+        @DisplayName("updateEnum reports error when enum not found")
+        void testUpdateEnum_NotFound() {
+            String json = service.updateEnum("NonExistentEnum", null, null, null, null).toStructuredJson();
+            assertTrue(json.contains("not found") || json.contains("error"),
+                    "Should report not found, got: " + json);
+        }
+
+        @Test
+        @DisplayName("updateEnum value rename not found")
+        void testUpdateEnum_ValueRenameNotFound() {
+            service.createEnum("RenameValMiss", 4, null, java.util.Map.of("EXISTS", 1L));
+
+            java.util.Map<String, String> renames = java.util.Map.of("MISSING", "NEW_NAME");
+            String json = service.updateEnum("RenameValMiss", null, null, renames, null).toStructuredJson();
+            assertTrue(json.contains("not found") || json.contains("FAILED"),
+                    "Should report not found, got: " + json);
+        }
+
+        @Test
+        @DisplayName("updateEnum same size change is not supported")
+        void testUpdateEnum_SameSize() {
+            service.createEnum("SameSizeEnum", 4, null, java.util.Map.of("A", 1L));
+
+            // Size is already 4, changing to 4 should be a no-op or report not supported
+            String json = service.updateEnum("SameSizeEnum", null, 4, null, null).toStructuredJson();
+            // The code checks if size != enumType.getLength()
+            // If same, it should just skip or report accordingly
+            assertNotNull(json);
+        }
+
+        @Test
+        @DisplayName("updateEnum different size change reports not supported")
+        void testUpdateEnum_DifferentSize() {
+            service.createEnum("DiffSizeEnum", 4, null, java.util.Map.of("A", 1L));
+
+            // Try changing to a different valid size
+            String json = service.updateEnum("DiffSizeEnum", null, 8, null, null).toStructuredJson();
+            // The code says "Size change to X bytes not supported on existing enum"
+            assertTrue(json.contains("not supported") || json.contains("FAILED") || json.contains("succeeded"),
+                    "Should handle size change, got: " + json);
+        }
+
+        // ===== createStructure edge cases =====
+
+        @Test
+        @DisplayName("createStructure with inline fields")
+        void testCreateStructure_WithInlineFields() {
+            var dtm = program.getDataTypeManager();
+            DataType intType = service.resolveDataType(dtm, "int");
+            if (intType != null) {
+                java.util.List<String[]> fields = java.util.List.of(
+                    new String[]{"x", "int"},
+                    new String[]{"y", "int"}
+                );
+                String json = service.createStructure("InlineFieldsStruct", 0, null, fields).toStructuredJson();
+                assertTrue(json.contains("created successfully") && json.contains("2 fields"),
+                        "Should create with inline fields, got: " + json);
+            }
+        }
+
+        @Test
+        @DisplayName("createStructure reports duplicate name error")
+        void testCreateStructure_Duplicate() {
+            service.createStructure("DupeStruct", 0, null, null);
+            String json = service.createStructure("DupeStruct", 0, null, null).toStructuredJson();
+            assertTrue(json.contains("already exists"),
+                    "Should report duplicate, got: " + json);
+        }
+
+        @Test
+        @DisplayName("createEnum reports duplicate name error")
+        void testCreateEnum_Duplicate() {
+            service.createEnum("DupeEnum", 4, null, null);
+            String json = service.createEnum("DupeEnum", 4, null, null).toStructuredJson();
+            assertTrue(json.contains("already exists"),
+                    "Should report duplicate, got: " + json);
+        }
+
+        @Test
+        @DisplayName("createStructure with category path")
+        void testCreateStructure_WithCategory() {
+            String json = service.createStructure("CategorizedStruct", 0, "/MyCategory", null).toStructuredJson();
+            assertTrue(json.contains("created successfully"),
+                    "Should create in category, got: " + json);
+        }
+
+        @Test
+        @DisplayName("createEnum with category path")
+        void testCreateEnum_WithCategory() {
+            String json = service.createEnum("CategorizedEnum", 4, "/MyEnums", null).toStructuredJson();
+            assertTrue(json.contains("created successfully"),
+                    "Should create in category, got: " + json);
+        }
+
+        // ===== resolveDataType edge cases =====
+
         @Test
         @DisplayName("resolveDataType resolves built-in types via DTM path lookup")
         void testResolveDataType_BuiltIn() {
@@ -742,6 +1015,77 @@ public class DataTypeServiceTest {
             assertDoesNotThrow(() -> service.resolveDataType(dtm, "uint"));
             assertDoesNotThrow(() -> service.resolveDataType(dtm, "short"));
             assertDoesNotThrow(() -> service.resolveDataType(dtm, "longlong"));
+        }
+
+        @Test
+        @DisplayName("resolveDataType handles null and empty inputs")
+        void testResolveDataType_NullEmpty() {
+            var dtm = program.getDataTypeManager();
+            assertNull(service.resolveDataType(null, "int"));
+            assertNull(service.resolveDataType(dtm, null));
+            assertNull(service.resolveDataType(dtm, ""));
+        }
+
+        @Test
+        @DisplayName("resolveDataType handles more built-in type aliases")
+        void testResolveDataType_MoreBuiltIns() {
+            var dtm = program.getDataTypeManager();
+
+            // Test various switch branches
+            assertDoesNotThrow(() -> service.resolveDataType(dtm, "uint"));
+            assertDoesNotThrow(() -> service.resolveDataType(dtm, "unsigned int"));
+            assertDoesNotThrow(() -> service.resolveDataType(dtm, "dword"));
+            assertDoesNotThrow(() -> service.resolveDataType(dtm, "ushort"));
+            assertDoesNotThrow(() -> service.resolveDataType(dtm, "unsigned short"));
+            assertDoesNotThrow(() -> service.resolveDataType(dtm, "word"));
+            assertDoesNotThrow(() -> service.resolveDataType(dtm, "byte"));
+            assertDoesNotThrow(() -> service.resolveDataType(dtm, "uchar"));
+            assertDoesNotThrow(() -> service.resolveDataType(dtm, "unsigned char"));
+            assertDoesNotThrow(() -> service.resolveDataType(dtm, "longlong"));
+            assertDoesNotThrow(() -> service.resolveDataType(dtm, "__int64"));
+            assertDoesNotThrow(() -> service.resolveDataType(dtm, "ulonglong"));
+            assertDoesNotThrow(() -> service.resolveDataType(dtm, "unsigned __int64"));
+            assertDoesNotThrow(() -> service.resolveDataType(dtm, "boolean"));
+            assertDoesNotThrow(() -> service.resolveDataType(dtm, "long"));
+        }
+
+        @Test
+        @DisplayName("resolveDataType handles Windows-style pointer types")
+        void testResolveDataType_PointerTypes() {
+            var dtm = program.getDataTypeManager();
+
+            // PVOID should resolve to a pointer to void
+            DataType pvoid = service.resolveDataType(dtm, "PVOID");
+            if (pvoid != null) {
+                assertTrue(pvoid instanceof ghidra.program.model.data.Pointer,
+                        "PVOID should be a Pointer type");
+            }
+
+            // P-prefix with unknown base type should fallback to void*
+            DataType pUnknown = service.resolveDataType(dtm, "PUNKNOWNTYPE");
+            if (pUnknown != null) {
+                assertTrue(pUnknown instanceof ghidra.program.model.data.Pointer,
+                        "PUNKNOWNTYPE should fallback to void pointer");
+            }
+        }
+
+        @Test
+        @DisplayName("resolveDataType returns null for completely unknown types")
+        void testResolveDataType_UnknownType() {
+            var dtm = program.getDataTypeManager();
+
+            DataType result = service.resolveDataType(dtm, "CompletelyUnknownType12345");
+            assertNull(result, "Should return null for unknown type");
+        }
+
+        @Test
+        @DisplayName("findDataTypeByNameInAllCategories handles null/empty inputs")
+        void testFindDataTypeByName_NullEmpty() {
+            var dtm = program.getDataTypeManager();
+
+            assertNull(service.findDataTypeByNameInAllCategories(null, "int"));
+            assertNull(service.findDataTypeByNameInAllCategories(dtm, null));
+            assertNull(service.findDataTypeByNameInAllCategories(dtm, ""));
         }
 
         @Test

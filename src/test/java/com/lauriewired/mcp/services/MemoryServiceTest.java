@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -18,6 +19,8 @@ import org.junit.jupiter.api.Test;
 
 import com.lauriewired.mcp.model.JsonOutput;
 import com.lauriewired.mcp.model.ToolOutput;
+import com.lauriewired.mcp.model.response.AddressDataTypeResult;
+import com.lauriewired.mcp.model.response.MemoryPermissionsResult;
 import com.lauriewired.mcp.model.response.ReadMemoryResult;
 import com.lauriewired.mcp.model.response.RenameDataResult;
 import com.lauriewired.mcp.model.response.SetDataTypesResult;
@@ -523,6 +526,237 @@ public class MemoryServiceTest {
             assertEquals(1, data.count());
         }
         // Otherwise it's an expected "not found" error from DTM resolution
+    }
+
+    // ===== getMemoryPermissions tests =====
+
+    @Test
+    @DisplayName("getMemoryPermissions returns error when no program is loaded")
+    void testGetMemoryPermissions_NoProgram() {
+        String result = nullProgramService.getMemoryPermissions("00401000").toStructuredJson();
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
+    }
+
+    @Test
+    @DisplayName("getMemoryPermissions returns error for null address")
+    void testGetMemoryPermissions_NullAddress() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        ProgramDB program = builder.getProgram();
+
+        MemoryService ms = serviceFor(program);
+        String result = ms.getMemoryPermissions(null).toStructuredJson();
+        assertTrue(result.contains("Address is required"));
+    }
+
+    @Test
+    @DisplayName("getMemoryPermissions returns error for empty address")
+    void testGetMemoryPermissions_EmptyAddress() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        ProgramDB program = builder.getProgram();
+
+        MemoryService ms = serviceFor(program);
+        String result = ms.getMemoryPermissions("").toStructuredJson();
+        assertTrue(result.contains("Address is required"));
+    }
+
+    @Test
+    @DisplayName("getMemoryPermissions returns error for invalid address")
+    void testGetMemoryPermissions_InvalidAddress() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        ProgramDB program = builder.getProgram();
+
+        MemoryService ms = serviceFor(program);
+        String result = ms.getMemoryPermissions("invalid").toStructuredJson();
+        assertTrue(result.contains("Invalid address"));
+    }
+
+    @Test
+    @DisplayName("getMemoryPermissions returns error when no block at address")
+    void testGetMemoryPermissions_NoBlock() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        ProgramDB program = builder.getProgram();
+
+        MemoryService ms = serviceFor(program);
+        // Address is valid but not in any memory block
+        String result = ms.getMemoryPermissions("0x900000").toStructuredJson();
+        assertTrue(result.contains("No memory block at address"));
+    }
+
+    @Test
+    @DisplayName("getMemoryPermissions returns block info for valid address")
+    void testGetMemoryPermissions_Success() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        ProgramDB program = builder.getProgram();
+
+        MemoryService ms = serviceFor(program);
+        ToolOutput result = ms.getMemoryPermissions("0x401000");
+
+        assertInstanceOf(JsonOutput.class, result);
+        MemoryPermissionsResult perms = (MemoryPermissionsResult) ((JsonOutput) result).data();
+
+        assertEquals(".text", perms.block());
+        assertEquals(0x1000, perms.size());
+        assertNotNull(perms.start());
+        assertNotNull(perms.end());
+        assertNotNull(perms.permissions());
+        assertTrue(perms.initialized());
+    }
+
+    @Test
+    @DisplayName("getMemoryPermissions toDisplayText produces human-readable output")
+    void testGetMemoryPermissions_DisplayText() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        ProgramDB program = builder.getProgram();
+
+        MemoryService ms = serviceFor(program);
+        ToolOutput result = ms.getMemoryPermissions("0x401000");
+        String display = result.toDisplayText();
+
+        assertTrue(display.contains("Memory permissions at"));
+        assertTrue(display.contains("Block: .text"));
+        assertTrue(display.contains("Read:"));
+        assertTrue(display.contains("Write:"));
+        assertTrue(display.contains("Execute:"));
+    }
+
+    // ===== getAddressDataType tests =====
+
+    @Test
+    @DisplayName("getAddressDataType returns error when no program is loaded")
+    void testGetAddressDataType_NoProgram() {
+        String result = nullProgramService.getAddressDataType("00401000").toStructuredJson();
+        assertTrue(result.contains("\"message\":\"No program loaded\""));
+    }
+
+    @Test
+    @DisplayName("getAddressDataType returns error for null address")
+    void testGetAddressDataType_NullAddress() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        ProgramDB program = builder.getProgram();
+
+        MemoryService ms = serviceFor(program);
+        String result = ms.getAddressDataType(null).toStructuredJson();
+        assertTrue(result.contains("Address is required"));
+    }
+
+    @Test
+    @DisplayName("getAddressDataType returns error for empty address")
+    void testGetAddressDataType_EmptyAddress() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        ProgramDB program = builder.getProgram();
+
+        MemoryService ms = serviceFor(program);
+        String result = ms.getAddressDataType("").toStructuredJson();
+        assertTrue(result.contains("Address is required"));
+    }
+
+    @Test
+    @DisplayName("getAddressDataType returns instruction info")
+    void testGetAddressDataType_Instruction() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        // x86-64: push rbp; mov rbp,rsp; nop; pop rbp; ret
+        builder.setBytes("0x401000", "55 48 89 e5 90 5d c3", true);
+        builder.createFunction("0x401000");
+        ProgramDB program = builder.getProgram();
+
+        MemoryService ms = serviceFor(program);
+        ToolOutput result = ms.getAddressDataType("0x401000");
+
+        assertInstanceOf(JsonOutput.class, result);
+        AddressDataTypeResult data = (AddressDataTypeResult) ((JsonOutput) result).data();
+
+        assertEquals("Instruction", data.category());
+        assertNotNull(data.mnemonic());
+        assertTrue(data.length() > 0);
+    }
+
+    @Test
+    @DisplayName("getAddressDataType returns defined data info")
+    void testGetAddressDataType_DefinedData() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".data", "0x402000", 0x100);
+        builder.setBytes("0x402000", "42 00 00 00", false);
+        builder.applyDataType("0x402000", IntegerDataType.dataType);
+        builder.createLabel("0x402000", "myInt");
+        ProgramDB program = builder.getProgram();
+
+        MemoryService ms = serviceFor(program);
+        ToolOutput result = ms.getAddressDataType("0x402000");
+
+        assertInstanceOf(JsonOutput.class, result);
+        AddressDataTypeResult data = (AddressDataTypeResult) ((JsonOutput) result).data();
+
+        assertEquals("Defined Data", data.category());
+        assertNotNull(data.dataType());
+        assertEquals(4, data.length());
+        assertEquals("myInt", data.label());
+    }
+
+    @Test
+    @DisplayName("getAddressDataType returns defined data without label")
+    void testGetAddressDataType_DefinedDataNoLabel() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".data", "0x402000", 0x100);
+        builder.setBytes("0x402000", "42 00 00 00", false);
+        builder.applyDataType("0x402000", IntegerDataType.dataType);
+        // No label created
+        ProgramDB program = builder.getProgram();
+
+        MemoryService ms = serviceFor(program);
+        ToolOutput result = ms.getAddressDataType("0x402000");
+
+        assertInstanceOf(JsonOutput.class, result);
+        AddressDataTypeResult data = (AddressDataTypeResult) ((JsonOutput) result).data();
+
+        assertEquals("Defined Data", data.category());
+        // label may be null or auto-generated
+    }
+
+    @Test
+    @DisplayName("getAddressDataType returns undefined data for untyped memory")
+    void testGetAddressDataType_UndefinedData() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".data", "0x402000", 0x100);
+        builder.setBytes("0x402000", "FF", false);
+        // Memory exists but no data type or instruction applied
+        ProgramDB program = builder.getProgram();
+
+        MemoryService ms = serviceFor(program);
+        ToolOutput result = ms.getAddressDataType("0x402000");
+
+        assertInstanceOf(JsonOutput.class, result);
+        AddressDataTypeResult data = (AddressDataTypeResult) ((JsonOutput) result).data();
+
+        // Should be either "Undefined Data" or some other category depending on Ghidra version
+        assertNotNull(data.category());
+        assertEquals("00402000", data.address());
+    }
+
+    @Test
+    @DisplayName("getAddressDataType toDisplayText for instruction")
+    void testGetAddressDataType_DisplayText() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        builder.setBytes("0x401000", "55 48 89 e5 90 5d c3", true);
+        builder.createFunction("0x401000");
+        ProgramDB program = builder.getProgram();
+
+        MemoryService ms = serviceFor(program);
+        ToolOutput result = ms.getAddressDataType("0x401000");
+        String display = result.toDisplayText();
+
+        assertTrue(display.contains("Data type at"));
+        assertTrue(display.contains("Type: Instruction"));
+        assertTrue(display.contains("Mnemonic:"));
     }
 
     @Test
