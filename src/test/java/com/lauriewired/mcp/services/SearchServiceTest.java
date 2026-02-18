@@ -1,6 +1,8 @@
 package com.lauriewired.mcp.services;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -10,6 +12,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+
+import com.lauriewired.mcp.model.JsonOutput;
+import com.lauriewired.mcp.model.ToolOutput;
+import com.lauriewired.mcp.model.response.SearchDecompiledResult;
 
 import ghidra.program.database.ProgramBuilder;
 import ghidra.program.database.ProgramDB;
@@ -345,6 +351,49 @@ public class SearchServiceTest {
 
             assertTrue(json.contains("No matches found"),
                     "Should report no matches for absent pattern");
+        }
+
+        // --- searchDecompiled integration tests ---
+
+        @Test
+        @DisplayName("searchDecompiled finds match in decompiled output")
+        void testSearchDecompiled_FindsMatch() throws Exception {
+            createDefaultProgram();
+
+            // Search for "return" which is universal in decompiled C output
+            ToolOutput result = service.searchDecompiled("return", 0, 10);
+            assertInstanceOf(JsonOutput.class, result, "Should return JsonOutput, got: " + result.toStructuredJson());
+
+            SearchDecompiledResult data = (SearchDecompiledResult) ((JsonOutput) result).data();
+            assertTrue(data.matchCount() >= 1, "Should find at least 1 match for 'return'");
+            assertFalse(data.matches().isEmpty(), "Matches list should not be empty");
+
+            // Each match should have function name and context
+            SearchDecompiledResult.DecompiledMatch firstMatch = data.matches().get(0);
+            assertNotNull(firstMatch.function(), "Match should have function name");
+            assertNotNull(firstMatch.context(), "Match should have context lines");
+        }
+
+        @Test
+        @DisplayName("searchDecompiled returns no matches for absent pattern")
+        void testSearchDecompiled_NoMatches() throws Exception {
+            createDefaultProgram();
+
+            String json = service.searchDecompiled("ZZZZNOTFOUND12345", 0, 10).toStructuredJson();
+
+            assertTrue(json.contains("No matches found"),
+                "Should report no matches for absent pattern, got: " + json);
+        }
+
+        @Test
+        @DisplayName("searchDecompiled returns error for invalid regex")
+        void testSearchDecompiled_InvalidRegex() throws Exception {
+            createDefaultProgram();
+
+            String json = service.searchDecompiled("(unclosed", 0, 10).toStructuredJson();
+
+            assertTrue(json.contains("Invalid regex pattern"),
+                "Should report invalid regex, got: " + json);
         }
     }
 }

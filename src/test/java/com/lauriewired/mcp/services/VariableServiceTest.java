@@ -1,11 +1,16 @@
 package com.lauriewired.mcp.services;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -15,11 +20,19 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import com.lauriewired.mcp.model.JsonOutput;
+import com.lauriewired.mcp.model.ToolOutput;
 import com.lauriewired.mcp.model.response.FunctionCodeResult;
+import com.lauriewired.mcp.model.response.RenameVariablesResult;
+import com.lauriewired.mcp.model.response.SetVariableTypesResult;
 import com.lauriewired.mcp.model.response.SplitVariableResult;
 
 import ghidra.program.database.ProgramBuilder;
 import ghidra.program.database.ProgramDB;
+import ghidra.program.model.data.IntegerDataType;
+import ghidra.program.model.data.PointerDataType;
+import ghidra.program.model.listing.Function;
+import ghidra.program.model.listing.ParameterImpl;
+import ghidra.program.model.symbol.SourceType;
 
 /**
  * Unit tests for VariableService
@@ -188,6 +201,7 @@ public class VariableServiceTest {
         private ProgramBuilder builder;
         private ProgramDB program;
         private VariableService svc;
+        private FunctionService fs;
 
         @BeforeAll
         static void initGhidra() {
@@ -197,16 +211,43 @@ public class VariableServiceTest {
         @BeforeEach
         void setUp() throws Exception {
             builder = new ProgramBuilder("test", ProgramBuilder._X64);
-            builder.createMemory(".text", "0x401000", 0x1000);
+            builder.createMemory(".text", "0x401000", 0x2000);
 
-            // x86-64: push rbp; mov rbp,rsp; nop; pop rbp; ret
-            builder.setBytes("0x401000", "55 48 89 E5 90 5D C3", true);
+            // Helper at 0x401200: mov dword [rdi],0x10; ret — writes through pointer param
+            // Unique address avoids decompiler cache collisions with other test classes
+            builder.setBytes("0x401200", "C7 07 10 00 00 00 C3", true);
+            builder.createFunction("0x401200");
+
+            // Function at 0x401000 with local variable whose address escapes via call:
+            // push rbp; mov rbp,rsp; sub rsp,0x10; mov dword [rbp-4],0x42;
+            // lea rdi,[rbp-4]; call 0x401200; mov eax,[rbp-4]; leave; ret
+            // The LEA passes &local to callee, preventing dead-store elimination
+            // CALL offset = 0x401200 - 0x401018 = 0x1E8
+            builder.setBytes("0x401000",
+                "55 48 89 E5 48 83 EC 10 C7 45 FC 42 00 00 00 48 8D 7D FC E8 E8 01 00 00 8B 45 FC C9 C3",
+                true);
             builder.createFunction("0x401000");
 
             program = builder.getProgram();
 
+            // Set helper's prototype to take a pointer param so the decompiler
+            // recognizes the pointer escape and preserves the local variable
+            int tx = program.startTransaction("set helper prototype");
+            try {
+                Function helperFunc = program.getFunctionManager()
+                    .getFunctionAt(builder.addr("0x401200"));
+                if (helperFunc != null) {
+                    helperFunc.addParameter(
+                        new ParameterImpl("ptr",
+                            new PointerDataType(IntegerDataType.dataType), program),
+                        SourceType.ANALYSIS);
+                }
+            } finally {
+                program.endTransaction(tx, true);
+            }
+
             ProgramService ps = GhidraTestEnv.programService(program);
-            FunctionService fs = new FunctionService(null, ps);
+            fs = new FunctionService(null, ps);
             svc = new VariableService(ps, fs);
         }
 
@@ -286,6 +327,105 @@ public class VariableServiceTest {
                 java.util.Map.of("local_10", "int")).toStructuredJson();
             assertTrue(result.contains("\"message\":\"Function not found: nonexistent\""),
                     "Should return 'Function not found' error, got: " + result);
+        }
+
+        // --- Decompilation integration tests ---
+
+        /** Discover a local_ or param_ variable name from decompiled C output. */
+        private String discoverVariable() {
+            ToolOutput code = fs.getFunctionCode("0x401000", "C");
+            assertInstanceOf(JsonOutput.class, code);
+            FunctionCodeResult data = (FunctionCodeResult) ((JsonOutput) code).data();
+            String allCode = data.lines().stream()
+                .flatMap(line -> line.values().stream())
+                .reduce("", (a, b) -> a + " " + b);
+            // Try local_ first, fall back to param_
+            Matcher m = Pattern.compile("(local|param)_\\w+").matcher(allCode);
+            assertTrue(m.find(), "Decompiled C should contain a local_ or param_ variable, got: " + allCode);
+            return m.group();
+        }
+
+        /** Find the first C code line with a non-empty address key. */
+        private String discoverUsageAddress() {
+            ToolOutput code = fs.getFunctionCode("0x401000", "C");
+            FunctionCodeResult data = (FunctionCodeResult) ((JsonOutput) code).data();
+            return data.lines().stream()
+                .flatMap(line -> line.keySet().stream())
+                .filter(key -> !key.isEmpty())
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("No addressed C line found"));
+        }
+
+        @Test
+        @DisplayName("renameVariables renames a discovered variable")
+        void testRenameVariables_Success() {
+            String varName = discoverVariable();
+
+            ToolOutput result = svc.renameVariables("0x401000", Map.of(varName, "my_counter"));
+            assertInstanceOf(JsonOutput.class, result);
+
+            RenameVariablesResult data = (RenameVariablesResult) ((JsonOutput) result).data();
+            assertNotNull(data.status());
+            assertEquals(1, data.count());
+            assertEquals("my_counter", data.renamed().get(varName));
+        }
+
+        @Test
+        @DisplayName("renameVariables returns error for nonexistent variable")
+        void testRenameVariables_VariableNotFound() {
+            String json = svc.renameVariables("0x401000",
+                Map.of("nonexistent_var_xyz", "new_name")).toStructuredJson();
+            assertTrue(json.contains("Variable not found"),
+                "Should report variable not found, got: " + json);
+        }
+
+        @Test
+        @DisplayName("setVariableTypes sets type on a discovered variable")
+        void testSetVariableTypes_Success() {
+            String varName = discoverVariable();
+
+            ToolOutput result = svc.setVariableTypes("0x401000", Map.of(varName, "int"));
+            assertInstanceOf(JsonOutput.class, result);
+
+            SetVariableTypesResult data = (SetVariableTypesResult) ((JsonOutput) result).data();
+            assertNotNull(data.status());
+            assertEquals(1, data.count());
+            assertEquals("int", data.applied().get(varName));
+        }
+
+        @Test
+        @DisplayName("setVariableTypes returns error for invalid type name")
+        void testSetVariableTypes_InvalidType() {
+            String varName = discoverVariable();
+
+            String json = svc.setVariableTypes("0x401000",
+                Map.of(varName, "NonExistentType12345")).toStructuredJson();
+            assertTrue(json.contains("Could not resolve data type"),
+                "Should report unresolvable type, got: " + json);
+        }
+
+        @Test
+        @DisplayName("splitVariable splits a discovered variable at a usage address")
+        void testSplitVariable_Success() {
+            String varName = discoverVariable();
+            String usageAddr = discoverUsageAddress();
+
+            ToolOutput result = svc.splitVariable("0x401000", varName, usageAddr, "split_var");
+            assertInstanceOf(JsonOutput.class, result);
+
+            SplitVariableResult data = (SplitVariableResult) ((JsonOutput) result).data();
+            assertNotNull(data.status());
+            assertNotNull(data.variables());
+            assertNotNull(data.decompiledLines());
+        }
+
+        @Test
+        @DisplayName("splitVariable returns error for nonexistent variable")
+        void testSplitVariable_VariableNotFound() {
+            String json = svc.splitVariable("0x401000", "nonexistent_var_xyz", "0x401000", "new_name")
+                .toStructuredJson();
+            assertTrue(json.contains("Variable not found"),
+                "Should report variable not found, got: " + json);
         }
     }
 

@@ -2,8 +2,12 @@ package com.lauriewired.mcp.services;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -12,8 +16,16 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import com.lauriewired.mcp.model.JsonOutput;
+import com.lauriewired.mcp.model.ToolOutput;
+import com.lauriewired.mcp.model.response.DataFlowResult;
+import com.lauriewired.mcp.model.response.FunctionCodeResult;
+
 import ghidra.program.database.ProgramBuilder;
 import ghidra.program.database.ProgramDB;
+import ghidra.program.model.data.IntegerDataType;
+import ghidra.program.model.data.PointerDataType;
+import ghidra.program.model.listing.ParameterImpl;
 
 /**
  * Unit tests for AnalysisService
@@ -388,6 +400,112 @@ public class AnalysisServiceTest {
 
             assertTrue(json.contains("No references found") || json.contains("\"message\""),
                     "Should report no references");
+        }
+
+        @Test
+        @DisplayName("analyzeDataFlow returns error for nonexistent variable in simple function")
+        void testAnalyzeDataFlow_VariableNotFound() {
+            // main is a simple CALL+RET function with no locals
+            String json = service.analyzeDataFlow("main", "nonexistent_var").toStructuredJson();
+
+            assertTrue(json.contains("not found"),
+                "Should report variable not found, got: " + json);
+        }
+    }
+
+    /**
+     * Decompilation-based data flow tests.
+     * Uses a function with local variables (LEA+CALL pattern to survive optimization).
+     */
+    @Nested
+    @DisplayName("Data flow decompilation tests")
+    class DataFlowDecompilationTest {
+
+        private ProgramBuilder builder;
+        private AnalysisService service;
+        private FunctionService fs;
+
+        @BeforeAll
+        static void initGhidra() {
+            GhidraTestEnv.initialize();
+        }
+
+        @BeforeEach
+        void setUp() throws Exception {
+            builder = new ProgramBuilder("test", ProgramBuilder._X64);
+            builder.createMemory(".text", "0x401000", 0x2000);
+
+            // Helper at 0x401300: mov dword [rdi],0x10; ret — writes through pointer param
+            // Unique address avoids decompiler cache collisions with other test classes
+            builder.setBytes("0x401300", "C7 07 10 00 00 00 C3", true);
+            builder.createFunction("0x401300");
+
+            // Function at 0x401000 with local variable whose address escapes via call:
+            // push rbp; mov rbp,rsp; sub rsp,0x10; mov dword [rbp-4],0x42;
+            // lea rdi,[rbp-4]; call 0x401300; mov eax,[rbp-4]; leave; ret
+            // CALL offset = 0x401300 - 0x401018 = 0x2E8
+            builder.setBytes("0x401000",
+                "55 48 89 E5 48 83 EC 10 C7 45 FC 42 00 00 00 48 8D 7D FC E8 E8 02 00 00 8B 45 FC C9 C3",
+                true);
+            builder.createFunction("0x401000");
+
+            ProgramDB program = builder.getProgram();
+
+            // Set helper's prototype to take a pointer param so the decompiler
+            // recognizes the pointer escape and preserves the local variable
+            int tx = program.startTransaction("set helper prototype");
+            try {
+                ghidra.program.model.listing.Function helperFunc = program.getFunctionManager()
+                    .getFunctionAt(builder.addr("0x401300"));
+                if (helperFunc != null) {
+                    helperFunc.addParameter(
+                        new ParameterImpl("ptr",
+                            new PointerDataType(IntegerDataType.dataType), program),
+                        ghidra.program.model.symbol.SourceType.ANALYSIS);
+                }
+            } finally {
+                program.endTransaction(tx, true);
+            }
+
+            ProgramService ps = GhidraTestEnv.programService(program);
+            fs = new FunctionService(null, ps);
+            service = new AnalysisService(ps, fs);
+        }
+
+        @AfterEach
+        void tearDown() {
+            if (builder != null) {
+                builder.dispose();
+            }
+        }
+
+        @Test
+        @DisplayName("analyzeDataFlow returns references for a discovered variable")
+        void testAnalyzeDataFlow_Success() {
+            // Discover a variable name from decompiled C output
+            ToolOutput code = fs.getFunctionCode("0x401000", "C");
+            assertInstanceOf(JsonOutput.class, code);
+            FunctionCodeResult codeData = (FunctionCodeResult) ((JsonOutput) code).data();
+            String allCode = codeData.lines().stream()
+                .flatMap(line -> line.values().stream())
+                .reduce("", (a, b) -> a + " " + b);
+            Matcher m = Pattern.compile("(local|param)_\\w+").matcher(allCode);
+            assertTrue(m.find(), "Should find a variable in decompiled output, got: " + allCode);
+            String varName = m.group();
+
+            ToolOutput result = service.analyzeDataFlow("0x401000", varName);
+            assertInstanceOf(JsonOutput.class, result);
+
+            DataFlowResult data = (DataFlowResult) ((JsonOutput) result).data();
+            assertNotNull(data.variable(), "Should have variable info");
+            assertNotNull(data.references(), "Should have references list");
+            assertFalse(data.references().isEmpty(),
+                "Should have at least 1 reference (DEFINE or USE)");
+
+            // Verify at least one reference has a recognized kind
+            boolean hasKnownKind = data.references().stream()
+                .anyMatch(ref -> "DEFINE".equals(ref.kind()) || "USE".equals(ref.kind()));
+            assertTrue(hasKnownKind, "At least one reference should be DEFINE or USE");
         }
     }
 }

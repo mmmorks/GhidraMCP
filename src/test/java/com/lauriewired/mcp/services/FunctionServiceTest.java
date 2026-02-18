@@ -26,8 +26,12 @@ import com.lauriewired.mcp.model.response.RenameFunctionsResult;
 import ghidra.program.database.ProgramBuilder;
 import ghidra.program.database.ProgramDB;
 import ghidra.program.model.data.DataType;
+import ghidra.program.model.data.IntegerDataType;
+import ghidra.program.model.data.PointerDataType;
 import ghidra.program.model.listing.CommentType;
 import ghidra.program.model.listing.Function;
+import ghidra.program.model.listing.ParameterImpl;
+import ghidra.program.model.symbol.SourceType;
 
 /**
  * Integration tests for FunctionService using ProgramBuilder with real Ghidra programs.
@@ -520,6 +524,143 @@ public class FunctionServiceTest {
         FunctionService service = serviceFor(program);
 
         assertNull(service.resolveFunction(program, "doesNotExist"));
+    }
+
+    // ===== Decompilation (C mode) tests =====
+
+    @Test
+    @DisplayName("getFunctionCode C mode decompiles a simple function")
+    void testGetFunctionCode_C_Success() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        // x86-64: push rbp; mov rbp,rsp; nop; pop rbp; ret
+        builder.setBytes("0x401000", "55 48 89 e5 90 5d c3", true);
+        builder.createFunction("0x401000");
+
+        ProgramDB program = builder.getProgram();
+        FunctionService service = serviceFor(program);
+
+        ToolOutput result = service.getFunctionCode("0x401000", "C");
+        assertInstanceOf(JsonOutput.class, result);
+
+        FunctionCodeResult data = (FunctionCodeResult) ((JsonOutput) result).data();
+        assertEquals("C", data.format());
+        assertNotNull(data.function());
+        assertFalse(data.lines().isEmpty(), "Decompiled C output should have at least one line");
+    }
+
+    @Test
+    @DisplayName("getFunctionCode C mode produces lines with non-empty address keys")
+    void testGetFunctionCode_C_HasAddressedLines() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        // x86-64: push rbp; mov rbp,rsp; nop; pop rbp; ret
+        builder.setBytes("0x401000", "55 48 89 e5 90 5d c3", true);
+        builder.createFunction("0x401000");
+
+        FunctionService service = serviceFor(builder.getProgram());
+
+        ToolOutput result = service.getFunctionCode("0x401000", "C");
+        FunctionCodeResult data = (FunctionCodeResult) ((JsonOutput) result).data();
+
+        // At least one line should have a non-empty address key (address-mapped code)
+        boolean hasAddressedLine = data.lines().stream()
+            .anyMatch(line -> line.keySet().stream().anyMatch(key -> !key.isEmpty()));
+        assertTrue(hasAddressedLine, "C output should have at least one line with a non-empty address key");
+
+        // Output should contain recognizable C constructs (braces, return, void, etc.)
+        String allCode = data.lines().stream()
+            .flatMap(line -> line.values().stream())
+            .reduce("", (a, b) -> a + " " + b);
+        assertTrue(allCode.contains("{") || allCode.contains("}") || allCode.contains("return") || allCode.contains("void"),
+            "C output should contain recognizable C constructs, got: " + allCode);
+    }
+
+    @Test
+    @DisplayName("getFunctionCode PCode mode returns non-empty lines with PCode syntax")
+    void testGetFunctionCode_PCode_Success() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        // x86-64: push rbp; mov rbp,rsp; nop; pop rbp; ret
+        builder.setBytes("0x401000", "55 48 89 e5 90 5d c3", true);
+        builder.createFunction("0x401000");
+
+        FunctionService service = serviceFor(builder.getProgram());
+
+        ToolOutput result = service.getFunctionCode("0x401000", "pcode");
+        assertInstanceOf(JsonOutput.class, result);
+
+        FunctionCodeResult data = (FunctionCodeResult) ((JsonOutput) result).data();
+        assertEquals("pcode", data.format());
+        assertFalse(data.lines().isEmpty(), "PCode output should have at least one line");
+
+        // Every PCode line should have a non-empty address key
+        for (Map<String, String> line : data.lines()) {
+            String addr = line.keySet().iterator().next();
+            assertFalse(addr.isEmpty(), "Every PCode line should have a non-empty address key");
+        }
+
+        // PCode lines should contain PCode op syntax (parentheses, e.g., "(register, 0x8, 8)")
+        String allCode = data.lines().stream()
+            .flatMap(line -> line.values().stream())
+            .reduce("", (a, b) -> a + " " + b);
+        assertTrue(allCode.contains("("), "PCode output should contain parentheses from PCode syntax, got: " + allCode);
+    }
+
+    @Test
+    @DisplayName("getFunctionCode C mode with local variables decompiles correctly")
+    void testGetFunctionCode_C_WithLocalVariables() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x2000);
+
+        // Helper at 0x401500: mov dword [rdi],0x10; ret — writes through pointer param
+        // Unique address avoids decompiler cache collisions with other test classes
+        builder.setBytes("0x401500", "C7 07 10 00 00 00 C3", true);
+        builder.createFunction("0x401500");
+
+        // Function at 0x401000 with local variable whose address escapes via call:
+        // push rbp; mov rbp,rsp; sub rsp,0x10; mov dword [rbp-4],0x42;
+        // lea rdi,[rbp-4]; call 0x401500; mov eax,[rbp-4]; leave; ret
+        // The LEA passes &local to callee, preventing dead-store elimination
+        // CALL offset = 0x401500 - 0x401018 = 0x4E8
+        builder.setBytes("0x401000",
+            "55 48 89 E5 48 83 EC 10 C7 45 FC 42 00 00 00 48 8D 7D FC E8 E8 04 00 00 8B 45 FC C9 C3",
+            true);
+        builder.createFunction("0x401000");
+
+        ProgramDB program = builder.getProgram();
+
+        // Set helper's prototype to take a pointer param so the decompiler
+        // recognizes the pointer escape and preserves the local variable
+        int tx = program.startTransaction("set helper prototype");
+        try {
+            Function helperFunc = program.getFunctionManager()
+                .getFunctionAt(builder.addr("0x401500"));
+            if (helperFunc != null) {
+                helperFunc.addParameter(
+                    new ParameterImpl("ptr",
+                        new PointerDataType(IntegerDataType.dataType), program),
+                    SourceType.ANALYSIS);
+            }
+        } finally {
+            program.endTransaction(tx, true);
+        }
+
+        FunctionService service = serviceFor(program);
+
+        ToolOutput result = service.getFunctionCode("0x401000", "C");
+        FunctionCodeResult data = (FunctionCodeResult) ((JsonOutput) result).data();
+
+        assertEquals("C", data.format());
+        assertTrue(data.lines().size() >= 3,
+            "Function with locals should produce at least 3 lines of C code, got: " + data.lines());
+
+        // The decompiled output should reference the constant 0x42 (66 decimal) or a local variable
+        String allCode = data.lines().stream()
+            .flatMap(line -> line.values().stream())
+            .reduce("", (a, b) -> a + " " + b);
+        assertTrue(allCode.contains("0x42") || allCode.contains("66") || allCode.contains("local_"),
+            "Decompiled C should contain 0x42, 66, or local_ variable, got: " + allCode);
     }
 
     // ===== renameFunctions happy-path tests =====
