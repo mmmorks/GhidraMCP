@@ -17,7 +17,6 @@ import ghidra.program.model.symbol.SymbolIterator;
 import ghidra.util.Msg;
 import ghidra.util.task.ConsoleTaskMonitor;
 
-import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -110,26 +109,25 @@ public class GhidraUtils {
 
         final ClangTokenGroup markup = result.getCCodeMarkup();
         if (markup == null) {
-            final List<Map<String, String>> lines = new ArrayList<>();
-            for (final String line : result.getDecompiledFunction().getC().split("\n", -1)) {
-                lines.add(FunctionCodeResult.line(null, line));
-            }
-            return lines;
+            return Stream.of(result.getDecompiledFunction().getC().split("\n", -1))
+                    .filter(line -> !line.isEmpty())
+                    .map(line -> FunctionCodeResult.line(null, line))
+                    .toList();
         }
 
         final PrettyPrinter printer = new PrettyPrinter(func, markup, null);
-        final List<Map<String, String>> lines = new ArrayList<>();
-        for (final ClangLine line : printer.getLines()) {
-            Address lineAddr = null;
-            for (final ClangToken token : line.getAllTokens()) {
-                lineAddr = token.getMinAddress();
-                if (lineAddr != null) break;
-            }
-            lines.add(FunctionCodeResult.line(
-                    lineAddr != null ? lineAddr.toString() : null,
-                    PrettyPrinter.getText(line)));
-        }
-        return lines;
+        return printer.getLines().stream()
+                .filter(line -> !PrettyPrinter.getText(line).isEmpty())
+                .map(line -> {
+                    final String addr = line.getAllTokens().stream()
+                            .map(ClangToken::getMinAddress)
+                            .filter(a -> a != null)
+                            .findFirst()
+                            .map(Address::toString)
+                            .orElse(null);
+                    return FunctionCodeResult.line(addr, PrettyPrinter.getText(line));
+                })
+                .toList();
     }
 
     /**
