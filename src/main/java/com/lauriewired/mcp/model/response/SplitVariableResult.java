@@ -1,6 +1,7 @@
 package com.lauriewired.mcp.model.response;
 
 import java.util.List;
+import java.util.Map;
 
 import com.lauriewired.mcp.model.Displayable;
 
@@ -10,10 +11,11 @@ public record SplitVariableResult(
     String newVariable,
     String splitAddress,
     List<VarInfo> variables,
-    String decompiled
+    List<Map<String, String>> decompiledLines
 ) implements Displayable {
     public SplitVariableResult {
         variables = variables != null ? List.copyOf(variables) : null;
+        decompiledLines = decompiledLines != null ? List.copyOf(decompiledLines) : null;
     }
     public record VarInfo(String name, String dataType, String storage) {}
 
@@ -38,8 +40,16 @@ public record SplitVariableResult(
             }
         }
 
-        if (decompiled != null) {
-            sb.append("\nDecompiled:\n").append(decompiled);
+        if (decompiledLines != null && !decompiledLines.isEmpty()) {
+            sb.append("\nDecompiled:\n");
+            for (final Map<String, String> entry : decompiledLines) {
+                final var e = entry.entrySet().iterator().next();
+                final String addr = e.getKey();
+                if (!addr.isEmpty()) {
+                    sb.append(addr).append(": ");
+                }
+                sb.append(e.getValue()).append("\n");
+            }
         }
         return sb.toString();
     }

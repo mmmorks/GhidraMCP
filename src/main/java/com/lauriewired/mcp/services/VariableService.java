@@ -15,6 +15,7 @@ import ghidra.program.model.address.Address;
 import ghidra.program.model.data.AbstractIntegerDataType;
 import ghidra.program.model.data.DataType;
 import ghidra.program.model.data.Undefined;
+import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.pcode.HighFunctionDBUtil;
 import ghidra.program.model.pcode.HighFunctionDBUtil.ReturnCommitOption;
@@ -184,7 +185,7 @@ public class VariableService {
         final var decomp = new DecompInterface();
         decomp.openProgram(program);
 
-        final var func = functionService.resolveFunction(program, functionIdentifier);
+        final Function func = functionService.resolveFunction(program, functionIdentifier);
         if (func == null) {
             return StatusOutput.error("Function not found: " + functionIdentifier);
         }
@@ -328,15 +329,12 @@ public class VariableService {
             });
 
             // Re-decompile once more to get the updated code after renaming
-            var decompiled = "";
+            List<Map<String, String>> decompiledLines = null;
             try {
                 final var finalResult = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
-                if (finalResult != null && finalResult.decompileCompleted()) {
-                    decompiled = finalResult.getDecompiledFunction().getC();
-                }
+                decompiledLines = GhidraUtils.extractDecompiledLines(finalResult, func);
             } catch (Exception e) {
                 Msg.warn(this, "Failed to get decompiled code for response: " + e.getMessage());
-                decompiled = "Decompilation unavailable";
             }
 
             return new JsonOutput(new SplitVariableResult(
@@ -345,7 +343,7 @@ public class VariableService {
                     resolvedName,
                     (usageAddress != null && !usageAddress.isEmpty()) ? usageAddress : null,
                     variables,
-                    decompiled));
+                    decompiledLines));
 
         } catch (Exception e) {
             final String errorMsg = "Variable renamed, but failed to collect variable info: " + e.getMessage();

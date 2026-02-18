@@ -2,6 +2,7 @@ package com.lauriewired.mcp.services;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -12,6 +13,13 @@ import static org.mockito.Mockito.when;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import ghidra.program.model.listing.Program;
+
+import com.lauriewired.mcp.model.JsonOutput;
+import com.lauriewired.mcp.model.response.FunctionCodeResult;
+import com.lauriewired.mcp.model.response.SplitVariableResult;
+
+import java.util.List;
+import java.util.Map;
 
 /**
  * Unit tests for VariableService
@@ -262,6 +270,153 @@ public class VariableServiceTest {
             String result = svc.setVariableTypes("nonexistent",
                 java.util.Map.of("local_10", "int")).toStructuredJson();
             assertTrue(result.contains("\"message\":\"Function not found: nonexistent\""));
+        }
+
+        // Note: splitVariable happy-path tests with mocked program are not feasible
+        // because DecompInterface.openProgram() casts to SleighLanguage internally.
+        // See SplitVariableResultTests for output format coverage.
+    }
+
+    // ===== SplitVariableResult output format tests =====
+
+    @Nested
+    class SplitVariableResultTests {
+
+        @Test
+        @DisplayName("SplitVariableResult JSON contains decompiledLines as address-keyed maps")
+        void testResultJson_DecompiledLines() {
+            var result = new SplitVariableResult(
+                "Variable split and renamed",
+                "local_10",
+                "loop_counter",
+                "00401050",
+                List.of(new SplitVariableResult.VarInfo("loop_counter", "int", "Stack[-0x10]")),
+                List.of(
+                    FunctionCodeResult.line(null, "void main(void) {"),
+                    FunctionCodeResult.line("00401040", "  int loop_counter;"),
+                    FunctionCodeResult.line("00401050", "  loop_counter = 0;"),
+                    FunctionCodeResult.line(null, "}")
+                ));
+
+            var output = new JsonOutput(result);
+            String json = output.toStructuredJson();
+
+            assertTrue(json.contains("\"decompiled_lines\""));
+            assertTrue(json.contains("\"\":\"void main(void) {\""));
+            assertTrue(json.contains("\"00401040\":\"  int loop_counter;\""));
+            assertTrue(json.contains("\"00401050\":\"  loop_counter = 0;\""));
+            assertTrue(json.contains("\"\":\"}\""));
+        }
+
+        @Test
+        @DisplayName("SplitVariableResult displayText renders decompiled lines")
+        void testResultDisplayText_DecompiledLines() {
+            var result = new SplitVariableResult(
+                "Variable split and renamed",
+                "local_10",
+                "counter",
+                "00401050",
+                List.of(new SplitVariableResult.VarInfo("counter", "int", null)),
+                List.of(
+                    FunctionCodeResult.line(null, "void main(void) {"),
+                    FunctionCodeResult.line("00401050", "  counter = 0;"),
+                    FunctionCodeResult.line(null, "}")
+                ));
+
+            String display = result.toDisplayText();
+
+            assertTrue(display.contains("Variable split and renamed"));
+            assertTrue(display.contains("Original: local_10"));
+            assertTrue(display.contains("New: counter"));
+            assertTrue(display.contains("Split address: 00401050"));
+            assertTrue(display.contains("\nDecompiled:\n"));
+            assertTrue(display.contains("void main(void) {\n"));
+            assertTrue(display.contains("00401050:   counter = 0;\n"));
+            assertTrue(display.contains("}\n"));
+        }
+
+        @Test
+        @DisplayName("SplitVariableResult handles null decompiledLines")
+        void testResultDisplayText_NullDecompiledLines() {
+            var result = new SplitVariableResult(
+                "Variable split and renamed",
+                "local_10",
+                "counter",
+                null,
+                null,
+                null);
+
+            String display = result.toDisplayText();
+            assertTrue(display.contains("Variable split and renamed"));
+            assertNull(result.decompiledLines());
+            assertNull(result.variables());
+        }
+
+        @Test
+        @DisplayName("SplitVariableResult handles empty decompiledLines")
+        void testResultDisplayText_EmptyDecompiledLines() {
+            var result = new SplitVariableResult(
+                "Variable split and renamed",
+                "local_10",
+                "counter",
+                "00401050",
+                List.of(),
+                List.of());
+
+            String display = result.toDisplayText();
+            assertTrue(display.contains("Variable split and renamed"));
+            // No "Decompiled:" section when empty
+            assertTrue(!display.contains("Decompiled:"));
+            // No "Variables:" section when empty
+            assertTrue(!display.contains("Variables:"));
+        }
+
+        @Test
+        @DisplayName("SplitVariableResult JSON includes all fields")
+        void testResultJson_AllFields() {
+            var result = new SplitVariableResult(
+                "Variable split and renamed",
+                "local_10",
+                "loop_counter",
+                "00401050",
+                List.of(
+                    new SplitVariableResult.VarInfo("loop_counter", "int", "Stack[-0x10]"),
+                    new SplitVariableResult.VarInfo("local_14", "undefined4", null)),
+                List.of(FunctionCodeResult.line("00401050", "  loop_counter = 0;")));
+
+            var output = new JsonOutput(result);
+            String json = output.toStructuredJson();
+
+            assertTrue(json.contains("\"status\":\"Variable split and renamed\""));
+            assertTrue(json.contains("\"original_variable\":\"local_10\""));
+            assertTrue(json.contains("\"new_variable\":\"loop_counter\""));
+            assertTrue(json.contains("\"split_address\":\"00401050\""));
+            assertTrue(json.contains("\"name\":\"loop_counter\""));
+            assertTrue(json.contains("\"data_type\":\"int\""));
+            assertTrue(json.contains("\"storage\":\"Stack[-0x10]\""));
+            assertTrue(json.contains("\"name\":\"local_14\""));
+            // null storage should be omitted (NON_NULL)
+            assertTrue(!json.contains("\"storage\":null"));
+        }
+
+        @Test
+        @DisplayName("SplitVariableResult displayText shows variables with storage")
+        void testResultDisplayText_VariablesWithStorage() {
+            var result = new SplitVariableResult(
+                "Variable split and renamed",
+                "local_10",
+                "counter",
+                null,
+                List.of(
+                    new SplitVariableResult.VarInfo("counter", "int", "EAX"),
+                    new SplitVariableResult.VarInfo("local_14", "long", null)),
+                null);
+
+            String display = result.toDisplayText();
+            assertTrue(display.contains("counter: int (EAX)"));
+            assertTrue(display.contains("local_14: long\n"));
+            // No split address line when null
+            assertTrue(!display.contains("Split address:"));
         }
     }
 }

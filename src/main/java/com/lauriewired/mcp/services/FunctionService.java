@@ -22,12 +22,8 @@ import com.lauriewired.mcp.model.response.RenameFunctionsResult;
 import com.lauriewired.mcp.utils.GhidraUtils;
 import com.lauriewired.mcp.utils.ProgramTransaction;
 
-import ghidra.app.decompiler.ClangLine;
-import ghidra.app.decompiler.ClangToken;
-import ghidra.app.decompiler.ClangTokenGroup;
 import ghidra.app.decompiler.DecompInterface;
 import ghidra.app.decompiler.DecompileResults;
-import ghidra.app.decompiler.PrettyPrinter;
 import ghidra.app.services.CodeViewerService;
 import ghidra.framework.plugintool.PluginTool;
 import ghidra.program.model.address.Address;
@@ -134,38 +130,8 @@ public class FunctionService {
         final DecompInterface decomp = new DecompInterface();
         decomp.openProgram(program);
         final DecompileResults result = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
-        if (result == null || !result.decompileCompleted()) {
-            return List.of(FunctionCodeResult.line(null, "Decompilation failed"));
-        }
-
-        // Use the token tree to get per-line address mappings
-        final ClangTokenGroup markup = result.getCCodeMarkup();
-        if (markup == null) {
-            // Fallback to plain text if no markup available
-            final List<Map<String, String>> lines = new ArrayList<>();
-            for (final String line : result.getDecompiledFunction().getC().split("\n", -1)) {
-                lines.add(FunctionCodeResult.line(null, line));
-            }
-            return lines;
-        }
-
-        final PrettyPrinter printer = new PrettyPrinter(func, markup, null);
-        final List<ClangLine> clangLines = printer.getLines();
-
-        final List<Map<String, String>> lines = new ArrayList<>();
-        for (final ClangLine line : clangLines) {
-            // Find the first address on this line from any token
-            Address lineAddr = null;
-            for (final ClangToken token : line.getAllTokens()) {
-                lineAddr = token.getMinAddress();
-                if (lineAddr != null) break;
-            }
-
-            lines.add(FunctionCodeResult.line(
-                    lineAddr != null ? lineAddr.toString() : null,
-                    PrettyPrinter.getText(line)));
-        }
-        return lines;
+        final List<Map<String, String>> lines = GhidraUtils.extractDecompiledLines(result, func);
+        return !lines.isEmpty() ? lines : List.of(FunctionCodeResult.line(null, "Decompilation failed"));
     }
 
     private List<Map<String, String>> getAssemblyLines(final Program program, final Function func) {

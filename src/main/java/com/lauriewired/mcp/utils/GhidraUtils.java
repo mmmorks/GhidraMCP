@@ -1,7 +1,12 @@
 package com.lauriewired.mcp.utils;
 
+import com.lauriewired.mcp.model.response.FunctionCodeResult;
+import ghidra.app.decompiler.ClangLine;
+import ghidra.app.decompiler.ClangToken;
+import ghidra.app.decompiler.ClangTokenGroup;
 import ghidra.app.decompiler.DecompInterface;
 import ghidra.app.decompiler.DecompileResults;
+import ghidra.app.decompiler.PrettyPrinter;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Program;
@@ -12,7 +17,10 @@ import ghidra.program.model.symbol.SymbolIterator;
 import ghidra.util.Msg;
 import ghidra.util.task.ConsoleTaskMonitor;
 
+import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Spliterator;
 import java.util.Spliterators;
@@ -87,6 +95,41 @@ public class GhidraUtils {
         }
         
         return results;
+    }
+
+    /**
+     * Extract structured {address: code} lines from decompile results.
+     * Uses PrettyPrinter/ClangToken markup when available, falls back to plain text splitting.
+     *
+     * @return list of single-entry maps, or empty list if decompilation failed
+     */
+    public static List<Map<String, String>> extractDecompiledLines(final DecompileResults result, final Function func) {
+        if (result == null || !result.decompileCompleted()) {
+            return List.of();
+        }
+
+        final ClangTokenGroup markup = result.getCCodeMarkup();
+        if (markup == null) {
+            final List<Map<String, String>> lines = new ArrayList<>();
+            for (final String line : result.getDecompiledFunction().getC().split("\n", -1)) {
+                lines.add(FunctionCodeResult.line(null, line));
+            }
+            return lines;
+        }
+
+        final PrettyPrinter printer = new PrettyPrinter(func, markup, null);
+        final List<Map<String, String>> lines = new ArrayList<>();
+        for (final ClangLine line : printer.getLines()) {
+            Address lineAddr = null;
+            for (final ClangToken token : line.getAllTokens()) {
+                lineAddr = token.getMinAddress();
+                if (lineAddr != null) break;
+            }
+            lines.add(FunctionCodeResult.line(
+                    lineAddr != null ? lineAddr.toString() : null,
+                    PrettyPrinter.getText(line)));
+        }
+        return lines;
     }
 
     /**
