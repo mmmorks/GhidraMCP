@@ -13,6 +13,8 @@
   <properties>
     <maven.compiler.release>24</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <!-- Ghidra install dir for integration tests (override with -Dghidra.install.dir=...) -->
+    <ghidra.install.dir>/Applications/Ghidra.app/Contents/app</ghidra.install.dir>
   </properties>
 
   <dependencies>
@@ -354,6 +356,101 @@
             --add-opens java.base/java.lang=ALL-UNNAMED
             --add-opens java.base/java.util=ALL-UNNAMED
           </argLine>
+          <!--
+            Exclude system-scoped Ghidra JARs from lib/ so that classes are loaded
+            from the Ghidra install tree (via additionalClasspathElements below).
+            This is required for Application.getMyModuleRootDirectory() to resolve
+            module data files (.rxg schemas, .ldefs, .sla) correctly.
+          -->
+          <classpathDependencyExcludes>
+            <classpathDependencyExclude>ghidra:Generic</classpathDependencyExclude>
+            <classpathDependencyExclude>ghidra:SoftwareModeling</classpathDependencyExclude>
+            <classpathDependencyExclude>ghidra:Project</classpathDependencyExclude>
+            <classpathDependencyExclude>ghidra:Docking</classpathDependencyExclude>
+            <classpathDependencyExclude>ghidra:Decompiler</classpathDependencyExclude>
+            <classpathDependencyExclude>ghidra:Utility</classpathDependencyExclude>
+            <classpathDependencyExclude>ghidra:Base</classpathDependencyExclude>
+            <classpathDependencyExclude>ghidra:DB</classpathDependencyExclude>
+            <classpathDependencyExclude>ghidra:FileSystem</classpathDependencyExclude>
+            <classpathDependencyExclude>ghidra:Gui</classpathDependencyExclude>
+          </classpathDependencyExcludes>
+          <!--
+            Ghidra install JARs for ProgramBuilder integration tests.
+            Loaded from the install tree so Application.getMyModuleRootDirectory()
+            can walk up from the JAR to find module data files.
+          -->
+          <additionalClasspathElements>
+            <!-- All Ghidra Framework + Features JARs from the install tree.
+                 Loaded from the install dir so Application.getMyModuleRootDirectory()
+                 resolves module data files (.rxg schemas, .ldefs, .sla). -->
+            <!-- Framework/Generic -->
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Generic/lib/Generic.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Generic/lib/bcpkix-jdk18on-1.80.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Generic/lib/bcprov-jdk18on-1.80.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Generic/lib/bcutil-jdk18on-1.80.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Generic/lib/commons-codec-1.18.0.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Generic/lib/commons-collections4-4.1.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Generic/lib/commons-compress-1.27.1.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Generic/lib/commons-io-2.19.0.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Generic/lib/commons-lang3-3.20.0.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Generic/lib/commons-text-1.10.0.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Generic/lib/failureaccess-1.0.1.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Generic/lib/gson-2.9.0.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Generic/lib/guava-32.1.3-jre.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Generic/lib/jdom-legacy-1.1.3.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Generic/lib/log4j-api-2.25.3.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Generic/lib/log4j-core-2.25.3.jar</additionalClasspathElement>
+            <!-- Framework/SoftwareModeling -->
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/SoftwareModeling/lib/SoftwareModeling.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/SoftwareModeling/lib/antlr-runtime-3.5.2.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/SoftwareModeling/lib/isorelax-20050913.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/SoftwareModeling/lib/msv-20050913.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/SoftwareModeling/lib/relaxngDatatype-20050913.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/SoftwareModeling/lib/xsdlib-20050913.jar</additionalClasspathElement>
+            <!-- Framework/Utility, Project, Docking, DB, FileSystem, Gui -->
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Utility/lib/Utility.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Project/lib/Project.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Project/lib/xz-1.9.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Docking/lib/Docking.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/DB/lib/DB.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/FileSystem/lib/FileSystem.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Gui/lib/Gui.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Gui/lib/flatlaf-3.5.4.jar</additionalClasspathElement>
+            <!-- Framework/Help -->
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Help/lib/Help.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Help/lib/javahelp-2.0.05.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Help/lib/timingframework-1.0.jar</additionalClasspathElement>
+            <!-- Framework/Graph -->
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Graph/lib/Graph.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Graph/lib/jgrapht-core-1.5.1.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Graph/lib/jgrapht-io-1.5.1.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Graph/lib/jung-algorithms-2.1.1.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Graph/lib/jung-api-2.1.1.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Graph/lib/jung-graph-impl-2.1.1.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Graph/lib/jung-visualization-2.1.1.jar</additionalClasspathElement>
+            <!-- Framework/Emulation -->
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Emulation/lib/Emulation.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Emulation/lib/asm-9.7.1.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Emulation/lib/asm-analysis-9.7.1.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Emulation/lib/asm-commons-9.7.1.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Emulation/lib/asm-tree-9.7.1.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Emulation/lib/asm-util-9.7.1.jar</additionalClasspathElement>
+            <!-- Framework/Pty -->
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Pty/lib/Pty.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Pty/lib/jna-5.14.0.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Pty/lib/jna-platform-5.14.0.jar</additionalClasspathElement>
+            <!-- Features/Base -->
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Features/Base/lib/Base.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Features/Base/lib/biz.aQute.bnd.util-7.0.0.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Features/Base/lib/biz.aQute.bndlib-7.0.0.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Features/Base/lib/org.apache.felix.framework-7.0.5.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Features/Base/lib/org.osgi.util.promise-1.3.0.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Features/Base/lib/phidias-0.3.7.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Features/Base/lib/slf4j-api-1.7.25.jar</additionalClasspathElement>
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Features/Base/lib/slf4j-nop-1.7.25.jar</additionalClasspathElement>
+            <!-- Features/Decompiler -->
+            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Features/Decompiler/lib/Decompiler.jar</additionalClasspathElement>
+          </additionalClasspathElements>
         </configuration>
       </plugin>
     </plugins>

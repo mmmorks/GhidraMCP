@@ -1,7 +1,6 @@
 package com.lauriewired.mcp.utils;
 
 import com.lauriewired.mcp.model.response.FunctionCodeResult;
-import ghidra.app.decompiler.ClangLine;
 import ghidra.app.decompiler.ClangToken;
 import ghidra.app.decompiler.ClangTokenGroup;
 import ghidra.app.decompiler.DecompInterface;
