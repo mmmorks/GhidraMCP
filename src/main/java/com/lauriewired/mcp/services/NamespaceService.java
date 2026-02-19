@@ -16,6 +16,7 @@ import ghidra.program.model.listing.Program;
 import ghidra.program.model.symbol.Symbol;
 import ghidra.program.model.symbol.SymbolIterator;
 import ghidra.program.model.symbol.SymbolTable;
+import ghidra.program.model.symbol.SymbolType;
 
 /**
  * Service for operations related to namespaces, classes, and symbols
@@ -33,23 +34,26 @@ public class NamespaceService {
     }
 
     @McpTool(description = """
-        List all symbols (functions, variables, labels, etc.) with pagination.
+        List data labels (non-function symbols) in the program with pagination.
 
-        Comprehensive listing of all named entities in the program.
+        Shows named locations such as global variables, data labels, and code labels — excludes
+        function entry points (use list_functions for those).
 
-        Returns: Symbols with addresses in format "symbol_name -> address"
+        Returns: Labels with addresses
 
-        Example: list_symbols(0, 5) -> ['main -> 00401000', 'gVar1 -> 00410010', ...] """,
+        Example: list_labels(0, 5) -> ['gVar1 @ 00410010', 'DAT_00410020 @ 00410020', ...] """,
         outputType = ListOutput.class, responseType = SymbolItem.class)
-    public ToolOutput listSymbols(
+    public ToolOutput listLabels(
             @Param(value = "Starting index for pagination (0-based)", defaultValue = "0") final int offset,
-            @Param(value = "Maximum symbols to return", defaultValue = "100") final int limit) {
+            @Param(value = "Maximum labels to return", defaultValue = "100") final int limit) {
         final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
 
         final List<SymbolItem> items = new ArrayList<>();
         for (final Symbol symbol : program.getSymbolTable().getAllSymbols(false)) {
-            items.add(new SymbolItem(symbol.getName(), symbol.getAddress().toString()));
+            if (symbol.getSymbolType() != SymbolType.FUNCTION) {
+                items.add(new SymbolItem(symbol.getName(), symbol.getAddress().toString()));
+            }
         }
         return ListOutput.paginate(items, offset, limit);
     }

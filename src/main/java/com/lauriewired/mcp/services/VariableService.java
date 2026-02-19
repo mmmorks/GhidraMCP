@@ -68,10 +68,12 @@ public class VariableService {
         Note: Variable names must be unique within the function scope.
               Only one function at a time is supported.
 
-        Tip: If the decompiler reuses a single variable name across unrelated usages
+        Tip: Call analyze_data_flow first to see where each variable is defined and used \u2014
+             this reveals the variable's purpose and helps you choose a meaningful name.
+             If the decompiler reuses a single variable name across unrelated usages
              (e.g., the same local is used for a loop counter and later a buffer pointer),
-             use split_variable first to give that specific use of memory a distinct identity
-             from that point in the function onward, then rename it here.
+             use split_variable first to give that specific usage a distinct identity,
+             then rename it here.
 
         Example: rename_variables("main", {"local_10": "buffer_size", "param_1": "argc"}) """,
         outputType = JsonOutput.class, responseType = RenameVariablesResult.class)
@@ -168,6 +170,10 @@ public class VariableService {
 
         Useful when the decompiler reuses a single variable name across unrelated usages.
         Splitting assigns a distinct name at one usage site without affecting others.
+
+        Tip: Call analyze_data_flow first to identify which addresses use the variable and
+             whether it serves multiple unrelated purposes \u2014 this tells you where to split
+             and what name to assign.
 
         Returns: Status of the split operation
 

@@ -76,7 +76,7 @@ public class FunctionService {
 
         final List<FunctionItem> items = new ArrayList<>();
         for (final Function f : program.getFunctionManager().getFunctions(true)) {
-            items.add(new FunctionItem(f.getName()));
+            items.add(new FunctionItem(f.getName(), f.getEntryPoint().toString()));
         }
 
         return ListOutput.paginate(items, offset, limit);

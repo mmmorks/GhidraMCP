@@ -43,7 +43,7 @@ FALLBACK_MCP_TOOLS = [
     'list_functions',
     'list_references',
     'list_references_from',
-    'list_symbols',
+    'list_labels',
     'read_memory',
     'rename_data',
     'rename_function',

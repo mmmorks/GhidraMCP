@@ -139,7 +139,7 @@ class ApiHandlerRegistryTest {
         verify(mockHttpServer).createContext(eq("/set_function_prototype"), any(HttpHandler.class));
 
         // Namespace endpoints
-        verify(mockHttpServer).createContext(eq("/list_symbols"), any(HttpHandler.class));
+        verify(mockHttpServer).createContext(eq("/list_labels"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/get_symbol_address"), any(HttpHandler.class));
 
         // DataType endpoints

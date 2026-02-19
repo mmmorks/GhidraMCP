@@ -74,11 +74,11 @@ public class MemoryService {
         Get the memory layout of the program (segments/sections).
 
         Shows distinct regions in the binary's address space (.text, .data, .rodata, etc.)
-        with their address ranges.
+        with their address ranges, sizes, and read/write/execute permissions.
 
-        Returns: Memory segments with name and address range
+        Returns: Memory segments with name, address range, size in bytes, and permissions (e.g., "r-x", "rw-")
 
-        Example: get_memory_layout() -> ['.text: 00401000 - 00410000', '.data: 00411000 - 00412000', ...] """,
+        Example: get_memory_layout() -> ['.text: 00401000 - 00410000 (r-x)', '.data: 00411000 - 00412000 (rw-)', ...] """,
         outputType = ListOutput.class, responseType = MemorySegmentItem.class)
     public ToolOutput getMemoryLayout(
             @Param(value = "Starting index for pagination (0-based)", defaultValue = "0") final int offset,
@@ -88,7 +88,11 @@ public class MemoryService {
 
         final List<MemorySegmentItem> items = new ArrayList<>();
         for (final MemoryBlock block : program.getMemory().getBlocks()) {
-            items.add(new MemorySegmentItem(block.getName(), block.getStart().toString(), block.getEnd().toString()));
+            final long size = block.getSize();
+            final String perms = (block.isRead() ? "r" : "-")
+                    + (block.isWrite() ? "w" : "-")
+                    + (block.isExecute() ? "x" : "-");
+            items.add(new MemorySegmentItem(block.getName(), block.getStart().toString(), block.getEnd().toString(), size, perms));
         }
         return ListOutput.paginate(items, offset, limit);
     }
@@ -117,10 +121,12 @@ public class MemoryService {
                 final Data data = it.next();
                 if (block.contains(data.getAddress())) {
                     final String label = data.getLabel() != null ? data.getLabel() : "(unnamed)";
+                    final String typeName = data.getDataType().getName();
                     final String valRepr = data.getDefaultValueRepresentation();
                     items.add(new DataItem(
                             data.getAddress().toString(),
                             HttpUtils.escapeNonAscii(label),
+                            typeName,
                             HttpUtils.escapeNonAscii(valRepr)));
                 }
             }

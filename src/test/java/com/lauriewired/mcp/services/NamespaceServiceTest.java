@@ -37,23 +37,23 @@ public class NamespaceServiceTest {
     }
 
     @Test
-    @DisplayName("listSymbols returns error when no program is loaded")
-    void testListSymbols_NoProgram() {
-        String result = namespaceService.listSymbols(0, 10).toStructuredJson();
+    @DisplayName("listLabels returns error when no program is loaded")
+    void testListLabels_NoProgram() {
+        String result = namespaceService.listLabels(0, 10).toStructuredJson();
         assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
-    @DisplayName("listSymbols handles negative offset")
-    void testListSymbols_NegativeOffset() {
-        String result = namespaceService.listSymbols(-1, 10).toStructuredJson();
+    @DisplayName("listLabels handles negative offset")
+    void testListLabels_NegativeOffset() {
+        String result = namespaceService.listLabels(-1, 10).toStructuredJson();
         assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
     @Test
-    @DisplayName("listSymbols handles zero limit")
-    void testListSymbols_ZeroLimit() {
-        String result = namespaceService.listSymbols(0, 0).toStructuredJson();
+    @DisplayName("listLabels handles zero limit")
+    void testListLabels_ZeroLimit() {
+        String result = namespaceService.listLabels(0, 0).toStructuredJson();
         assertTrue(result.contains("\"message\":\"No program loaded\""));
     }
 
@@ -134,42 +134,33 @@ public class NamespaceServiceTest {
         }
 
         @Test
-        @DisplayName("listSymbols returns symbols including functions and labels")
-        void testListSymbols_Success() {
-            ToolOutput result = svc.listSymbols(0, 100);
+        @DisplayName("listLabels returns labels but excludes function symbols")
+        void testListLabels_Success() {
+            ToolOutput result = svc.listLabels(0, 100);
             assertInstanceOf(ListOutput.class, result);
 
             String json = result.toStructuredJson();
-            assertTrue(json.contains("main"));
+            // my_label should be present (it's a label, not a function)
             assertTrue(json.contains("my_label"));
+            // main is a function symbol and should be excluded
+            assertFalse(json.contains("\"main\""));
         }
 
         @Test
-        @DisplayName("listSymbols respects offset and limit for pagination")
-        void testListSymbols_Pagination() {
-            // Get all symbols first to know total count
-            ToolOutput allResult = svc.listSymbols(0, 100);
+        @DisplayName("listLabels respects offset and limit for pagination")
+        void testListLabels_Pagination() {
+            // Get all labels first to know total count
+            ToolOutput allResult = svc.listLabels(0, 100);
             assertInstanceOf(ListOutput.class, allResult);
             ListOutput allOutput = (ListOutput) allResult;
             int totalItems = allOutput.totalItems();
-            assertTrue(totalItems >= 2, "Should have at least 2 symbols (main + my_label)");
+            assertTrue(totalItems >= 1, "Should have at least 1 label (my_label)");
 
             // Request only 1 item at offset 0
-            ToolOutput page1 = svc.listSymbols(0, 1);
+            ToolOutput page1 = svc.listLabels(0, 1);
             assertInstanceOf(ListOutput.class, page1);
             ListOutput page1Output = (ListOutput) page1;
             assertTrue(page1Output.items().size() == 1, "Page should contain exactly 1 item");
-            assertTrue(page1Output.hasMore(), "Should have more pages");
-
-            // Request 1 item at offset 1
-            ToolOutput page2 = svc.listSymbols(1, 1);
-            assertInstanceOf(ListOutput.class, page2);
-            ListOutput page2Output = (ListOutput) page2;
-            assertTrue(page2Output.items().size() == 1, "Second page should contain exactly 1 item");
-
-            // The two pages should have different content
-            assertFalse(page1Output.toStructuredJson().equals(page2Output.toStructuredJson()),
-                "Different pages should have different content");
         }
 
         @Test
