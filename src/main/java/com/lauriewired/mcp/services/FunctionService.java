@@ -123,7 +123,7 @@ public class FunctionService {
             }
         }
 
-        return new JsonOutput(new FunctionCodeResult(func.getName(), effectiveFormat, lines));
+        return new JsonOutput(new FunctionCodeResult(func.getName(), func.getSignature().getPrototypeString(), effectiveFormat, lines));
     }
 
     private List<Map<String, String>> getDecompiledCLines(final Program program, final Function func) {

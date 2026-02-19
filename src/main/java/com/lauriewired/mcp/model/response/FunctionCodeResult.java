@@ -8,6 +8,7 @@ import com.lauriewired.mcp.model.Displayable;
 
 public record FunctionCodeResult(
     String function,
+    String prototype,
     String format,
     List<Map<String, String>> lines
 ) implements Displayable {
