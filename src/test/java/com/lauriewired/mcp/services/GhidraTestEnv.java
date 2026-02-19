@@ -26,11 +26,11 @@ import utility.module.ModuleUtilities;
  * If no Ghidra installation is found, JUnit's {@code assumeTrue} skips the
  * test class gracefully.
  */
-final class GhidraTestEnv {
+public final class GhidraTestEnv {
     private GhidraTestEnv() {}
 
     /** Boot Ghidra headlessly; skips via assumption if no install is found. */
-    static void initialize() {
+    public static void initialize() {
         File installDir = findGhidraInstall();
         assumeTrue(installDir != null,
             "Skipping: no Ghidra installation found (set GHIDRA_INSTALL_DIR)");

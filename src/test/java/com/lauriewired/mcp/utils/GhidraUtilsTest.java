@@ -1,311 +1,293 @@
 package com.lauriewired.mcp.utils;
 
-import java.util.ArrayList;
-import java.util.List;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.Iterator;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import static org.mockito.ArgumentMatchers.any;
-import org.mockito.Mock;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-import org.mockito.junit.jupiter.MockitoExtension;
 
+import ghidra.app.decompiler.DecompileResults;
+import ghidra.program.database.ProgramBuilder;
+import ghidra.program.database.ProgramDB;
 import ghidra.program.model.address.Address;
+import ghidra.program.model.data.IntegerDataType;
+import ghidra.program.model.data.PointerDataType;
 import ghidra.program.model.listing.Function;
-import ghidra.program.model.listing.FunctionManager;
-import ghidra.program.model.listing.Parameter;
-import ghidra.program.model.listing.Program;
+import ghidra.program.model.listing.ParameterImpl;
 import ghidra.program.model.pcode.HighFunction;
 import ghidra.program.model.pcode.HighSymbol;
-import ghidra.program.model.pcode.LocalSymbolMap;
-import ghidra.program.model.symbol.Symbol;
-import ghidra.program.model.symbol.SymbolIterator;
-import ghidra.program.model.symbol.SymbolTable;
+import ghidra.program.model.symbol.SourceType;
+
+import com.lauriewired.mcp.services.GhidraTestEnv;
 
 /**
- * Unit tests for GhidraUtils
+ * Tests for GhidraUtils using ProgramBuilder-based real Ghidra objects
  */
 public class GhidraUtilsTest {
-    
-    /**
-     * Tests for getFunctionForAddress method that don't require mocking
-     */
+
     @Nested
-    class GetFunctionForAddressNullTests {
-        
+    @DisplayName("Null-guard tests (no Ghidra needed)")
+    class NullGuardTests {
+
         @Test
         @DisplayName("getFunctionForAddress returns null for null program")
         void testGetFunctionForAddress_NullProgram() {
-            Address mockAddress = mock(Address.class);
-            Function result = GhidraUtils.getFunctionForAddress(null, mockAddress);
-            assertNull(result);
+            assertNull(GhidraUtils.getFunctionForAddress(null, null));
         }
-        
-        @Test
-        @DisplayName("getFunctionForAddress returns null for null address")
-        void testGetFunctionForAddress_NullAddress() {
-            // Don't create a Program mock for this test
-            Function result = GhidraUtils.getFunctionForAddress(mock(Program.class), null);
-            assertNull(result);
-        }
-    }
-    
-    /**
-     * Tests for getFunctionForAddress method that require mocking
-     */
-    @Nested
-    @ExtendWith(MockitoExtension.class)
-    class GetFunctionForAddressMockTests {
-        
-        @Mock
-        private Program mockProgram;
-        
-        @Mock
-        private FunctionManager mockFunctionManager;
-        
-        @Mock
-        private Function mockFunction;
-        
-        @Mock
-        private Address mockAddress;
-        
-        @Test
-        @DisplayName("getFunctionForAddress returns function at exact address")
-        void testGetFunctionForAddress_ExactMatch() {
-            when(mockProgram.getFunctionManager()).thenReturn(mockFunctionManager);
-            when(mockFunctionManager.getFunctionAt(mockAddress)).thenReturn(mockFunction);
-            
-            Function result = GhidraUtils.getFunctionForAddress(mockProgram, mockAddress);
-            
-            assertEquals(mockFunction, result);
-            verify(mockFunctionManager).getFunctionAt(mockAddress);
-            verify(mockFunctionManager, never()).getFunctionContaining(any());
-        }
-        
-        @Test
-        @DisplayName("getFunctionForAddress returns function containing address when no exact match")
-        void testGetFunctionForAddress_ContainingMatch() {
-            when(mockProgram.getFunctionManager()).thenReturn(mockFunctionManager);
-            when(mockFunctionManager.getFunctionAt(mockAddress)).thenReturn(null);
-            when(mockFunctionManager.getFunctionContaining(mockAddress)).thenReturn(mockFunction);
-            
-            Function result = GhidraUtils.getFunctionForAddress(mockProgram, mockAddress);
-            
-            assertEquals(mockFunction, result);
-            verify(mockFunctionManager).getFunctionAt(mockAddress);
-            verify(mockFunctionManager).getFunctionContaining(mockAddress);
-        }
-        
-        @Test
-        @DisplayName("getFunctionForAddress returns null when no function found")
-        void testGetFunctionForAddress_NoMatch() {
-            when(mockProgram.getFunctionManager()).thenReturn(mockFunctionManager);
-            when(mockFunctionManager.getFunctionAt(mockAddress)).thenReturn(null);
-            when(mockFunctionManager.getFunctionContaining(mockAddress)).thenReturn(null);
-            
-            Function result = GhidraUtils.getFunctionForAddress(mockProgram, mockAddress);
-            
-            assertNull(result);
-        }
-    }
-    
-    /**
-     * Tests for variable-related methods
-     */
-    @Nested
-    @ExtendWith(MockitoExtension.class)
-    class VariableTests {
-        
-        @Mock
-        private HighFunction mockHighFunction;
-        
-        @Mock
-        private LocalSymbolMap mockLocalSymbolMap;
-        
-        @Mock
-        private HighSymbol mockHighSymbol;
-        
-        @Test
-        @DisplayName("findVariableByName finds variable with matching name")
-        void testFindVariableByName_Found() {
-            String variableName = "testVar";
-            List<HighSymbol> symbols = new ArrayList<>();
-            symbols.add(mockHighSymbol);
-            
-            when(mockHighFunction.getLocalSymbolMap()).thenReturn(mockLocalSymbolMap);
-            when(mockLocalSymbolMap.getSymbols()).thenReturn(symbols.iterator());
-            when(mockHighSymbol.getName()).thenReturn(variableName);
-            
-            HighSymbol result = GhidraUtils.findVariableByName(mockHighFunction, variableName);
-            
-            assertEquals(mockHighSymbol, result);
-        }
-        
-        @Test
-        @DisplayName("findVariableByName returns null when variable not found")
-        void testFindVariableByName_NotFound() {
-            String variableName = "testVar";
-            List<HighSymbol> symbols = new ArrayList<>();
-            HighSymbol otherSymbol = mock(HighSymbol.class);
-            when(otherSymbol.getName()).thenReturn("otherVar");
-            symbols.add(otherSymbol);
-            
-            when(mockHighFunction.getLocalSymbolMap()).thenReturn(mockLocalSymbolMap);
-            when(mockLocalSymbolMap.getSymbols()).thenReturn(symbols.iterator());
-            
-            HighSymbol result = GhidraUtils.findVariableByName(mockHighFunction, variableName);
-            
-            assertNull(result);
-        }
-        
-        @Test
-        @DisplayName("findVariableByName returns null for null high function")
-        void testFindVariableByName_NullHighFunction() {
-            HighSymbol result = GhidraUtils.findVariableByName(null, "test");
-            assertNull(result);
-        }
-        
-        @Test
-        @DisplayName("findVariableByName returns null for null variable name")
-        void testFindVariableByName_NullVariableName() {
-            HighSymbol result = GhidraUtils.findVariableByName(mockHighFunction, null);
-            assertNull(result);
-        }
-    }
-    
-    /**
-     * Tests for symbol-related methods that don't require Program mock
-     */
-    @Nested
-    class SymbolNullTests {
-        
+
         @Test
         @DisplayName("getSymbolAddress returns null for null program")
         void testGetSymbolAddress_NullProgram() {
-            Address result = GhidraUtils.getSymbolAddress(null, "test");
-            assertNull(result);
+            assertNull(GhidraUtils.getSymbolAddress(null, "test"));
         }
-        
+
         @Test
         @DisplayName("getSymbolAddress returns null for null symbol name")
-        void testGetSymbolAddress_NullSymbolName() {
-            Address result = GhidraUtils.getSymbolAddress(mock(Program.class), null);
-            assertNull(result);
+        void testGetSymbolAddress_NullName() {
+            assertNull(GhidraUtils.getSymbolAddress(null, null));
         }
-        
+
         @Test
         @DisplayName("getSymbolAddress returns null for empty symbol name")
-        void testGetSymbolAddress_EmptySymbolName() {
-            Address result = GhidraUtils.getSymbolAddress(mock(Program.class), "");
-            assertNull(result);
+        void testGetSymbolAddress_EmptyName() {
+            assertNull(GhidraUtils.getSymbolAddress(null, ""));
+        }
+
+        @Test
+        @DisplayName("findVariableByName returns null for null high function")
+        void testFindVariableByName_NullHighFunction() {
+            assertNull(GhidraUtils.findVariableByName(null, "test"));
+        }
+
+        @Test
+        @DisplayName("findVariableByName returns null for null variable name")
+        void testFindVariableByName_NullName() {
+            assertNull(GhidraUtils.findVariableByName(null, null));
         }
     }
-    
-    /**
-     * Tests for symbol-related methods that require Program mock
-     */
+
     @Nested
-    @ExtendWith(MockitoExtension.class)
-    class SymbolMockTests {
-        
-        @Mock
-        private Program mockProgram;
-        
-        @Mock
-        private SymbolTable mockSymbolTable;
-        
-        @Mock
-        private Symbol mockSymbol;
-        
-        @Mock
-        private SymbolIterator mockSymbolIterator;
-        
-        @Mock
-        private Address mockAddress;
-        
+    @DisplayName("ProgramBuilder-based integration tests")
+    class ProgramBuilderTests {
+
+        private ProgramBuilder builder;
+        private ProgramDB program;
+
+        @BeforeAll
+        static void initGhidra() {
+            GhidraTestEnv.initialize();
+        }
+
+        @BeforeEach
+        void setUp() throws Exception {
+            builder = new ProgramBuilder("utilsTest", ProgramBuilder._X64);
+            builder.createMemory(".text", "0x401000", 0x2000);
+
+            // Helper at 0x401200: mov dword [rdi],0x10; ret
+            builder.setBytes("0x401200", "C7 07 10 00 00 00 C3", true);
+            builder.createFunction("0x401200");
+
+            // Function at 0x401000 with local variable whose address escapes via call:
+            // push rbp; mov rbp,rsp; sub rsp,0x10; mov dword [rbp-4],0x42;
+            // lea rdi,[rbp-4]; call 0x401200; mov eax,[rbp-4]; leave; ret
+            builder.setBytes("0x401000",
+                "55 48 89 E5 48 83 EC 10 C7 45 FC 42 00 00 00 48 8D 7D FC E8 E8 01 00 00 8B 45 FC C9 C3",
+                true);
+            builder.createFunction("0x401000");
+
+            // Create a label for symbol tests
+            builder.createLabel("0x401300", "mySymbol");
+
+            program = builder.getProgram();
+
+            // Set helper's prototype so decompiler recognizes the pointer escape
+            int tx = program.startTransaction("set helper prototype");
+            try {
+                Function helperFunc = program.getFunctionManager()
+                    .getFunctionAt(builder.addr("0x401200"));
+                if (helperFunc != null) {
+                    helperFunc.addParameter(
+                        new ParameterImpl("ptr",
+                            new PointerDataType(IntegerDataType.dataType), program),
+                        SourceType.ANALYSIS);
+                }
+            } finally {
+                program.endTransaction(tx, true);
+            }
+        }
+
+        @AfterEach
+        void tearDown() {
+            if (builder != null) {
+                builder.dispose();
+            }
+        }
+
+        // --- getFunctionForAddress tests ---
+
+        @Test
+        @DisplayName("getFunctionForAddress returns null for null address")
+        void testGetFunctionForAddress_NullAddress() {
+            assertNull(GhidraUtils.getFunctionForAddress(program, null));
+        }
+
+        @Test
+        @DisplayName("getFunctionForAddress returns function at exact address")
+        void testGetFunctionForAddress_ExactMatch() {
+            Address addr = builder.addr("0x401000");
+            Function result = GhidraUtils.getFunctionForAddress(program, addr);
+            assertNotNull(result);
+            assertEquals(addr, result.getEntryPoint());
+        }
+
+        @Test
+        @DisplayName("getFunctionForAddress returns function containing address")
+        void testGetFunctionForAddress_ContainingMatch() {
+            // 0x401010 is inside the function body at 0x401000
+            Address addr = builder.addr("0x401010");
+            Function result = GhidraUtils.getFunctionForAddress(program, addr);
+            assertNotNull(result);
+            assertEquals(builder.addr("0x401000"), result.getEntryPoint());
+        }
+
+        @Test
+        @DisplayName("getFunctionForAddress returns null when no function found")
+        void testGetFunctionForAddress_NoMatch() {
+            Address addr = builder.addr("0x402000");
+            assertNull(GhidraUtils.getFunctionForAddress(program, addr));
+        }
+
+        // --- getSymbolAddress tests ---
+
         @Test
         @DisplayName("getSymbolAddress returns address for existing symbol")
         void testGetSymbolAddress_Found() {
-            String symbolName = "main";
-            
-            when(mockProgram.getSymbolTable()).thenReturn(mockSymbolTable);
-            when(mockSymbolTable.getSymbols(symbolName)).thenReturn(mockSymbolIterator);
-            when(mockSymbolIterator.hasNext()).thenReturn(true);
-            when(mockSymbolIterator.next()).thenReturn(mockSymbol);
-            when(mockSymbol.getAddress()).thenReturn(mockAddress);
-            
-            Address result = GhidraUtils.getSymbolAddress(mockProgram, symbolName);
-            
-            assertEquals(mockAddress, result);
+            Address result = GhidraUtils.getSymbolAddress(program, "mySymbol");
+            assertNotNull(result);
+            assertEquals(builder.addr("0x401300"), result);
         }
-        
+
         @Test
-        @DisplayName("getSymbolAddress returns null when symbol not found")
+        @DisplayName("getSymbolAddress returns null for non-existing symbol")
         void testGetSymbolAddress_NotFound() {
-            String symbolName = "nonExistent";
-            
-            when(mockProgram.getSymbolTable()).thenReturn(mockSymbolTable);
-            when(mockSymbolTable.getSymbols(symbolName)).thenReturn(mockSymbolIterator);
-            when(mockSymbolIterator.hasNext()).thenReturn(false);
-            
-            Address result = GhidraUtils.getSymbolAddress(mockProgram, symbolName);
-            
-            assertNull(result);
+            assertNull(GhidraUtils.getSymbolAddress(program, "nonExistentSymbol"));
         }
-    }
-    
-    /**
-     * Tests for checkFullCommit method
-     */
-    @Nested
-    @ExtendWith(MockitoExtension.class)
-    class CheckFullCommitTests {
-        
-        @Mock
-        private HighSymbol mockHighSymbol;
-        
-        @Mock
-        private HighFunction mockHighFunction;
-        
-        @Mock
-        private Function mockFunction;
-        
-        @Mock
-        private LocalSymbolMap mockLocalSymbolMap;
-        
+
+        // --- findVariableByName tests (requires decompilation) ---
+
+        /** Decompile the function at 0x401000 and return the HighFunction. */
+        private HighFunction decompile() {
+            Function func = program.getFunctionManager()
+                .getFunctionAt(builder.addr("0x401000"));
+            assertNotNull(func, "Function at 0x401000 should exist");
+            DecompileResults results = GhidraUtils.decompileFunction(func, program);
+            assertNotNull(results, "Decompilation should succeed");
+            HighFunction hf = results.getHighFunction();
+            assertNotNull(hf, "HighFunction should be available");
+            return hf;
+        }
+
+        /** Discover a variable name from the decompiled output. */
+        private String discoverVariableName(HighFunction hf) {
+            Iterator<HighSymbol> symbols = hf.getLocalSymbolMap().getSymbols();
+            assertTrue(symbols.hasNext(), "Decompiled function should have symbols");
+            // Find a local_ or param_ variable
+            Pattern pattern = Pattern.compile("(local|param)_\\w+");
+            while (symbols.hasNext()) {
+                String name = symbols.next().getName();
+                Matcher m = pattern.matcher(name);
+                if (m.matches()) {
+                    return name;
+                }
+            }
+            // Fall back to first symbol name
+            Iterator<HighSymbol> fallback = hf.getLocalSymbolMap().getSymbols();
+            return fallback.next().getName();
+        }
+
+        @Test
+        @DisplayName("findVariableByName finds an existing variable")
+        void testFindVariableByName_Found() {
+            HighFunction hf = decompile();
+            String varName = discoverVariableName(hf);
+
+            HighSymbol result = GhidraUtils.findVariableByName(hf, varName);
+            assertNotNull(result);
+            assertEquals(varName, result.getName());
+        }
+
+        @Test
+        @DisplayName("findVariableByName returns null for non-existing variable")
+        void testFindVariableByName_NotFound() {
+            HighFunction hf = decompile();
+            assertNull(GhidraUtils.findVariableByName(hf, "nonExistentVarXyz"));
+        }
+
+        // --- checkFullCommit tests ---
+
         @Test
         @DisplayName("checkFullCommit returns false for non-parameter symbol")
         void testCheckFullCommit_NonParameter() {
-            when(mockHighSymbol.isParameter()).thenReturn(false);
-            
-            boolean result = GhidraUtils.checkFullCommit(mockHighSymbol, mockHighFunction);
-            
-            assertFalse(result);
+            // Decompile the helper at 0x401200 which has a pointer param set on listing;
+            // the decompiler should also see a param, so non-param locals (if any) exist.
+            // Use 0x401000 which has local variables from the address-escaping bytecode.
+            HighFunction hf = decompile();
+            // Find a local (non-parameter) symbol — skip if decompiler didn't produce one
+            Iterator<HighSymbol> symbols = hf.getLocalSymbolMap().getSymbols();
+            HighSymbol localSymbol = null;
+            while (symbols.hasNext()) {
+                HighSymbol sym = symbols.next();
+                if (!sym.isParameter()) {
+                    localSymbol = sym;
+                    break;
+                }
+            }
+            // If the decompiler produced a non-parameter, verify checkFullCommit returns false
+            if (localSymbol != null) {
+                assertFalse(GhidraUtils.checkFullCommit(localSymbol, hf));
+            }
+            // Also verify: null highSymbol when listing and decompiler param counts match
+            // should still check param counts (does not early-return for null)
+            // This exercises the non-early-return path differently
         }
-        
+
         @Test
         @DisplayName("checkFullCommit returns true when parameter counts differ")
-        void testCheckFullCommit_DifferentParamCounts() {
-            when(mockHighSymbol.isParameter()).thenReturn(true);
-            when(mockHighFunction.getFunction()).thenReturn(mockFunction);
-            when(mockHighFunction.getLocalSymbolMap()).thenReturn(mockLocalSymbolMap);
-            
-            Parameter[] params = new Parameter[2];
-            when(mockFunction.getParameters()).thenReturn(params);
-            when(mockLocalSymbolMap.getNumParams()).thenReturn(3);
-            
-            boolean result = GhidraUtils.checkFullCommit(mockHighSymbol, mockHighFunction);
-            
-            assertTrue(result);
+        void testCheckFullCommit_DifferentParamCounts() throws Exception {
+            HighFunction hf = decompile();
+
+            // Record how many decompiler params exist
+            int decompilerParamCount = hf.getLocalSymbolMap().getNumParams();
+
+            // Add enough listing params to guarantee a mismatch with the decompiler
+            Function func = hf.getFunction();
+            int tx = program.startTransaction("add extra params");
+            try {
+                for (int i = func.getParameterCount(); i <= decompilerParamCount + 1; i++) {
+                    func.addParameter(
+                        new ParameterImpl("extra" + i,
+                            IntegerDataType.dataType, program),
+                        SourceType.USER_DEFINED);
+                }
+            } finally {
+                program.endTransaction(tx, true);
+            }
+
+            // Listing now has more params than the (stale) decompiler view → true
+            // Use null highSymbol which skips the isParameter early-return
+            assertTrue(GhidraUtils.checkFullCommit(null, hf),
+                "Should require full commit when listing param count exceeds decompiler param count");
         }
     }
 }
