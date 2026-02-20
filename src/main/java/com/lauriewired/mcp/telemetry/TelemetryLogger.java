@@ -101,7 +101,6 @@ public class TelemetryLogger {
         // Create telemetry directory if it doesn't exist
         try {
             Files.createDirectories(telemetryDir);
-            Msg.info(TelemetryLogger.class, "Telemetry directory created/verified at: " + telemetryDir);
         } catch (IOException e) {
             Msg.error(TelemetryLogger.class, "Failed to create telemetry directory: " + e.getMessage());
         }
@@ -302,7 +301,6 @@ public class TelemetryLogger {
             final String json = toJsonPretty(summary);
             Files.write(summaryFile.toFile().toPath(), (json + "\n").getBytes(StandardCharsets.UTF_8),
                        StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-            Msg.info(TelemetryLogger.class, "Daily summary written to: " + summaryFile);
         } catch (IOException e) {
             Msg.error(TelemetryLogger.class, "Failed to write daily summary: " + e.getMessage());
         }

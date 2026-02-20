@@ -136,6 +136,21 @@
       <version>5.21.0</version>
       <scope>test</scope>
     </dependency>
+
+    <!-- log4j2: managed here so our log4j2-test.xml controls test output.
+         Provided by Ghidra at runtime; test scope here keeps it off the shaded JAR. -->
+    <dependency>
+      <groupId>org.apache.logging.log4j</groupId>
+      <artifactId>log4j-api</artifactId>
+      <version>2.25.3</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.logging.log4j</groupId>
+      <artifactId>log4j-core</artifactId>
+      <version>2.25.3</version>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
@@ -404,8 +419,6 @@
             <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Generic/lib/gson-2.9.0.jar</additionalClasspathElement>
             <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Generic/lib/guava-32.1.3-jre.jar</additionalClasspathElement>
             <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Generic/lib/jdom-legacy-1.1.3.jar</additionalClasspathElement>
-            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Generic/lib/log4j-api-2.25.3.jar</additionalClasspathElement>
-            <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/Generic/lib/log4j-core-2.25.3.jar</additionalClasspathElement>
             <!-- Framework/SoftwareModeling -->
             <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/SoftwareModeling/lib/SoftwareModeling.jar</additionalClasspathElement>
             <additionalClasspathElement>${ghidra.install.dir}/Ghidra/Framework/SoftwareModeling/lib/antlr-runtime-3.5.2.jar</additionalClasspathElement>
