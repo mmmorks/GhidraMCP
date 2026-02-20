@@ -26,81 +26,80 @@ import ghidra.program.model.data.DataType;
  */
 public class NamespaceServiceTest {
 
-    private NamespaceService namespaceService;
-    private ProgramService programService;
+    @Nested
+    @DisplayName("No program loaded (null-guard tests)")
+    class NoProgramTests {
 
-    @BeforeEach
-    void setUp() {
-        // Test with null tool since we can't easily mock PluginTool
-        programService = new ProgramService(null);
-        namespaceService = new NamespaceService(programService);
+        private NamespaceService namespaceService;
+
+        @BeforeEach
+        void setUp() {
+            ProgramService programService = new ProgramService(null);
+            namespaceService = new NamespaceService(programService);
+        }
+
+        @Test
+        @DisplayName("listLabels returns error when no program is loaded")
+        void testListLabels_NoProgram() {
+            String result = namespaceService.listLabels(0, 10).toStructuredJson();
+            assertTrue(result.contains("\"message\":\"No program loaded\""));
+        }
+
+        @Test
+        @DisplayName("listLabels handles negative offset")
+        void testListLabels_NegativeOffset() {
+            String result = namespaceService.listLabels(-1, 10).toStructuredJson();
+            assertTrue(result.contains("\"message\":\"No program loaded\""));
+        }
+
+        @Test
+        @DisplayName("listLabels handles zero limit")
+        void testListLabels_ZeroLimit() {
+            String result = namespaceService.listLabels(0, 0).toStructuredJson();
+            assertTrue(result.contains("\"message\":\"No program loaded\""));
+        }
+
+        @Test
+        @DisplayName("getSymbolAddress returns error when no program is loaded")
+        void testGetSymbolAddress_NoProgram() {
+            String result = namespaceService.getSymbolAddress("main").toStructuredJson();
+            assertTrue(result.contains("\"message\":\"No program loaded\""));
+        }
+
+        @Test
+        @DisplayName("getSymbolAddress returns error for null symbol name")
+        void testGetSymbolAddress_NullSymbolName() {
+            String result = namespaceService.getSymbolAddress(null).toStructuredJson();
+            assertTrue(result.contains("\"message\":\"No program loaded\""));
+        }
+
+        @Test
+        @DisplayName("getSymbolAddress returns error for empty symbol name")
+        void testGetSymbolAddress_EmptySymbolName() {
+            String result = namespaceService.getSymbolAddress("").toStructuredJson();
+            assertTrue(result.contains("\"message\":\"No program loaded\""));
+        }
+
+        @Test
+        @DisplayName("getSymbolAddress handles valid symbol name")
+        void testGetSymbolAddress_ValidSymbolName() {
+            String result = namespaceService.getSymbolAddress("main").toStructuredJson();
+            assertTrue(result.contains("\"message\":\"No program loaded\""));
+        }
+
+        @Test
+        @DisplayName("getSymbolAddress handles symbol with special characters")
+        void testGetSymbolAddress_SpecialCharacters() {
+            String result = namespaceService.getSymbolAddress("_start@plt").toStructuredJson();
+            assertTrue(result.contains("\"message\":\"No program loaded\""));
+        }
+
+        @Test
+        @DisplayName("Constructor accepts null program service without throwing")
+        void testConstructor_NullProgramService() {
+            assertDoesNotThrow(() -> new NamespaceService(null));
+        }
     }
-
-    @Test
-    @DisplayName("listLabels returns error when no program is loaded")
-    void testListLabels_NoProgram() {
-        String result = namespaceService.listLabels(0, 10).toStructuredJson();
-        assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
-
-    @Test
-    @DisplayName("listLabels handles negative offset")
-    void testListLabels_NegativeOffset() {
-        String result = namespaceService.listLabels(-1, 10).toStructuredJson();
-        assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
-
-    @Test
-    @DisplayName("listLabels handles zero limit")
-    void testListLabels_ZeroLimit() {
-        String result = namespaceService.listLabels(0, 0).toStructuredJson();
-        assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
-
-    @Test
-    @DisplayName("getSymbolAddress returns error when no program is loaded")
-    void testGetSymbolAddress_NoProgram() {
-        String result = namespaceService.getSymbolAddress("main").toStructuredJson();
-        assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
-
-    @Test
-    @DisplayName("getSymbolAddress returns error for null symbol name")
-    void testGetSymbolAddress_NullSymbolName() {
-        String result = namespaceService.getSymbolAddress(null).toStructuredJson();
-        assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
-
-    @Test
-    @DisplayName("getSymbolAddress returns error for empty symbol name")
-    void testGetSymbolAddress_EmptySymbolName() {
-        String result = namespaceService.getSymbolAddress("").toStructuredJson();
-        assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
-
-    @Test
-    @DisplayName("getSymbolAddress handles valid symbol name")
-    void testGetSymbolAddress_ValidSymbolName() {
-        String result = namespaceService.getSymbolAddress("main").toStructuredJson();
-        assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
-
-    @Test
-    @DisplayName("getSymbolAddress handles symbol with special characters")
-    void testGetSymbolAddress_SpecialCharacters() {
-        String result = namespaceService.getSymbolAddress("_start@plt").toStructuredJson();
-        assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
-
-    @Test
-    @DisplayName("Constructor accepts null program service without throwing")
-    void testConstructor_NullProgramService() {
-        assertDoesNotThrow(() -> new NamespaceService(null));
-    }
-
-    // -----------------------------------------------------------------------
-    // ProgramBuilder-based happy-path tests
-    // -----------------------------------------------------------------------
 
     @Nested
     @DisplayName("ProgramBuilder-based happy-path tests")

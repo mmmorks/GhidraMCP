@@ -25,183 +25,186 @@ import ghidra.program.database.ProgramDB;
  */
 public class SearchServiceTest {
 
-    private SearchService searchService;
-    private ProgramService programService;
+    @Nested
+    @DisplayName("No program loaded (null-guard tests)")
+    class NoProgramTests {
 
-    @BeforeEach
-    void setUp() {
-        // Test with null tool since we can't easily mock PluginTool
-        programService = new ProgramService(null);
-        searchService = new SearchService(programService);
-    }
+        private SearchService searchService;
 
-    @Test
-    @DisplayName("searchMemory returns error when no program is loaded")
-    void testSearchMemory_NoProgram() {
-        String result = searchService.searchMemory("test", true, null, 10).toStructuredJson();
-        assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
+        @BeforeEach
+        void setUp() {
+            ProgramService programService = new ProgramService(null);
+            searchService = new SearchService(programService);
+        }
 
-    @Test
-    @DisplayName("searchMemory returns error for null query")
-    void testSearchMemory_NullQuery() {
-        String result = searchService.searchMemory(null, true, null, 10).toStructuredJson();
-        assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
+        @Test
+        @DisplayName("searchMemory returns error when no program is loaded")
+        void testSearchMemory_NoProgram() {
+            String result = searchService.searchMemory("test", true, null, 10).toStructuredJson();
+            assertTrue(result.contains("\"message\":\"No program loaded\""));
+        }
 
-    @Test
-    @DisplayName("searchMemory returns error for empty query")
-    void testSearchMemory_EmptyQuery() {
-        String result = searchService.searchMemory("", true, null, 10).toStructuredJson();
-        assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
+        @Test
+        @DisplayName("searchMemory returns error for null query")
+        void testSearchMemory_NullQuery() {
+            String result = searchService.searchMemory(null, true, null, 10).toStructuredJson();
+            assertTrue(result.contains("\"message\":\"No program loaded\""));
+        }
 
-    @Test
-    @DisplayName("searchMemory handles string search type")
-    void testSearchMemory_StringSearch() {
-        String result = searchService.searchMemory("test string", true, null, 10).toStructuredJson();
-        assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
+        @Test
+        @DisplayName("searchMemory returns error for empty query")
+        void testSearchMemory_EmptyQuery() {
+            String result = searchService.searchMemory("", true, null, 10).toStructuredJson();
+            assertTrue(result.contains("\"message\":\"No program loaded\""));
+        }
 
-    @Test
-    @DisplayName("searchMemory handles hex pattern search type")
-    void testSearchMemory_HexSearch() {
-        String result = searchService.searchMemory("48 65 6C 6C 6F", false, null, 10).toStructuredJson();
-        assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
+        @Test
+        @DisplayName("searchMemory handles string search type")
+        void testSearchMemory_StringSearch() {
+            String result = searchService.searchMemory("test string", true, null, 10).toStructuredJson();
+            assertTrue(result.contains("\"message\":\"No program loaded\""));
+        }
 
-    @Test
-    @DisplayName("searchMemory handles hex pattern with wildcards")
-    void testSearchMemory_HexSearchWithWildcards() {
-        String result = searchService.searchMemory("48 ?? 6C 6C ??", false, null, 10).toStructuredJson();
-        assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
+        @Test
+        @DisplayName("searchMemory handles hex pattern search type")
+        void testSearchMemory_HexSearch() {
+            String result = searchService.searchMemory("48 65 6C 6C 6F", false, null, 10).toStructuredJson();
+            assertTrue(result.contains("\"message\":\"No program loaded\""));
+        }
 
-    @Test
-    @DisplayName("searchMemory with specific block name")
-    void testSearchMemory_WithBlockName() {
-        String result = searchService.searchMemory("test", true, ".text", 10).toStructuredJson();
-        assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
+        @Test
+        @DisplayName("searchMemory handles hex pattern with wildcards")
+        void testSearchMemory_HexSearchWithWildcards() {
+            String result = searchService.searchMemory("48 ?? 6C 6C ??", false, null, 10).toStructuredJson();
+            assertTrue(result.contains("\"message\":\"No program loaded\""));
+        }
 
-    @Test
-    @DisplayName("searchMemory handles zero limit")
-    void testSearchMemory_ZeroLimit() {
-        String result = searchService.searchMemory("test", true, null, 0).toStructuredJson();
-        assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
+        @Test
+        @DisplayName("searchMemory with specific block name")
+        void testSearchMemory_WithBlockName() {
+            String result = searchService.searchMemory("test", true, ".text", 10).toStructuredJson();
+            assertTrue(result.contains("\"message\":\"No program loaded\""));
+        }
 
-    @Test
-    @DisplayName("searchMemory handles negative limit")
-    void testSearchMemory_NegativeLimit() {
-        String result = searchService.searchMemory("test", true, null, -1).toStructuredJson();
-        assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
+        @Test
+        @DisplayName("searchMemory handles zero limit")
+        void testSearchMemory_ZeroLimit() {
+            String result = searchService.searchMemory("test", true, null, 0).toStructuredJson();
+            assertTrue(result.contains("\"message\":\"No program loaded\""));
+        }
 
-    @Test
-    @DisplayName("searchDisassembly returns error when no program is loaded")
-    void testSearchDisassembly_NoProgram() {
-        String result = searchService.searchDisassembly("mov", 0, 10).toStructuredJson();
-        assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
+        @Test
+        @DisplayName("searchMemory handles negative limit")
+        void testSearchMemory_NegativeLimit() {
+            String result = searchService.searchMemory("test", true, null, -1).toStructuredJson();
+            assertTrue(result.contains("\"message\":\"No program loaded\""));
+        }
 
-    @Test
-    @DisplayName("searchDisassembly returns error for null query")
-    void testSearchDisassembly_NullQuery() {
-        String result = searchService.searchDisassembly(null, 0, 10).toStructuredJson();
-        assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
+        @Test
+        @DisplayName("searchDisassembly returns error when no program is loaded")
+        void testSearchDisassembly_NoProgram() {
+            String result = searchService.searchDisassembly("mov", 0, 10).toStructuredJson();
+            assertTrue(result.contains("\"message\":\"No program loaded\""));
+        }
 
-    @Test
-    @DisplayName("searchDisassembly returns error for empty query")
-    void testSearchDisassembly_EmptyQuery() {
-        String result = searchService.searchDisassembly("", 0, 10).toStructuredJson();
-        assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
+        @Test
+        @DisplayName("searchDisassembly returns error for null query")
+        void testSearchDisassembly_NullQuery() {
+            String result = searchService.searchDisassembly(null, 0, 10).toStructuredJson();
+            assertTrue(result.contains("\"message\":\"No program loaded\""));
+        }
 
-    @Test
-    @DisplayName("searchDisassembly handles invalid regex pattern")
-    void testSearchDisassembly_InvalidRegex() {
-        String result = searchService.searchDisassembly("[invalid", 0, 10).toStructuredJson();
-        // When no program is loaded, it returns "No program loaded" before checking regex
-        assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
+        @Test
+        @DisplayName("searchDisassembly returns error for empty query")
+        void testSearchDisassembly_EmptyQuery() {
+            String result = searchService.searchDisassembly("", 0, 10).toStructuredJson();
+            assertTrue(result.contains("\"message\":\"No program loaded\""));
+        }
 
-    @Test
-    @DisplayName("searchDisassembly handles valid regex pattern")
-    void testSearchDisassembly_ValidRegex() {
-        String result = searchService.searchDisassembly("mov.*eax", 0, 10).toStructuredJson();
-        assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
+        @Test
+        @DisplayName("searchDisassembly handles invalid regex pattern")
+        void testSearchDisassembly_InvalidRegex() {
+            String result = searchService.searchDisassembly("[invalid", 0, 10).toStructuredJson();
+            // When no program is loaded, it returns "No program loaded" before checking regex
+            assertTrue(result.contains("\"message\":\"No program loaded\""));
+        }
 
-    @Test
-    @DisplayName("searchDisassembly handles negative offset")
-    void testSearchDisassembly_NegativeOffset() {
-        String result = searchService.searchDisassembly("mov", -1, 10).toStructuredJson();
-        assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
+        @Test
+        @DisplayName("searchDisassembly handles valid regex pattern")
+        void testSearchDisassembly_ValidRegex() {
+            String result = searchService.searchDisassembly("mov.*eax", 0, 10).toStructuredJson();
+            assertTrue(result.contains("\"message\":\"No program loaded\""));
+        }
 
-    @Test
-    @DisplayName("searchDisassembly handles zero limit")
-    void testSearchDisassembly_ZeroLimit() {
-        String result = searchService.searchDisassembly("mov", 0, 0).toStructuredJson();
-        assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
+        @Test
+        @DisplayName("searchDisassembly handles negative offset")
+        void testSearchDisassembly_NegativeOffset() {
+            String result = searchService.searchDisassembly("mov", -1, 10).toStructuredJson();
+            assertTrue(result.contains("\"message\":\"No program loaded\""));
+        }
 
-    @Test
-    @DisplayName("searchDecompiled returns error when no program is loaded")
-    void testSearchDecompiled_NoProgram() {
-        String result = searchService.searchDecompiled("function", 0, 10).toStructuredJson();
-        assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
+        @Test
+        @DisplayName("searchDisassembly handles zero limit")
+        void testSearchDisassembly_ZeroLimit() {
+            String result = searchService.searchDisassembly("mov", 0, 0).toStructuredJson();
+            assertTrue(result.contains("\"message\":\"No program loaded\""));
+        }
 
-    @Test
-    @DisplayName("searchDecompiled returns error for null query")
-    void testSearchDecompiled_NullQuery() {
-        String result = searchService.searchDecompiled(null, 0, 10).toStructuredJson();
-        assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
+        @Test
+        @DisplayName("searchDecompiled returns error when no program is loaded")
+        void testSearchDecompiled_NoProgram() {
+            String result = searchService.searchDecompiled("function", 0, 10).toStructuredJson();
+            assertTrue(result.contains("\"message\":\"No program loaded\""));
+        }
 
-    @Test
-    @DisplayName("searchDecompiled returns error for empty query")
-    void testSearchDecompiled_EmptyQuery() {
-        String result = searchService.searchDecompiled("", 0, 10).toStructuredJson();
-        assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
+        @Test
+        @DisplayName("searchDecompiled returns error for null query")
+        void testSearchDecompiled_NullQuery() {
+            String result = searchService.searchDecompiled(null, 0, 10).toStructuredJson();
+            assertTrue(result.contains("\"message\":\"No program loaded\""));
+        }
 
-    @Test
-    @DisplayName("searchDecompiled handles invalid regex pattern")
-    void testSearchDecompiled_InvalidRegex() {
-        String result = searchService.searchDecompiled("(unclosed", 0, 10).toStructuredJson();
-        // When no program is loaded, it returns "No program loaded" before checking regex
-        assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
+        @Test
+        @DisplayName("searchDecompiled returns error for empty query")
+        void testSearchDecompiled_EmptyQuery() {
+            String result = searchService.searchDecompiled("", 0, 10).toStructuredJson();
+            assertTrue(result.contains("\"message\":\"No program loaded\""));
+        }
 
-    @Test
-    @DisplayName("searchDecompiled handles valid regex pattern")
-    void testSearchDecompiled_ValidRegex() {
-        String result = searchService.searchDecompiled("if\\s*\\(.*\\)", 0, 10).toStructuredJson();
-        assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
+        @Test
+        @DisplayName("searchDecompiled handles invalid regex pattern")
+        void testSearchDecompiled_InvalidRegex() {
+            String result = searchService.searchDecompiled("(unclosed", 0, 10).toStructuredJson();
+            // When no program is loaded, it returns "No program loaded" before checking regex
+            assertTrue(result.contains("\"message\":\"No program loaded\""));
+        }
 
-    @Test
-    @DisplayName("searchDecompiled handles negative offset")
-    void testSearchDecompiled_NegativeOffset() {
-        String result = searchService.searchDecompiled("function", -1, 10).toStructuredJson();
-        assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
+        @Test
+        @DisplayName("searchDecompiled handles valid regex pattern")
+        void testSearchDecompiled_ValidRegex() {
+            String result = searchService.searchDecompiled("if\\s*\\(.*\\)", 0, 10).toStructuredJson();
+            assertTrue(result.contains("\"message\":\"No program loaded\""));
+        }
 
-    @Test
-    @DisplayName("searchDecompiled handles zero limit")
-    void testSearchDecompiled_ZeroLimit() {
-        String result = searchService.searchDecompiled("function", 0, 0).toStructuredJson();
-        assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
+        @Test
+        @DisplayName("searchDecompiled handles negative offset")
+        void testSearchDecompiled_NegativeOffset() {
+            String result = searchService.searchDecompiled("function", -1, 10).toStructuredJson();
+            assertTrue(result.contains("\"message\":\"No program loaded\""));
+        }
 
-    @Test
-    @DisplayName("Constructor accepts null program service without throwing")
-    void testConstructor_NullProgramService() {
-        assertDoesNotThrow(() -> new SearchService(null));
+        @Test
+        @DisplayName("searchDecompiled handles zero limit")
+        void testSearchDecompiled_ZeroLimit() {
+            String result = searchService.searchDecompiled("function", 0, 0).toStructuredJson();
+            assertTrue(result.contains("\"message\":\"No program loaded\""));
+        }
+
+        @Test
+        @DisplayName("Constructor accepts null program service without throwing")
+        void testConstructor_NullProgramService() {
+            assertDoesNotThrow(() -> new SearchService(null));
+        }
     }
 
     /**
