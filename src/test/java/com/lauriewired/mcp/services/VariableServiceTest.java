@@ -424,6 +424,68 @@ public class VariableServiceTest {
             assertTrue(json.contains("Variable not found"),
                 "Should report variable not found, got: " + json);
         }
+
+        @Test
+        @DisplayName("splitVariable returns error when function not found")
+        void testSplitVariable_FunctionNotFound_PB() {
+            String json = svc.splitVariable("nonexistent_func_xyz", "local_10", "0x401000", "new_name")
+                .toStructuredJson();
+            assertTrue(json.contains("Function not found"),
+                "Should report function not found, got: " + json);
+        }
+
+        @Test
+        @DisplayName("splitVariable returns error when new name conflicts with existing variable")
+        void testSplitVariable_NameConflict() {
+            String varName = discoverVariable();
+            String usageAddr = discoverUsageAddress();
+
+            String json = svc.splitVariable("0x401000", varName, usageAddr, varName).toStructuredJson();
+            assertTrue(json.contains("already exists"),
+                "Should report name conflict, got: " + json);
+        }
+
+        @Test
+        @DisplayName("splitVariable exercises nearby varnode fallback when exact match fails")
+        void testSplitVariable_WithNearbyAddress() {
+            String varName = discoverVariable();
+            String exactAddr = discoverUsageAddress();
+
+            // Offset by 2 bytes so exact match fails (MIPS instructions are 4-byte aligned)
+            // but nearby match (within 16 bytes) succeeds
+            long addr = Long.parseUnsignedLong(exactAddr, 16);
+            String nearbyAddr = String.format("%08x", addr + 2);
+
+            ToolOutput result = svc.splitVariable("0x401000", varName, nearbyAddr, "nearby_split");
+            assertInstanceOf(JsonOutput.class, result);
+
+            SplitVariableResult data = (SplitVariableResult) ((JsonOutput) result).data();
+            assertNotNull(data.status());
+            assertNotNull(data.variables());
+        }
+
+        @Test
+        @DisplayName("splitVariable exercises any-varnode fallback when no nearby match found")
+        void testSplitVariable_WithFarAddress() {
+            String varName = discoverVariable();
+
+            // Use an address far from any usage (>16 bytes away from function body)
+            ToolOutput result = svc.splitVariable("0x401000", varName, "00401100", "far_split");
+            assertInstanceOf(JsonOutput.class, result);
+
+            SplitVariableResult data = (SplitVariableResult) ((JsonOutput) result).data();
+            assertNotNull(data.status());
+            assertNotNull(data.variables());
+        }
+
+        @Test
+        @DisplayName("setVariableTypes returns error for nonexistent variable with valid function")
+        void testSetVariableTypes_VariableNotFoundInTypes() {
+            String json = svc.setVariableTypes("0x401000",
+                Map.of("nonexistent_var_xyz_123", "int")).toStructuredJson();
+            assertTrue(json.contains("Variable not found"),
+                "Should report variable not found, got: " + json);
+        }
     }
 
     // ===== SplitVariableResult output format tests =====
