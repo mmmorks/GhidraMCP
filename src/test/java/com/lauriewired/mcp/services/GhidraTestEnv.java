@@ -30,7 +30,7 @@ public final class GhidraTestEnv {
     private GhidraTestEnv() {}
 
     /** Boot Ghidra headlessly; skips via assumption if no install is found. */
-    public static void initialize() {
+    public static synchronized void initialize() {
         File installDir = findGhidraInstall();
         assumeTrue(installDir != null,
             "Skipping: no Ghidra installation found (set GHIDRA_INSTALL_DIR)");

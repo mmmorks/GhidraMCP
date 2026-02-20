@@ -2,6 +2,9 @@ package com.lauriewired.mcp.utils;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.InstantSource;
 import java.util.Objects;
 import java.util.PriorityQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -18,12 +21,13 @@ import ghidra.util.Msg;
  */
 public class TimeoutHandler {
     private final long timeoutNanos;
+    private final InstantSource clock;
     private final PriorityQueue<RequestContext> timeoutQueue;
     private final Object queueLock = new Object();
     private final Thread monitorThread;
     private final AtomicBoolean shutdown;
     private final AtomicBoolean started;
-    
+
     /**
      * Context for tracking in-flight requests
      */
@@ -31,28 +35,27 @@ public class TimeoutHandler {
         final HttpExchange exchange;
         final Thread handlerThread;
         final String path;
-        final long timeoutAt; // Absolute time in nanos when this request times out
+        final Instant timeoutAt;
         final AtomicBoolean completed = new AtomicBoolean(false);
         final AtomicBoolean timedOut = new AtomicBoolean(false);
-        
-        RequestContext(final HttpExchange exchange, final Thread handlerThread, final String path, final long timeoutAt) {
+
+        RequestContext(final HttpExchange exchange, final Thread handlerThread, final String path, final Instant timeoutAt) {
             this.exchange = exchange;
             this.handlerThread = handlerThread;
             this.path = path;
             this.timeoutAt = timeoutAt;
         }
-        
+
         @Override
         public int compareTo(final RequestContext other) {
-            // Earlier timeouts come first
-            return Long.compare(this.timeoutAt, other.timeoutAt);
+            return this.timeoutAt.compareTo(other.timeoutAt);
         }
 
         @Override
         public boolean equals(final Object o) {
             if (this == o) return true;
             if (!(o instanceof RequestContext other)) return false;
-            return this.timeoutAt == other.timeoutAt && Objects.equals(this.path, other.path);
+            return this.timeoutAt.equals(other.timeoutAt) && Objects.equals(this.path, other.path);
         }
 
         @Override
@@ -60,18 +63,28 @@ public class TimeoutHandler {
             return Objects.hash(timeoutAt, path);
         }
     }
-    
+
     /**
-     * Create a new timeout handler
+     * Create a new timeout handler using the system clock.
      *
      * @param timeoutSeconds the timeout in seconds (0 or negative means no timeout)
      */
     public TimeoutHandler(final int timeoutSeconds) {
-        this.timeoutNanos = timeoutSeconds * 1_000_000_000L; // Convert to nanoseconds
+        this(timeoutSeconds, InstantSource.system());
+    }
+
+    /**
+     * Create a new timeout handler with an injectable clock.
+     * Package-private — tests inject a fake {@link InstantSource} and use
+     * {@link #wakeMonitor()} to trigger timeout processing without real-time waits.
+     */
+    TimeoutHandler(final int timeoutSeconds, final InstantSource clock) {
+        this.timeoutNanos = timeoutSeconds * 1_000_000_000L;
+        this.clock = clock;
         this.timeoutQueue = new PriorityQueue<>();
         this.shutdown = new AtomicBoolean(false);
         this.started = new AtomicBoolean(false);
-        
+
         // Only create monitor thread if timeout is enabled
         if (timeoutSeconds > 0) {
             this.monitorThread = new Thread(this::monitorTimeouts, "GhidraMCP-Timeout-Monitor");
@@ -81,7 +94,7 @@ public class TimeoutHandler {
             this.monitorThread = null;
         }
     }
-    
+
     /**
      * Start the timeout handler. Must be called after construction.
      * This method is idempotent - multiple calls have no effect.
@@ -91,7 +104,7 @@ public class TimeoutHandler {
             monitorThread.start();
         }
     }
-    
+
     /**
      * Create a wrapped handler that enforces timeouts
      *
@@ -101,23 +114,23 @@ public class TimeoutHandler {
     public HttpHandler wrap(final HttpHandler delegate) {
         return new TimeoutWrappedHandler(delegate);
     }
-    
+
     /**
      * Inner class that wraps individual handlers
      */
     private class TimeoutWrappedHandler implements HttpHandler {
         private final HttpHandler delegate;
-        
+
         TimeoutWrappedHandler(final HttpHandler delegate) {
             this.delegate = delegate;
         }
-        
+
         @Override
         public void handle(final HttpExchange exchange) throws IOException {
             TimeoutHandler.this.handleWithTimeout(exchange, delegate);
         }
     }
-    
+
     /**
      * Monitor thread that checks for timed out requests
      */
@@ -125,8 +138,8 @@ public class TimeoutHandler {
         while (!shutdown.get()) {
             try {
                 RequestContext nextTimeout = null;
-                long waitTime = Long.MAX_VALUE;
-                
+                Duration remaining = null;
+
                 synchronized (queueLock) {
                     // Clean up completed requests and find next timeout
                     while (!timeoutQueue.isEmpty()) {
@@ -137,49 +150,46 @@ public class TimeoutHandler {
                         } else {
                             // Found next active request
                             nextTimeout = context;
-                            final long now = System.nanoTime();
-                            waitTime = Math.max(0, context.timeoutAt - now);
+                            remaining = Duration.between(clock.instant(), context.timeoutAt);
                             break;
                         }
                     }
-                    
+
                     if (nextTimeout == null) {
                         // No requests to monitor, wait indefinitely
                         queueLock.wait();
                         continue;
-                    } else if (waitTime > 0) {
+                    } else if (!remaining.isNegative() && !remaining.isZero()) {
                         // Wait until the next timeout
-                        final long waitMillis = waitTime / 1_000_000;
-                        final int waitNanos = (int) (waitTime % 1_000_000);
-                        queueLock.wait(waitMillis, waitNanos);
+                        final long waitNanos = remaining.toNanos();
+                        final long waitMillis = waitNanos / 1_000_000;
+                        final int waitNanosRemainder = (int) (waitNanos % 1_000_000);
+                        queueLock.wait(waitMillis, waitNanosRemainder);
                         continue;
                     }
                 }
-                
+
                 // We have a request that should timeout now
-                if (!nextTimeout.completed.get()) {
-                    final long now = System.nanoTime();
-                    if (now >= nextTimeout.timeoutAt) {
-                        // Request has timed out
-                        nextTimeout.timedOut.set(true);
-                        
-                        // Try to close the exchange to interrupt I/O
-                        try {
-                            nextTimeout.exchange.close();
-                        } catch (Exception ignored) {
-                            // Closing a timed-out exchange may fail; safe to ignore
-                        }
-                        
-                        // Interrupt the handler thread
-                        nextTimeout.handlerThread.interrupt();
-                        
-                        Msg.warn(this, String.format("Request timeout after %.1f seconds for: %s",
-                            timeoutNanos / 1_000_000_000.0, nextTimeout.path));
-                        
-                        // Remove from queue
-                        synchronized (queueLock) {
-                            timeoutQueue.remove(nextTimeout);
-                        }
+                if (!nextTimeout.completed.get() && !clock.instant().isBefore(nextTimeout.timeoutAt)) {
+                    // Request has timed out
+                    nextTimeout.timedOut.set(true);
+
+                    // Try to close the exchange to interrupt I/O
+                    try {
+                        nextTimeout.exchange.close();
+                    } catch (Exception ignored) {
+                        // Closing a timed-out exchange may fail; safe to ignore
+                    }
+
+                    // Interrupt the handler thread
+                    nextTimeout.handlerThread.interrupt();
+
+                    Msg.warn(this, String.format("Request timeout after %.1f seconds for: %s",
+                        timeoutNanos / 1_000_000_000.0, nextTimeout.path));
+
+                    // Remove from queue
+                    synchronized (queueLock) {
+                        timeoutQueue.remove(nextTimeout);
                     }
                 }
             } catch (InterruptedException e) {
@@ -192,7 +202,7 @@ public class TimeoutHandler {
             }
         }
     }
-    
+
     /**
      * Handle a request with timeout enforcement
      */
@@ -202,30 +212,30 @@ public class TimeoutHandler {
             delegate.handle(exchange);
             return;
         }
-        
+
         // If timeout is disabled (0 or negative), just execute normally
         if (timeoutNanos <= 0) {
             delegate.handle(exchange);
             return;
         }
-        
+
         final String requestPath = exchange.getRequestURI().getPath();
-        final long timeoutAt = System.nanoTime() + timeoutNanos;
+        final Instant timeoutAt = clock.instant().plusNanos(timeoutNanos);
         final RequestContext context = new RequestContext(exchange, Thread.currentThread(), requestPath, timeoutAt);
-        
+
         // Add to timeout queue and notify monitor
         synchronized (queueLock) {
             timeoutQueue.offer(context);
             queueLock.notify(); // Wake up monitor thread to recalculate next timeout
         }
-        
+
         try {
             // Execute the handler in the current thread
             delegate.handle(exchange);
-            
+
             // Mark as completed
             context.completed.set(true);
-            
+
             // Check if we timed out during execution
             if (context.timedOut.get()) {
                 Msg.warn(this, String.format("Request completed but had already timed out after %.1f seconds for: %s",
@@ -233,7 +243,7 @@ public class TimeoutHandler {
             }
         } catch (IOException e) {
             context.completed.set(true);
-            
+
             // If we timed out, log it but still throw the IOException
             if (context.timedOut.get()) {
                 Msg.warn(this, String.format("Request timed out after %.1f seconds and threw IOException for: %s",
@@ -242,7 +252,7 @@ public class TimeoutHandler {
             throw e;
         } catch (RuntimeException e) {
             context.completed.set(true);
-            
+
             // If we timed out, send timeout response instead of propagating the exception
             if (context.timedOut.get()) {
                 sendTimeoutResponse(exchange);
@@ -253,7 +263,18 @@ public class TimeoutHandler {
             }
         }
     }
-    
+
+    /**
+     * Wake the monitor thread to re-check timeouts.
+     * Package-private for testing — allows tests with a fake clock to trigger
+     * timeout processing without real-time waits.
+     */
+    void wakeMonitor() {
+        synchronized (queueLock) {
+            queueLock.notify();
+        }
+    }
+
     /**
      * Send a timeout response to the client as JSON
      */
@@ -286,7 +307,7 @@ public class TimeoutHandler {
             os.write(bytes);
         }
     }
-    
+
     /**
      * Shutdown the timeout handler and stop the monitor thread
      */
@@ -297,7 +318,7 @@ public class TimeoutHandler {
             synchronized (queueLock) {
                 queueLock.notify();
             }
-            
+
             // Wait for it to finish
             try {
                 monitorThread.join(1000);
