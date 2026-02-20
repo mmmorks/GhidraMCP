@@ -137,6 +137,24 @@
       <scope>test</scope>
     </dependency>
 
+    <!-- junit-platform-launcher: needed to implement LauncherSessionListener -->
+    <dependency>
+      <groupId>org.junit.platform</groupId>
+      <artifactId>junit-platform-launcher</artifactId>
+      <version>1.9.2</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- slf4j-nop: victools pulls in slf4j-api 2.x; Ghidra's slf4j-nop-1.7.x is
+         incompatible with 2.x, causing SLF4J warnings. This provides a matching
+         2.x no-op provider and keeps it off the shaded JAR. -->
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-nop</artifactId>
+      <version>2.0.16</version>
+      <scope>test</scope>
+    </dependency>
+
     <!-- log4j2: managed here so our log4j2-test.xml controls test output.
          Provided by Ghidra at runtime; test scope here keeps it off the shaded JAR. -->
     <dependency>
@@ -376,6 +394,7 @@
             -Dnet.bytebuddy.experimental=true
             --add-opens java.base/java.lang=ALL-UNNAMED
             --add-opens java.base/java.util=ALL-UNNAMED
+            -Dlog4j.configurationFile=log4j2-test.xml
           </argLine>
           <!--
             Exclude system-scoped Ghidra JARs from lib/ so that classes are loaded
