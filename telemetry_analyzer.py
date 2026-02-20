@@ -32,7 +32,6 @@ FALLBACK_MCP_TOOLS = [
     'get_current_address',
     'get_current_function',
     'get_data_type',
-    'get_function_by_address',
     'get_function_code',
     'get_memory_layout',
     'get_memory_permissions',

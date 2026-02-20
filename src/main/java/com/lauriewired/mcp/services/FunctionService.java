@@ -16,7 +16,6 @@ import com.lauriewired.mcp.model.StatusOutput;
 import com.lauriewired.mcp.model.ToolOutput;
 import com.lauriewired.mcp.model.response.CurrentAddressResult;
 import com.lauriewired.mcp.model.response.CurrentFunctionResult;
-import com.lauriewired.mcp.model.response.FunctionByAddressResult;
 import com.lauriewired.mcp.model.response.FunctionCodeResult;
 import com.lauriewired.mcp.model.response.FunctionItem;
 import com.lauriewired.mcp.model.response.FunctionSearchItem;
@@ -245,37 +244,6 @@ public class FunctionService {
         } catch (InvalidInputException | DuplicateNameException | RuntimeException e) {
             Msg.error(this, "Error renaming functions", e);
             return StatusOutput.error("Failed to rename functions: " + e.getMessage());
-        }
-    }
-
-    @McpTool(outputType = JsonOutput.class, responseType = FunctionByAddressResult.class, description = """
-        Get detailed information about a function at the specified address.
-
-        Retrieves name, signature, entry point and body range for the function.
-
-        Returns: Detailed function information or error message
-
-        Example: get_function_by_address("00401000") -> "Function: main at 00401000..." """)
-    public ToolOutput getFunctionByAddress(
-            @Param("Address to look up (e.g., \"00401000\" or \"ram:00401000\")") final String address) {
-        final Program program = programService.getCurrentProgram();
-        if (program == null) return StatusOutput.error("No program loaded");
-        if (address == null || address.isEmpty()) return StatusOutput.error("Address is required");
-
-        try {
-            final Address addr = program.getAddressFactory().getAddress(address);
-            final Function func = GhidraUtils.getFunctionForAddress(program, addr);
-
-            if (func == null) return StatusOutput.error("No function found at address " + address);
-
-            return new JsonOutput(new FunctionByAddressResult(
-                    func.getName(),
-                    func.getSignature().toString(),
-                    func.getEntryPoint().toString(),
-                    func.getBody().getMinAddress().toString(),
-                    func.getBody().getMaxAddress().toString()));
-        } catch (Exception e) {
-            return StatusOutput.error("Error getting function: " + e.getMessage());
         }
     }
 

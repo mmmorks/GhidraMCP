@@ -43,7 +43,6 @@ MCP Server + Ghidra Plugin
 | `get_function_code` | Get a function's decompiled or disassembled code |
 | `rename_function` | Rename a function by name or address |
 | `set_function_prototype` | Set or modify a function's signature/prototype |
-| `get_function_by_address` | Get detailed information about a function at an address |
 | `get_current_address` | Get the address currently selected in the Ghidra GUI |
 | `get_current_function` | Get the function currently selected in the Ghidra GUI |
 | `search_functions_by_name` | Search for functions by partial name match |

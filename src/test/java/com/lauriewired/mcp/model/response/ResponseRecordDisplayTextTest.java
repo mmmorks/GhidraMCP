@@ -707,26 +707,6 @@ class ResponseRecordDisplayTextTest {
         }
     }
 
-    // --- FunctionByAddressResult ---
-
-    @Nested
-    @DisplayName("FunctionByAddressResult")
-    class FunctionByAddressResultTests {
-
-        @Test
-        @DisplayName("toDisplayText includes all fields")
-        void testDisplay() {
-            var result = new FunctionByAddressResult("main", "int main(int, char **)",
-                "00401000", "00401000", "0040104F");
-            String text = result.toDisplayText();
-
-            assertTrue(text.contains("Function: main at 00401000"));
-            assertTrue(text.contains("Signature: int main(int, char **)"));
-            assertTrue(text.contains("Entry: 00401000"));
-            assertTrue(text.contains("Body: 00401000 - 0040104F"));
-        }
-    }
-
     // --- JsonOutput wrapping ---
 
     @Nested

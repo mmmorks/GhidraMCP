@@ -21,7 +21,6 @@ import org.junit.jupiter.api.Test;
 import com.lauriewired.mcp.model.JsonOutput;
 import com.lauriewired.mcp.model.ListOutput;
 import com.lauriewired.mcp.model.ToolOutput;
-import com.lauriewired.mcp.model.response.FunctionByAddressResult;
 import com.lauriewired.mcp.model.response.FunctionCodeResult;
 import com.lauriewired.mcp.model.response.FunctionSearchItem;
 import com.lauriewired.mcp.model.response.RenameFunctionsResult;
@@ -134,25 +133,6 @@ public class FunctionServiceTest {
     }
 
     @Test
-    @DisplayName("getFunctionByAddress returns error when no program loaded")
-    void testGetFunctionByAddress_NoProgram() {
-        FunctionService service = nullProgramService();
-        String result = service.getFunctionByAddress("0x401000").toStructuredJson();
-        assertTrue(result.contains("\"message\":\"No program loaded\""));
-    }
-
-    @Test
-    @DisplayName("getFunctionByAddress returns error for null address")
-    void testGetFunctionByAddress_NullAddress() throws Exception {
-        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
-        builder.createMemory(".text", "0x401000", 0x1000);
-        FunctionService service = serviceFor(builder.getProgram());
-
-        String result = service.getFunctionByAddress(null).toStructuredJson();
-        assertTrue(result.contains("\"message\":\"Address is required\""));
-    }
-
-    @Test
     @DisplayName("setFunctionPrototype returns error when no program loaded")
     void testSetFunctionPrototype_NoProgram() {
         FunctionService service = nullProgramService();
@@ -205,6 +185,31 @@ public class FunctionServiceTest {
     }
 
     @Test
+    @DisplayName("setFunctionPrototype returns error when function not found")
+    void testSetFunctionPrototype_FunctionNotFound() throws Exception {
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        FunctionService service = serviceFor(builder.getProgram());
+
+        String result = service.setFunctionPrototype("nonexistent", "int test(void)").toStructuredJson();
+        assertTrue(result.contains("Failed to set function prototype"),
+            "Should report function not found, got: " + result);
+    }
+
+    @Test
+    @DisplayName("setFunctionPrototype NPE when tool is null but function exists")
+    void testSetFunctionPrototype_NullTool_CausesNPE() throws Exception {
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        builder.createEmptyFunction("testFunc", "0x401000", 0x20, DataType.DEFAULT);
+        FunctionService service = serviceFor(builder.getProgram());
+
+        String result = service.setFunctionPrototype("testFunc", "int test(void)").toStructuredJson();
+        assertTrue(result.contains("Failed to set function prototype"),
+            "Should report prototype error due to null tool, got: " + result);
+    }
+
+    @Test
     @DisplayName("Constructor accepts null tool without throwing")
     void testConstructor_NullTool() {
         assertDoesNotThrow(() -> new FunctionService(null, new ProgramService(null)));
@@ -232,6 +237,24 @@ public class FunctionServiceTest {
         FunctionService service = nullProgramService();
         String result = service.getFunctionCode("main", "asm").toStructuredJson();
         assertTrue(result.contains("\"message\":\"No program loaded\""));
+    }
+
+    // ===== getCurrentAddress / getCurrentFunction null tool =====
+
+    @Test
+    @DisplayName("getCurrentAddress returns error when tool is null")
+    void testGetCurrentAddress_NullTool() {
+        FunctionService service = nullProgramService();
+        String result = service.getCurrentAddress().toStructuredJson();
+        assertTrue(result.contains("\"message\":\"No tool available\""));
+    }
+
+    @Test
+    @DisplayName("getCurrentFunction returns error when tool is null")
+    void testGetCurrentFunction_NullTool() {
+        FunctionService service = nullProgramService();
+        String result = service.getCurrentFunction().toStructuredJson();
+        assertTrue(result.contains("\"message\":\"No tool available\""));
     }
 
     // ===== resolveFunction null/error paths =====
@@ -472,27 +495,6 @@ public class FunctionServiceTest {
         assertEquals("emptyFunc", data.function());
         assertEquals("assembly", data.format());
         assertEquals(0, data.lines().size());
-    }
-
-    @Test
-    @DisplayName("getFunctionByAddress returns function details successfully")
-    void testGetFunctionByAddress_Success() throws Exception {
-        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
-        builder.createMemory(".text", "0x401000", 0x1000);
-        builder.createEmptyFunction("main", "0x401000", 0x50, DataType.DEFAULT);
-
-        ProgramDB program = builder.getProgram();
-        FunctionService service = serviceFor(program);
-
-        ToolOutput result = service.getFunctionByAddress("0x401000");
-        assertTrue(result instanceof JsonOutput);
-
-        FunctionByAddressResult data = (FunctionByAddressResult) ((JsonOutput) result).data();
-        assertEquals("main", data.name());
-        assertNotNull(data.signature());
-        assertNotNull(data.entryPoint());
-        assertNotNull(data.bodyStart());
-        assertNotNull(data.bodyEnd());
     }
 
     @Test
@@ -751,6 +753,19 @@ public class FunctionServiceTest {
         assertTrue(result.contains("Function not found: nonexistent"));
     }
 
+    @Test
+    @DisplayName("renameFunctions returns error for invalid function name")
+    void testRenameFunctions_InvalidName() throws Exception {
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        builder.createEmptyFunction("validFunc", "0x401000", 0x20, DataType.DEFAULT);
+
+        FunctionService service = serviceFor(builder.getProgram());
+        String result = service.renameFunctions(Map.of("validFunc", "bad name!")).toStructuredJson();
+        assertTrue(result.contains("Failed to rename functions"),
+            "Should report rename failure for invalid name, got: " + result);
+    }
+
     // ===== searchFunctionsByName happy-path tests =====
 
     @Test
@@ -812,6 +827,30 @@ public class FunctionServiceTest {
         ListOutput list = (ListOutput) result;
         assertEquals(1, list.items().size());
         assertTrue(list.hasMore());
+    }
+
+    @Test
+    @DisplayName("searchFunctionsByName returns error for null query")
+    void testSearchFunctionsByName_NullQuery() throws Exception {
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        builder.createEmptyFunction("test_func", "0x401000", 0x20, DataType.DEFAULT);
+
+        FunctionService service = serviceFor(builder.getProgram());
+        String result = service.searchFunctionsByName(null, 0, 100).toStructuredJson();
+        assertTrue(result.contains("\"message\":\"Search term is required\""));
+    }
+
+    @Test
+    @DisplayName("searchFunctionsByName returns error for empty query")
+    void testSearchFunctionsByName_EmptyQuery() throws Exception {
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        builder.createEmptyFunction("test_func", "0x401000", 0x20, DataType.DEFAULT);
+
+        FunctionService service = serviceFor(builder.getProgram());
+        String result = service.searchFunctionsByName("", 0, 100).toStructuredJson();
+        assertTrue(result.contains("\"message\":\"Search term is required\""));
     }
 
     // ===== Register assumptions tests =====
