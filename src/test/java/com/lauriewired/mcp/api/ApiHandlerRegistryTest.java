@@ -172,7 +172,6 @@ class ApiHandlerRegistryTest {
         verify(mockHttpServer).createContext(eq("/get_address_data_type"), any(HttpHandler.class));
 
         // Comment endpoints
-        verify(mockHttpServer).createContext(eq("/get_comment"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/set_comment"), any(HttpHandler.class));
 
         // Search endpoints
@@ -332,8 +331,8 @@ class ApiHandlerRegistryTest {
 
         registry.registerAllEndpoints();
 
-        // 39 tool endpoints + 1 /mcp/tools metadata endpoint = 40
-        verify(mockHttpServer, times(40)).createContext(anyString(), any(HttpHandler.class));
+        // 38 tool endpoints + 1 /mcp/tools metadata endpoint = 39
+        verify(mockHttpServer, times(39)).createContext(anyString(), any(HttpHandler.class));
     }
 
     @Test
@@ -345,8 +344,8 @@ class ApiHandlerRegistryTest {
 
         registry.registerAllEndpoints();
 
-        // Should have 39 tool definitions
-        assertEquals(39, registry.getToolDefs().size());
+        // Should have 38 tool definitions
+        assertEquals(38, registry.getToolDefs().size());
     }
 
     @Test

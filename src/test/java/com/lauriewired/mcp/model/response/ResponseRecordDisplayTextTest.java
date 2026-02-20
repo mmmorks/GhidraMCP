@@ -20,62 +20,6 @@ import com.lauriewired.mcp.model.JsonOutput;
  */
 class ResponseRecordDisplayTextTest {
 
-    // --- CommentResult ---
-
-    @Nested
-    @DisplayName("CommentResult")
-    class CommentResultTests {
-
-        @Test
-        @DisplayName("toDisplayText shows all comment types")
-        void testAllCommentTypes() {
-            var comments = new CommentResult.Comments("pre text", "post text", "eol text", "plate text", "repeatable text");
-            var result = new CommentResult("00401000", comments);
-            String text = result.toDisplayText();
-
-            assertTrue(text.contains("Comments at 00401000:"));
-            assertTrue(text.contains("Pre Comment (Decompiler):\npre text"));
-            assertTrue(text.contains("Post Comment:\npost text"));
-            assertTrue(text.contains("End-of-Line Comment (Disassembly):\neol text"));
-            assertTrue(text.contains("Plate Comment:\nplate text"));
-            assertTrue(text.contains("Repeatable Comment:\nrepeatable text"));
-        }
-
-        @Test
-        @DisplayName("toDisplayText shows no-comments message when all null")
-        void testNoComments() {
-            var comments = new CommentResult.Comments(null, null, null, null, null);
-            var result = new CommentResult("00401000", comments);
-            String text = result.toDisplayText();
-
-            assertTrue(text.contains("(No comments found at this address)"));
-        }
-
-        @Test
-        @DisplayName("toDisplayText shows only pre comment when others are null")
-        void testOnlyPreComment() {
-            var comments = new CommentResult.Comments("just pre", null, null, null, null);
-            var result = new CommentResult("00401000", comments);
-            String text = result.toDisplayText();
-
-            assertTrue(text.contains("Pre Comment"));
-            assertTrue(text.contains("just pre"));
-            assertTrue(!text.contains("No comments found"));
-        }
-
-        @Test
-        @DisplayName("toStructuredJson via JsonOutput serializes correctly")
-        void testStructuredJson() {
-            var comments = new CommentResult.Comments("pre", null, "eol", null, null);
-            var result = new CommentResult("00401000", comments);
-            String json = new JsonOutput(result).toStructuredJson();
-
-            assertTrue(json.contains("\"address\":\"00401000\""));
-            assertTrue(json.contains("\"pre\":\"pre\""));
-            assertTrue(json.contains("\"eol\":\"eol\""));
-        }
-    }
-
     // --- ProgramInfoResult ---
 
     @Nested

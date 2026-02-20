@@ -90,7 +90,7 @@ public class FunctionService {
 
         Resolves the function by name or address, then returns the requested output.
 
-        Returns: Array of single-entry {address: code} objects. Empty string key "" means no mapped address. Assembly comments are inlined as "code ; comment".
+        Returns: Array of single-entry {address: code} objects. Empty string key "" means no mapped address. Assembly mode includes all comment types: plate and pre comments as "; text" lines before the instruction, EOL and repeatable comments inlined as "code ; comment", and post comments as "; text" lines after the instruction.
 
         Examples:
             get_function_code("main") -> C pseudocode for main
@@ -150,11 +150,32 @@ public class FunctionService {
             final Instruction instr = instructions.next();
             if (instr.getAddress().compareTo(end) > 0) break;
 
-            final String comment = listing.getComment(CommentType.EOL, instr.getAddress());
-            final String code = comment != null ? instr.toString() + " ; " + comment : instr.toString();
-            lines.add(FunctionCodeResult.line(instr.getAddress().toString(), code));
+            final String addr = instr.getAddress().toString();
+
+            // Plate comment (block header, above instruction)
+            addCommentLines(lines, listing.getComment(CommentType.PLATE, instr.getAddress()), addr);
+            // Pre comment (above instruction)
+            addCommentLines(lines, listing.getComment(CommentType.PRE, instr.getAddress()), addr);
+
+            // Instruction with inline EOL and repeatable comments
+            final String eolComment = listing.getComment(CommentType.EOL, instr.getAddress());
+            final String repeatableComment = listing.getComment(CommentType.REPEATABLE, instr.getAddress());
+            final StringBuilder code = new StringBuilder(instr.toString());
+            if (eolComment != null) code.append(" ; ").append(eolComment);
+            if (repeatableComment != null) code.append(" ; ").append(repeatableComment);
+            lines.add(FunctionCodeResult.line(addr, code.toString()));
+
+            // Post comment (below instruction)
+            addCommentLines(lines, listing.getComment(CommentType.POST, instr.getAddress()), addr);
         }
         return lines;
+    }
+
+    private static void addCommentLines(final List<Map<String, String>> lines, final String comment, final String addr) {
+        if (comment == null) return;
+        for (final String line : comment.split("\n")) {
+            lines.add(FunctionCodeResult.line(addr, "; " + line));
+        }
     }
 
     private List<Map<String, String>> getPcodeLines(final Program program, final Function func) {
@@ -170,12 +191,34 @@ public class FunctionService {
             return List.of(FunctionCodeResult.line(null, "No high function available"));
         }
 
+        final Listing listing = program.getListing();
         final List<Map<String, String>> lines = new ArrayList<>();
         final var iter = highFunction.getPcodeOps();
+        Address prevAddr = null;
         while (iter.hasNext()) {
             final var op = iter.next();
-            final String addr = op.getSeqnum().getTarget().toString();
+            final Address opAddr = op.getSeqnum().getTarget();
+            final String addr = opAddr.toString();
+
+            // Emit comments once per new instruction address
+            if (!opAddr.equals(prevAddr)) {
+                // Post comment for previous address (below that instruction's ops)
+                if (prevAddr != null) {
+                    addCommentLines(lines, listing.getComment(CommentType.POST, prevAddr), prevAddr.toString());
+                }
+                // Plate, pre, EOL, repeatable before this instruction's ops
+                addCommentLines(lines, listing.getComment(CommentType.PLATE, opAddr), addr);
+                addCommentLines(lines, listing.getComment(CommentType.PRE, opAddr), addr);
+                addCommentLines(lines, listing.getComment(CommentType.EOL, opAddr), addr);
+                addCommentLines(lines, listing.getComment(CommentType.REPEATABLE, opAddr), addr);
+                prevAddr = opAddr;
+            }
+
             lines.add(FunctionCodeResult.line(addr, op.toString()));
+        }
+        // Post comment for the final address
+        if (prevAddr != null) {
+            addCommentLines(lines, listing.getComment(CommentType.POST, prevAddr), prevAddr.toString());
         }
         return lines;
     }

@@ -783,6 +783,85 @@ public class FunctionServiceTest {
     }
 
     @Test
+    @DisplayName("getFunctionCode assembly mode includes all comment types")
+    void testGetFunctionCode_Assembly_AllCommentTypes() throws Exception {
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        builder.setBytes("0x401000",
+            "27 BD FF F8 AF BF 00 04 00 00 00 00 8F BF 00 04 27 BD 00 08 03 E0 00 08 00 00 00 00",
+            true);
+        builder.createFunction("0x401000");
+        builder.createComment("0x401000", "plate header", CommentType.PLATE);
+        builder.createComment("0x401000", "before instruction", CommentType.PRE);
+        builder.createComment("0x401000", "end of line", CommentType.EOL);
+        builder.createComment("0x401000", "after instruction", CommentType.POST);
+        builder.createComment("0x401000", "repeatable note", CommentType.REPEATABLE);
+
+        ProgramDB program = builder.getProgram();
+        FunctionService service = serviceFor(program);
+
+        ToolOutput result = service.getFunctionCode("0x401000", "assembly");
+        FunctionCodeResult data = (FunctionCodeResult) ((JsonOutput) result).data();
+
+        List<String> codes = data.lines().stream()
+            .map(m -> m.values().iterator().next())
+            .toList();
+
+        // Plate and pre comments appear before the instruction
+        assertTrue(codes.stream().anyMatch(c -> c.equals("; plate header")),
+            "Should contain plate comment, got: " + codes);
+        assertTrue(codes.stream().anyMatch(c -> c.equals("; before instruction")),
+            "Should contain pre comment, got: " + codes);
+
+        // EOL and repeatable are inlined on the instruction line
+        String instrLine = codes.stream()
+            .filter(c -> c.contains("; end of line"))
+            .findFirst().orElseThrow(() -> new AssertionError("No line with EOL comment in: " + codes));
+        assertTrue(instrLine.contains("; repeatable note"),
+            "Instruction line should also contain repeatable comment, got: " + instrLine);
+        assertFalse(instrLine.startsWith(";"),
+            "Instruction line should start with instruction, not comment prefix, got: " + instrLine);
+
+        // Post comment appears after the instruction
+        assertTrue(codes.stream().anyMatch(c -> c.equals("; after instruction")),
+            "Should contain post comment, got: " + codes);
+
+        // Verify ordering: plate, pre, instruction, post
+        int plateIdx = codes.indexOf("; plate header");
+        int preIdx = codes.indexOf("; before instruction");
+        int instrIdx = codes.indexOf(instrLine);
+        int postIdx = codes.indexOf("; after instruction");
+        assertTrue(plateIdx < preIdx, "Plate should come before pre");
+        assertTrue(preIdx < instrIdx, "Pre should come before instruction");
+        assertTrue(instrIdx < postIdx, "Instruction should come before post");
+    }
+
+    @Test
+    @DisplayName("getFunctionCode assembly mode handles multiline comments")
+    void testGetFunctionCode_Assembly_MultilineComments() throws Exception {
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        builder.setBytes("0x401000",
+            "27 BD FF F8 AF BF 00 04 00 00 00 00 8F BF 00 04 27 BD 00 08 03 E0 00 08 00 00 00 00",
+            true);
+        builder.createFunction("0x401000");
+        builder.createComment("0x401000", "line one\nline two", CommentType.PRE);
+
+        ProgramDB program = builder.getProgram();
+        FunctionService service = serviceFor(program);
+
+        ToolOutput result = service.getFunctionCode("0x401000", "assembly");
+        FunctionCodeResult data = (FunctionCodeResult) ((JsonOutput) result).data();
+
+        List<String> codes = data.lines().stream()
+            .map(m -> m.values().iterator().next())
+            .toList();
+
+        assertTrue(codes.contains("; line one"), "Should contain first line of multiline comment, got: " + codes);
+        assertTrue(codes.contains("; line two"), "Should contain second line of multiline comment, got: " + codes);
+    }
+
+    @Test
     @DisplayName("getFunctionCode assembly mode toDisplayText reproduces readable format")
     void testGetFunctionCode_Assembly_DisplayText() throws Exception {
         builder = new ProgramBuilder("test", GhidraTestEnv.LANG);

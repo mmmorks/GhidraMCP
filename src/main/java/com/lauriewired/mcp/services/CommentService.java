@@ -2,14 +2,11 @@ package com.lauriewired.mcp.services;
 
 import com.lauriewired.mcp.api.McpTool;
 import com.lauriewired.mcp.api.Param;
-import com.lauriewired.mcp.model.JsonOutput;
 import com.lauriewired.mcp.model.StatusOutput;
 import com.lauriewired.mcp.model.ToolOutput;
-import com.lauriewired.mcp.model.response.CommentResult;
 import com.lauriewired.mcp.utils.ProgramTransaction;
 
 import ghidra.program.model.address.Address;
-import ghidra.program.model.listing.CodeUnit;
 import ghidra.program.model.listing.CommentType;
 import ghidra.program.model.listing.Program;
 import ghidra.util.Msg;
@@ -79,40 +76,6 @@ public class CommentService {
         } catch (Exception e) {
             Msg.error(this, "Error setting " + transactionName.toLowerCase(), e);
             return false;
-        }
-    }
-
-    @McpTool(outputType = JsonOutput.class, responseType = CommentResult.class, description = """
-        Get all comments at a specific address.
-
-        Retrieves all comment types (pre/decompiler, post, eol/disassembly, plate, repeatable).
-
-        Returns: All comments found at the address, organized by type
-
-        Example: get_comment("00401000") -> "Pre Comment (Decompiler): Initialize system..." """)
-    public ToolOutput getComment(
-            @Param("Address to get comments from (e.g., \"00401000\")") final String address) {
-        final Program program = programService.getCurrentProgram();
-        if (program == null) return StatusOutput.error("No program loaded");
-        if (address == null || address.isEmpty()) return StatusOutput.error("Address is required");
-
-        try {
-            final Address addr = program.getAddressFactory().getAddress(address);
-            if (addr == null) return StatusOutput.error("Invalid address: " + address);
-
-            final CodeUnit codeUnit = program.getListing().getCodeUnitAt(addr);
-            if (codeUnit == null) return StatusOutput.error("No code unit at address: " + address);
-
-            return new JsonOutput(new CommentResult(
-                    address,
-                    new CommentResult.Comments(
-                            codeUnit.getComment(CommentType.PRE),
-                            codeUnit.getComment(CommentType.POST),
-                            codeUnit.getComment(CommentType.EOL),
-                            codeUnit.getComment(CommentType.PLATE),
-                            codeUnit.getComment(CommentType.REPEATABLE))));
-        } catch (Exception e) {
-            return StatusOutput.error("Error getting comments: " + e.getMessage());
         }
     }
 

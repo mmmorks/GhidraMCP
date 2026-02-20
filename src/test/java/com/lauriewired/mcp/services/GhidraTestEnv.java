@@ -60,6 +60,11 @@ public final class GhidraTestEnv {
         };
     }
 
+    /** FunctionService backed by a real Program (no PluginTool). */
+    static FunctionService functionService(Program program) {
+        return new FunctionService(null, programService(program));
+    }
+
     // --- Ghidra install detection ---
 
     private static File findGhidraInstall() {

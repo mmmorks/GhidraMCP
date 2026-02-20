@@ -1,8 +1,10 @@
 package com.lauriewired.mcp.services;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.List;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -12,8 +14,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import com.lauriewired.mcp.model.JsonOutput;
-import com.lauriewired.mcp.model.StatusOutput;
-import com.lauriewired.mcp.model.ToolOutput;
+import com.lauriewired.mcp.model.response.FunctionCodeResult;
 
 import ghidra.program.database.ProgramBuilder;
 import ghidra.program.database.ProgramDB;
@@ -134,20 +135,6 @@ public class CommentServiceTest {
         }
 
         @Test
-        @DisplayName("getComment returns error when no program is loaded")
-        void testGetComment_NoProgram() {
-            String result = commentService.getComment("0x1000").toStructuredJson();
-            assertTrue(result.contains("\"message\":\"No program loaded\""));
-        }
-
-        @Test
-        @DisplayName("getComment returns error for null address")
-        void testGetComment_NullAddress() {
-            String result = commentService.getComment(null).toStructuredJson();
-            assertTrue(result.contains("\"message\":\"No program loaded\""));
-        }
-
-        @Test
         @DisplayName("Constructor accepts null program service without throwing")
         void testConstructor_NullProgramService() {
             assertDoesNotThrow(() -> new CommentService(null));
@@ -160,6 +147,7 @@ public class CommentServiceTest {
 
         private ProgramBuilder builder;
         private CommentService svc;
+        private FunctionService funcService;
 
         @BeforeAll
         static void initGhidra() {
@@ -170,12 +158,16 @@ public class CommentServiceTest {
         void setUp() throws Exception {
             builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
             builder.createMemory(".text", "0x401000", 0x1000);
-            // Create a code unit by setting bytes and disassembling (MIPS NOP)
-            builder.setBytes("0x401000", "00 00 00 00", true);
+            // MIPS: simple function (Pattern A)
+            builder.setBytes("0x401000",
+                "27 BD FF F8 AF BF 00 04 00 00 00 00 8F BF 00 04 27 BD 00 08 03 E0 00 08 00 00 00 00",
+                true);
+            builder.createFunction("0x401000");
 
             ProgramDB program = builder.getProgram();
             ProgramService ps = GhidraTestEnv.programService(program);
             svc = new CommentService(ps);
+            funcService = GhidraTestEnv.functionService(program);
         }
 
         @AfterEach
@@ -185,105 +177,129 @@ public class CommentServiceTest {
             }
         }
 
-        @Test
-        @DisplayName("setComment sets a pre comment successfully")
-        void testSetComment_Pre_Success() {
-            ToolOutput result = svc.setComment("0x401000", "Pre comment text", "pre");
-            assertInstanceOf(StatusOutput.class, result);
-            assertTrue(result.toStructuredJson().contains("Comment set successfully"));
+        private List<String> assemblyCodeLines() {
+            FunctionCodeResult data = (FunctionCodeResult) ((JsonOutput) funcService.getFunctionCode("0x401000", "assembly")).data();
+            return data.lines().stream().map(m -> m.values().iterator().next()).toList();
         }
 
         @Test
-        @DisplayName("setComment sets an EOL comment successfully")
-        void testSetComment_Eol_Success() {
-            ToolOutput result = svc.setComment("0x401000", "EOL comment text", "eol");
-            assertInstanceOf(StatusOutput.class, result);
-            assertTrue(result.toStructuredJson().contains("Comment set successfully"));
+        @DisplayName("setComment pre comment appears in assembly listing")
+        void testSetComment_Pre_VisibleInAssembly() {
+            svc.setComment("0x401000", "Pre comment text", "pre");
+            List<String> codes = assemblyCodeLines();
+            assertTrue(codes.stream().anyMatch(c -> c.equals("; Pre comment text")),
+                "Pre comment should appear in assembly output, got: " + codes);
         }
 
         @Test
-        @DisplayName("setComment sets a post comment successfully")
-        void testSetComment_Post_Success() {
-            ToolOutput result = svc.setComment("0x401000", "Post comment text", "post");
-            assertInstanceOf(StatusOutput.class, result);
-            assertTrue(result.toStructuredJson().contains("Comment set successfully"));
+        @DisplayName("setComment EOL comment appears inline in assembly listing")
+        void testSetComment_Eol_VisibleInAssembly() {
+            svc.setComment("0x401000", "EOL comment text", "eol");
+            List<String> codes = assemblyCodeLines();
+            assertTrue(codes.stream().anyMatch(c -> c.contains("; EOL comment text") && !c.startsWith(";")),
+                "EOL comment should be inlined on instruction, got: " + codes);
         }
 
         @Test
-        @DisplayName("setComment sets a plate comment successfully")
-        void testSetComment_Plate_Success() {
-            ToolOutput result = svc.setComment("0x401000", "Plate comment text", "plate");
-            assertInstanceOf(StatusOutput.class, result);
-            assertTrue(result.toStructuredJson().contains("Comment set successfully"));
+        @DisplayName("setComment post comment appears in assembly listing")
+        void testSetComment_Post_VisibleInAssembly() {
+            svc.setComment("0x401000", "Post comment text", "post");
+            List<String> codes = assemblyCodeLines();
+            assertTrue(codes.stream().anyMatch(c -> c.equals("; Post comment text")),
+                "Post comment should appear in assembly output, got: " + codes);
         }
 
         @Test
-        @DisplayName("setComment sets a repeatable comment successfully")
-        void testSetComment_Repeatable_Success() {
-            ToolOutput result = svc.setComment("0x401000", "Repeatable comment text", "repeatable");
-            assertInstanceOf(StatusOutput.class, result);
-            assertTrue(result.toStructuredJson().contains("Comment set successfully"));
+        @DisplayName("setComment plate comment appears in assembly listing")
+        void testSetComment_Plate_VisibleInAssembly() {
+            svc.setComment("0x401000", "Plate comment text", "plate");
+            List<String> codes = assemblyCodeLines();
+            assertTrue(codes.stream().anyMatch(c -> c.equals("; Plate comment text")),
+                "Plate comment should appear in assembly output, got: " + codes);
         }
 
         @Test
-        @DisplayName("getComment retrieves all comment types set at an address")
-        void testGetComment_Success() {
-            // Set multiple comment types
-            svc.setComment("0x401000", "My pre comment", "pre");
-            svc.setComment("0x401000", "My eol comment", "eol");
-            svc.setComment("0x401000", "My post comment", "post");
-            svc.setComment("0x401000", "My plate comment", "plate");
-            svc.setComment("0x401000", "My repeatable comment", "repeatable");
-
-            ToolOutput result = svc.getComment("0x401000");
-            assertInstanceOf(JsonOutput.class, result);
-
-            String json = result.toStructuredJson();
-            assertTrue(json.contains("My pre comment"));
-            assertTrue(json.contains("My eol comment"));
-            assertTrue(json.contains("My post comment"));
-            assertTrue(json.contains("My plate comment"));
-            assertTrue(json.contains("My repeatable comment"));
+        @DisplayName("setComment repeatable comment appears inline in assembly listing")
+        void testSetComment_Repeatable_VisibleInAssembly() {
+            svc.setComment("0x401000", "Repeatable comment text", "repeatable");
+            List<String> codes = assemblyCodeLines();
+            assertTrue(codes.stream().anyMatch(c -> c.contains("; Repeatable comment text") && !c.startsWith(";")),
+                "Repeatable comment should be inlined on instruction, got: " + codes);
         }
 
         @Test
-        @DisplayName("getComment returns error when address has no code unit")
-        void testGetComment_NoCodeUnit() {
-            // 0x900000 is outside all memory blocks so getCodeUnitAt returns null
-            ToolOutput result = svc.getComment("0x900000");
-            assertInstanceOf(StatusOutput.class, result);
-            assertTrue(result.toStructuredJson().contains("No code unit at address"));
+        @DisplayName("pre/decompiler comment appears in C listing")
+        void testPreComment_VisibleInCListing() {
+            svc.setComment("0x401000", "Decompiler annotation", "pre");
+            FunctionCodeResult data = (FunctionCodeResult) ((JsonOutput) funcService.getFunctionCode("0x401000", "C")).data();
+            List<String> codes = data.lines().stream().map(m -> m.values().iterator().next()).toList();
+            assertTrue(codes.stream().anyMatch(c -> c.contains("Decompiler annotation")),
+                "Pre/decompiler comment should appear in C output, got: " + codes);
         }
 
         @Test
-        @DisplayName("getComment returns error for invalid address string")
-        void testGetComment_InvalidAddress() {
-            ToolOutput result = svc.getComment("not_an_address");
-            assertInstanceOf(StatusOutput.class, result);
-            String json = result.toStructuredJson();
-            // Should get an error — either "Invalid address" or a caught exception message
-            assertTrue(json.contains("\"success\":false"));
+        @DisplayName("plate comment appears in C listing as block comment")
+        void testPlateComment_VisibleInCListing() {
+            svc.setComment("0x401000", "Plate header", "plate");
+            FunctionCodeResult data = (FunctionCodeResult) ((JsonOutput) funcService.getFunctionCode("0x401000", "C")).data();
+            List<String> codes = data.lines().stream().map(m -> m.values().iterator().next()).toList();
+            assertTrue(codes.stream().anyMatch(c -> c.contains("Plate header")),
+                "Plate comment should appear in C output, got: " + codes);
         }
 
         @Test
-        @DisplayName("setComment overwrites an existing comment")
+        @DisplayName("EOL, post, repeatable comments do not appear in C listing")
+        void testNonDecompilerComments_NotInCListing() {
+            svc.setComment("0x401000", "EOL only", "eol");
+            svc.setComment("0x401000", "Post only", "post");
+            svc.setComment("0x401000", "Repeatable only", "repeatable");
+            FunctionCodeResult data = (FunctionCodeResult) ((JsonOutput) funcService.getFunctionCode("0x401000", "C")).data();
+            List<String> codes = data.lines().stream().map(m -> m.values().iterator().next()).toList();
+            assertTrue(codes.stream().noneMatch(c ->
+                    c.contains("EOL only") || c.contains("Post only") ||
+                    c.contains("Repeatable only")),
+                "EOL/post/repeatable comments should not appear in C output, got: " + codes);
+        }
+
+        @Test
+        @DisplayName("all comment types appear in pcode listing")
+        void testComments_VisibleInPcode() {
+            // Get pcode output first to find an address that has pcode ops
+            FunctionCodeResult initial = (FunctionCodeResult) ((JsonOutput) funcService.getFunctionCode("0x401000", "pcode")).data();
+            assertFalse(initial.lines().isEmpty(), "Pcode should have at least one op");
+            String pcodeAddr = initial.lines().get(0).keySet().iterator().next();
+
+            // Set all comment types at that address
+            svc.setComment(pcodeAddr, "Plate header", "plate");
+            svc.setComment(pcodeAddr, "Pre comment", "pre");
+            svc.setComment(pcodeAddr, "EOL comment", "eol");
+            svc.setComment(pcodeAddr, "Post comment", "post");
+            svc.setComment(pcodeAddr, "Repeatable comment", "repeatable");
+
+            FunctionCodeResult data = (FunctionCodeResult) ((JsonOutput) funcService.getFunctionCode("0x401000", "pcode")).data();
+            List<String> codes = data.lines().stream().map(m -> m.values().iterator().next()).toList();
+            assertTrue(codes.stream().anyMatch(c -> c.equals("; Plate header")),
+                "Plate comment should appear in pcode output, got: " + codes);
+            assertTrue(codes.stream().anyMatch(c -> c.equals("; Pre comment")),
+                "Pre comment should appear in pcode output, got: " + codes);
+            assertTrue(codes.stream().anyMatch(c -> c.equals("; EOL comment")),
+                "EOL comment should appear in pcode output, got: " + codes);
+            assertTrue(codes.stream().anyMatch(c -> c.equals("; Post comment")),
+                "Post comment should appear in pcode output, got: " + codes);
+            assertTrue(codes.stream().anyMatch(c -> c.equals("; Repeatable comment")),
+                "Repeatable comment should appear in pcode output, got: " + codes);
+        }
+
+        @Test
+        @DisplayName("setComment overwrites an existing comment visible in assembly")
         void testSetComment_Overwrite() {
-            // Set initial comment
-            svc.setComment("0x401000", "Original comment", "pre");
-
-            // Verify original was set
-            String json1 = svc.getComment("0x401000").toStructuredJson();
-            assertTrue(json1.contains("Original comment"));
-
-            // Overwrite with new comment
-            ToolOutput result = svc.setComment("0x401000", "Replacement comment", "pre");
-            assertTrue(result.toStructuredJson().contains("Comment set successfully"));
-
-            // Verify overwrite
-            String json2 = svc.getComment("0x401000").toStructuredJson();
-            assertTrue(json2.contains("Replacement comment"));
-            // Original should be gone
-            assertTrue(!json2.contains("Original comment"));
+            svc.setComment("0x401000", "Original comment", "eol");
+            svc.setComment("0x401000", "Replacement comment", "eol");
+            List<String> codes = assemblyCodeLines();
+            assertTrue(codes.stream().anyMatch(c -> c.contains("Replacement comment")),
+                "Replacement comment should appear, got: " + codes);
+            assertTrue(codes.stream().noneMatch(c -> c.contains("Original comment")),
+                "Original comment should be gone, got: " + codes);
         }
     }
 }
