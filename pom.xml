@@ -90,6 +90,14 @@
       <systemPath>${project.basedir}/lib/Gui.jar</systemPath>
     </dependency>
 
+    <dependency>
+      <groupId>ghidra</groupId>
+      <artifactId>Help</artifactId>
+      <version>12.0.3</version>
+      <scope>system</scope>
+      <systemPath>${ghidra.install.dir}/Ghidra/Framework/Help/lib/Help.jar</systemPath>
+    </dependency>
+
     <!-- JUnit 5 dependencies -->
     <dependency>
       <groupId>org.junit.jupiter</groupId>
@@ -413,6 +421,7 @@
             <classpathDependencyExclude>ghidra:DB</classpathDependencyExclude>
             <classpathDependencyExclude>ghidra:FileSystem</classpathDependencyExclude>
             <classpathDependencyExclude>ghidra:Gui</classpathDependencyExclude>
+            <classpathDependencyExclude>ghidra:Help</classpathDependencyExclude>
           </classpathDependencyExcludes>
           <!--
             Ghidra install JARs for ProgramBuilder integration tests.
