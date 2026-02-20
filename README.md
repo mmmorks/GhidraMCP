@@ -9,7 +9,7 @@
 
 
 # ghidraMCP
-ghidraMCP is a Model Context Protocol server for allowing LLMs to autonomously reverse engineer applications. It exposes 40 tools from core Ghidra functionality to MCP clients.
+ghidraMCP is a Model Context Protocol server for allowing LLMs to autonomously reverse engineer applications. It exposes 37 tools from core Ghidra functionality to MCP clients.
 
 https://github.com/user-attachments/assets/36080514-f227-44bd-af84-78e29ee1d7f9
 
@@ -35,16 +35,21 @@ MCP Server + Ghidra Plugin
 |------|-------------|
 | `get_program_info` | Get metadata about the currently loaded binary |
 
-## Functions (8 tools)
+## GUI State (2 tools)
+
+| Tool | Description |
+|------|-------------|
+| `get_current_address` | Get the address currently selected in the Ghidra GUI |
+| `get_current_function` | Get the function currently selected in the Ghidra GUI |
+
+## Functions (5 tools)
 
 | Tool | Description |
 |------|-------------|
 | `list_functions` | List function names with pagination |
 | `get_function_code` | Get a function's decompiled or disassembled code |
-| `rename_function` | Rename a function by name or address |
+| `rename_functions` | Batch rename functions by name or address |
 | `set_function_prototype` | Set or modify a function's signature/prototype |
-| `get_current_address` | Get the address currently selected in the Ghidra GUI |
-| `get_current_function` | Get the function currently selected in the Ghidra GUI |
 | `search_functions_by_name` | Search for functions by partial name match |
 
 ## Data Types (9 tools)
@@ -86,15 +91,14 @@ MCP Server + Ghidra Plugin
 
 | Tool | Description |
 |------|-------------|
-| `list_symbols` | List all symbols with pagination |
+| `list_labels` | List all labels with pagination |
 | `get_symbol_address` | Get the memory address of a named symbol |
 
-## Comments (2 tools)
+## Comments (1 tool)
 
 | Tool | Description |
 |------|-------------|
 | `set_comment` | Set a comment at an address |
-| `get_comment` | Get all comments at a specific address |
 
 ## Search (3 tools)
 
