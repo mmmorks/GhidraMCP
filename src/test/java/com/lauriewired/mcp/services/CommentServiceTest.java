@@ -170,10 +170,10 @@ public class CommentServiceTest {
 
         @BeforeEach
         void setUp() throws Exception {
-            builder = new ProgramBuilder("test", ProgramBuilder._X64);
+            builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
             builder.createMemory(".text", "0x401000", 0x1000);
-            // Create a code unit by setting bytes and disassembling (NOP instruction)
-            builder.setBytes("0x401000", "90", true);
+            // Create a code unit by setting bytes and disassembling (MIPS NOP)
+            builder.setBytes("0x401000", "00 00 00 00", true);
 
             ProgramDB program = builder.getProgram();
             ProgramService ps = GhidraTestEnv.programService(program);

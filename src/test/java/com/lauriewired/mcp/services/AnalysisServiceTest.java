@@ -9,7 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -243,27 +243,25 @@ public class AnalysisServiceTest {
     @DisplayName("ProgramBuilder integration tests")
     class ProgramBuilderIntegrationTest {
 
-        private ProgramBuilder builder;
-        private ProgramDB program;
-        private AnalysisService service;
+        private static ProgramBuilder builder;
+        private static ProgramDB program;
+        private static AnalysisService service;
 
         @BeforeAll
-        static void initGhidra() {
+        static void setUp() throws Exception {
             GhidraTestEnv.initialize();
-        }
 
-        @BeforeEach
-        void setUp() throws Exception {
-            builder = new ProgramBuilder("test", ProgramBuilder._X64);
+            builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
             builder.createMemory(".text", "0x401000", 0x1000);
 
-            // main at 0x401000: call helper (at 0x401100); ret
-            // E8 is near call relative; offset = 0x401100 - (0x401000 + 5) = 0xFB
-            builder.setBytes("0x401000", "E8 FB 00 00 00 C3", true);
+            // main at 0x401000: caller that JALs to helper at 0x401100 (Pattern C)
+            builder.setBytes("0x401000",
+                "27 BD FF F8 AF BF 00 04 0C 10 04 40 00 00 00 00 8F BF 00 04 27 BD 00 08 03 E0 00 08 00 00 00 00",
+                true);
             builder.createFunction("0x401000");
 
-            // helper at 0x401100: nop; ret
-            builder.setBytes("0x401100", "90 C3", true);
+            // helper at 0x401100: jr ra; nop (Pattern D)
+            builder.setBytes("0x401100", "03 E0 00 08 00 00 00 00", true);
             builder.createFunction("0x401100");
 
             program = builder.getProgram();
@@ -290,8 +288,8 @@ public class AnalysisServiceTest {
             service = new AnalysisService(ps, fs);
         }
 
-        @AfterEach
-        void tearDown() {
+        @AfterAll
+        static void tearDown() {
             if (builder != null) {
                 builder.dispose();
             }
@@ -482,31 +480,26 @@ public class AnalysisServiceTest {
     @DisplayName("Data flow decompilation tests")
     class DataFlowDecompilationTest {
 
-        private ProgramBuilder builder;
-        private AnalysisService service;
-        private FunctionService fs;
+        private static ProgramBuilder builder;
+        private static AnalysisService service;
+        private static FunctionService fs;
 
         @BeforeAll
-        static void initGhidra() {
+        static void setUp() throws Exception {
             GhidraTestEnv.initialize();
-        }
 
-        @BeforeEach
-        void setUp() throws Exception {
-            builder = new ProgramBuilder("test", ProgramBuilder._X64);
+            builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
             builder.createMemory(".text", "0x401000", 0x2000);
 
-            // Helper at 0x401300: mov dword [rdi],0x10; ret — writes through pointer param
+            // Helper at 0x401300: writes 0x10 through pointer in $a0 (Pattern B)
             // Unique address avoids decompiler cache collisions with other test classes
-            builder.setBytes("0x401300", "C7 07 10 00 00 00 C3", true);
+            builder.setBytes("0x401300", "34 02 00 10 AC 82 00 00 03 E0 00 08 00 00 00 00", true);
             builder.createFunction("0x401300");
 
-            // Function at 0x401000 with local variable whose address escapes via call:
-            // push rbp; mov rbp,rsp; sub rsp,0x10; mov dword [rbp-4],0x42;
-            // lea rdi,[rbp-4]; call 0x401300; mov eax,[rbp-4]; leave; ret
-            // CALL offset = 0x401300 - 0x401018 = 0x2E8
+            // Function at 0x401000 with local variable whose address escapes via call (Pattern E)
+            // Stores 0x42 to local, passes &local to helper at 0x401300, reads local back
             builder.setBytes("0x401000",
-                "55 48 89 E5 48 83 EC 10 C7 45 FC 42 00 00 00 48 8D 7D FC E8 E8 02 00 00 8B 45 FC C9 C3",
+                "27 BD FF F0 AF BF 00 0C 34 02 00 42 AF A2 00 00 27 A4 00 00 0C 10 04 C0 00 00 00 00 8F A2 00 00 8F BF 00 0C 27 BD 00 10 03 E0 00 08 00 00 00 00",
                 true);
             builder.createFunction("0x401000");
 
@@ -533,8 +526,8 @@ public class AnalysisServiceTest {
             service = new AnalysisService(ps, fs);
         }
 
-        @AfterEach
-        void tearDown() {
+        @AfterAll
+        static void tearDown() {
             if (builder != null) {
                 builder.dispose();
             }
@@ -550,7 +543,7 @@ public class AnalysisServiceTest {
             String allCode = codeData.lines().stream()
                 .flatMap(line -> line.values().stream())
                 .reduce("", (a, b) -> a + " " + b);
-            Matcher m = Pattern.compile("(local|param)_\\w+").matcher(allCode);
+            Matcher m = Pattern.compile("(local|param|[a-z]+Stack)_\\w+").matcher(allCode);
             assertTrue(m.find(), "Should find a variable in decompiled output, got: " + allCode);
             String varName = m.group();
 

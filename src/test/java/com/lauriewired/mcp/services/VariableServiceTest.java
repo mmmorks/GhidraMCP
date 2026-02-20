@@ -210,21 +210,18 @@ public class VariableServiceTest {
 
         @BeforeEach
         void setUp() throws Exception {
-            builder = new ProgramBuilder("test", ProgramBuilder._X64);
+            builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
             builder.createMemory(".text", "0x401000", 0x2000);
 
-            // Helper at 0x401200: mov dword [rdi],0x10; ret — writes through pointer param
+            // Helper at 0x401200: writes 0x10 through pointer in $a0 (Pattern B)
             // Unique address avoids decompiler cache collisions with other test classes
-            builder.setBytes("0x401200", "C7 07 10 00 00 00 C3", true);
+            builder.setBytes("0x401200", "34 02 00 10 AC 82 00 00 03 E0 00 08 00 00 00 00", true);
             builder.createFunction("0x401200");
 
-            // Function at 0x401000 with local variable whose address escapes via call:
-            // push rbp; mov rbp,rsp; sub rsp,0x10; mov dword [rbp-4],0x42;
-            // lea rdi,[rbp-4]; call 0x401200; mov eax,[rbp-4]; leave; ret
-            // The LEA passes &local to callee, preventing dead-store elimination
-            // CALL offset = 0x401200 - 0x401018 = 0x1E8
+            // Function at 0x401000 with local variable whose address escapes via call (Pattern E)
+            // Stores 0x42 to local, passes &local to helper at 0x401200, reads local back
             builder.setBytes("0x401000",
-                "55 48 89 E5 48 83 EC 10 C7 45 FC 42 00 00 00 48 8D 7D FC E8 E8 01 00 00 8B 45 FC C9 C3",
+                "27 BD FF F0 AF BF 00 0C 34 02 00 42 AF A2 00 00 27 A4 00 00 0C 10 04 80 00 00 00 00 8F A2 00 00 8F BF 00 0C 27 BD 00 10 03 E0 00 08 00 00 00 00",
                 true);
             builder.createFunction("0x401000");
 
@@ -340,8 +337,8 @@ public class VariableServiceTest {
                 .flatMap(line -> line.values().stream())
                 .reduce("", (a, b) -> a + " " + b);
             // Try local_ first, fall back to param_
-            Matcher m = Pattern.compile("(local|param)_\\w+").matcher(allCode);
-            assertTrue(m.find(), "Decompiled C should contain a local_ or param_ variable, got: " + allCode);
+            Matcher m = Pattern.compile("(local|param|[a-z]+Stack)_\\w+").matcher(allCode);
+            assertTrue(m.find(), "Decompiled C should contain a decompiler-assigned variable, got: " + allCode);
             return m.group();
         }
 

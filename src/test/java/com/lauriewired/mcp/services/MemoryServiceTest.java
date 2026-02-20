@@ -156,7 +156,7 @@ public class MemoryServiceTest {
     @Test
     @DisplayName("getMemoryLayout returns memory blocks when program is loaded")
     void testListSegments_Success() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".text", "0x400000", 0x1000);
         builder.createMemory(".data", "0x402000", 0x1000);
         ProgramDB program = builder.getProgram();
@@ -173,7 +173,7 @@ public class MemoryServiceTest {
     @Test
     @DisplayName("getMemoryLayout respects pagination limits")
     void testListSegments_Pagination() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".text", "0x400000", 0x1000);
         builder.createMemory(".data", "0x402000", 0x1000);
         ProgramDB program = builder.getProgram();
@@ -189,7 +189,7 @@ public class MemoryServiceTest {
     @Test
     @DisplayName("listDataItems returns data items when program is loaded")
     void testListDataItems_Success() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".data", "0x402000", 0x100);
         builder.setBytes("0x402000", "42 00 00 00", false);
         builder.applyDataType("0x402000", IntegerDataType.dataType);
@@ -206,7 +206,7 @@ public class MemoryServiceTest {
     @Test
     @DisplayName("listDataItems handles unnamed data")
     void testListDataItems_UnnamedData() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".data", "0x402000", 0x100);
         builder.setBytes("0x402000", "FF 00 00 00", false);
         builder.applyDataType("0x402000", IntegerDataType.dataType);
@@ -223,7 +223,7 @@ public class MemoryServiceTest {
     @Test
     @DisplayName("renameData successfully renames multiple data labels")
     void testRenameData_MultipleAddresses_Success() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".data", "0x402000", 0x100);
         builder.setBytes("0x402000", "42 00 00 00", false);
         builder.applyDataType("0x402000", IntegerDataType.dataType);
@@ -251,7 +251,7 @@ public class MemoryServiceTest {
     @Test
     @DisplayName("renameData creates new label when no symbol exists")
     void testRenameData_NoSymbol_CreatesLabel() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".data", "0x402000", 0x100);
         builder.setBytes("0x402000", "42 00 00 00", false);
         builder.applyDataType("0x402000", IntegerDataType.dataType);
@@ -274,7 +274,7 @@ public class MemoryServiceTest {
     @Test
     @DisplayName("renameData returns error for invalid address in map")
     void testRenameData_InvalidAddress() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".data", "0x402000", 0x100);
         ProgramDB program = builder.getProgram();
 
@@ -287,7 +287,7 @@ public class MemoryServiceTest {
     @Test
     @DisplayName("renameData returns error when no data at address")
     void testRenameData_NoDataAtAddress() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".data", "0x402000", 0x100);
         // Memory exists at 0x402000, but no defined data applied
         ProgramDB program = builder.getProgram();
@@ -301,7 +301,7 @@ public class MemoryServiceTest {
     @Test
     @DisplayName("renameData returns error for empty map with program loaded")
     void testRenameData_EmptyMapWithProgram() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".data", "0x402000", 0x100);
         ProgramDB program = builder.getProgram();
 
@@ -316,7 +316,7 @@ public class MemoryServiceTest {
     @Test
     @DisplayName("setAddressDataType returns error when DataTypeService is null")
     void testSetMemoryDataType_NoDataTypeService() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".data", "0x402000", 0x100);
         ProgramDB program = builder.getProgram();
 
@@ -329,7 +329,7 @@ public class MemoryServiceTest {
     @Test
     @DisplayName("setAddressDataType returns error for empty map")
     void testSetMemoryDataType_EmptyMap() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".data", "0x402000", 0x100);
         ProgramDB program = builder.getProgram();
 
@@ -341,7 +341,7 @@ public class MemoryServiceTest {
     @Test
     @DisplayName("setAddressDataType returns error for invalid address")
     void testSetMemoryDataType_InvalidAddress() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".data", "0x402000", 0x100);
         ProgramDB program = builder.getProgram();
 
@@ -353,7 +353,7 @@ public class MemoryServiceTest {
     @Test
     @DisplayName("setAddressDataType returns error when data type not found")
     void testSetMemoryDataType_DataTypeNotFound() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".data", "0x402000", 0x100);
         ProgramDB program = builder.getProgram();
 
@@ -367,7 +367,7 @@ public class MemoryServiceTest {
     @Test
     @DisplayName("readMemory hex format returns flat record with bytes and ascii")
     void testReadMemory_Hex_Success() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".text", "0x401000", 0x1000);
         builder.setBytes("0x401000", "48 65 6C 6C 6F", false); // "Hello"
         ProgramDB program = builder.getProgram();
@@ -387,7 +387,7 @@ public class MemoryServiceTest {
     @Test
     @DisplayName("readMemory hex format shows non-printable chars as dots in ASCII")
     void testReadMemory_Hex_NonPrintableAscii() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".text", "0x401000", 0x1000);
         builder.setBytes("0x401000", "00 41 1F 7F", false);
         ProgramDB program = builder.getProgram();
@@ -401,7 +401,7 @@ public class MemoryServiceTest {
     @Test
     @DisplayName("readMemory hex format emits all bytes in a single flat record")
     void testReadMemory_Hex_LargeRead() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".text", "0x401000", 0x1000);
 
         StringBuilder hexBytes = new StringBuilder();
@@ -424,7 +424,7 @@ public class MemoryServiceTest {
     @Test
     @DisplayName("readMemory decimal format returns numeric string values")
     void testReadMemory_Decimal_Success() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".text", "0x401000", 0x1000);
         builder.setBytes("0x401000", "00 FF 0A 64", false);
         ProgramDB program = builder.getProgram();
@@ -441,7 +441,7 @@ public class MemoryServiceTest {
     @Test
     @DisplayName("readMemory binary format returns 8-bit padded binary strings")
     void testReadMemory_Binary_Success() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".text", "0x401000", 0x1000);
         builder.setBytes("0x401000", "00 01 FF 0A", false);
         ProgramDB program = builder.getProgram();
@@ -458,7 +458,7 @@ public class MemoryServiceTest {
     @Test
     @DisplayName("readMemory ascii format returns individual character strings")
     void testReadMemory_Ascii_Success() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".text", "0x401000", 0x1000);
         builder.setBytes("0x401000", "48 69 00 0A 0D 09 80", false);
         ProgramDB program = builder.getProgram();
@@ -475,7 +475,7 @@ public class MemoryServiceTest {
     @Test
     @DisplayName("readMemory returns error for invalid size")
     void testReadMemory_InvalidSize() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".text", "0x401000", 0x1000);
         ProgramDB program = builder.getProgram();
 
@@ -491,7 +491,7 @@ public class MemoryServiceTest {
     @Test
     @DisplayName("readMemory toDisplayText produces human-readable output")
     void testReadMemory_DisplayText() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".text", "0x401000", 0x1000);
         builder.setBytes("0x401000", "48 69", false); // "Hi"
         ProgramDB program = builder.getProgram();
@@ -510,7 +510,7 @@ public class MemoryServiceTest {
     @Test
     @DisplayName("setAddressDataType applies int data type at address")
     void testSetAddressDataType_Success() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".data", "0x402000", 0x100);
         builder.setBytes("0x402000", "42 00 00 00", false);
         ProgramDB program = builder.getProgram();
@@ -540,7 +540,7 @@ public class MemoryServiceTest {
     @Test
     @DisplayName("getMemoryPermissions returns error for null address")
     void testGetMemoryPermissions_NullAddress() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".text", "0x401000", 0x1000);
         ProgramDB program = builder.getProgram();
 
@@ -552,7 +552,7 @@ public class MemoryServiceTest {
     @Test
     @DisplayName("getMemoryPermissions returns error for empty address")
     void testGetMemoryPermissions_EmptyAddress() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".text", "0x401000", 0x1000);
         ProgramDB program = builder.getProgram();
 
@@ -564,7 +564,7 @@ public class MemoryServiceTest {
     @Test
     @DisplayName("getMemoryPermissions returns error for invalid address")
     void testGetMemoryPermissions_InvalidAddress() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".text", "0x401000", 0x1000);
         ProgramDB program = builder.getProgram();
 
@@ -576,7 +576,7 @@ public class MemoryServiceTest {
     @Test
     @DisplayName("getMemoryPermissions returns error when no block at address")
     void testGetMemoryPermissions_NoBlock() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".text", "0x401000", 0x1000);
         ProgramDB program = builder.getProgram();
 
@@ -589,7 +589,7 @@ public class MemoryServiceTest {
     @Test
     @DisplayName("getMemoryPermissions returns block info for valid address")
     void testGetMemoryPermissions_Success() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".text", "0x401000", 0x1000);
         ProgramDB program = builder.getProgram();
 
@@ -610,7 +610,7 @@ public class MemoryServiceTest {
     @Test
     @DisplayName("getMemoryPermissions toDisplayText produces human-readable output")
     void testGetMemoryPermissions_DisplayText() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".text", "0x401000", 0x1000);
         ProgramDB program = builder.getProgram();
 
@@ -637,7 +637,7 @@ public class MemoryServiceTest {
     @Test
     @DisplayName("getAddressDataType returns error for null address")
     void testGetAddressDataType_NullAddress() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".text", "0x401000", 0x1000);
         ProgramDB program = builder.getProgram();
 
@@ -649,7 +649,7 @@ public class MemoryServiceTest {
     @Test
     @DisplayName("getAddressDataType returns error for empty address")
     void testGetAddressDataType_EmptyAddress() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".text", "0x401000", 0x1000);
         ProgramDB program = builder.getProgram();
 
@@ -661,10 +661,12 @@ public class MemoryServiceTest {
     @Test
     @DisplayName("getAddressDataType returns instruction info")
     void testGetAddressDataType_Instruction() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".text", "0x401000", 0x1000);
-        // x86-64: push rbp; mov rbp,rsp; nop; pop rbp; ret
-        builder.setBytes("0x401000", "55 48 89 e5 90 5d c3", true);
+        // MIPS: simple function (Pattern A)
+        builder.setBytes("0x401000",
+            "27 BD FF F8 AF BF 00 04 00 00 00 00 8F BF 00 04 27 BD 00 08 03 E0 00 08 00 00 00 00",
+            true);
         builder.createFunction("0x401000");
         ProgramDB program = builder.getProgram();
 
@@ -682,7 +684,7 @@ public class MemoryServiceTest {
     @Test
     @DisplayName("getAddressDataType returns defined data info")
     void testGetAddressDataType_DefinedData() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".data", "0x402000", 0x100);
         builder.setBytes("0x402000", "42 00 00 00", false);
         builder.applyDataType("0x402000", IntegerDataType.dataType);
@@ -704,7 +706,7 @@ public class MemoryServiceTest {
     @Test
     @DisplayName("getAddressDataType returns defined data without label")
     void testGetAddressDataType_DefinedDataNoLabel() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".data", "0x402000", 0x100);
         builder.setBytes("0x402000", "42 00 00 00", false);
         builder.applyDataType("0x402000", IntegerDataType.dataType);
@@ -724,7 +726,7 @@ public class MemoryServiceTest {
     @Test
     @DisplayName("getAddressDataType returns undefined data for untyped memory")
     void testGetAddressDataType_UndefinedData() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".data", "0x402000", 0x100);
         builder.setBytes("0x402000", "FF", false);
         // Memory exists but no data type or instruction applied
@@ -744,9 +746,12 @@ public class MemoryServiceTest {
     @Test
     @DisplayName("getAddressDataType toDisplayText for instruction")
     void testGetAddressDataType_DisplayText() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".text", "0x401000", 0x1000);
-        builder.setBytes("0x401000", "55 48 89 e5 90 5d c3", true);
+        // MIPS: simple function (Pattern A)
+        builder.setBytes("0x401000",
+            "27 BD FF F8 AF BF 00 04 00 00 00 00 8F BF 00 04 27 BD 00 08 03 E0 00 08 00 00 00 00",
+            true);
         builder.createFunction("0x401000");
         ProgramDB program = builder.getProgram();
 
@@ -762,7 +767,7 @@ public class MemoryServiceTest {
     @Test
     @DisplayName("setAddressDataType applies multiple types atomically")
     void testSetAddressDataType_Multiple() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".data", "0x402000", 0x100);
         builder.setBytes("0x402000", "42 00 00 00 43 00 00 00", false);
         ProgramDB program = builder.getProgram();

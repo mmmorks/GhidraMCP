@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -42,15 +42,25 @@ public class ProgramServiceTest {
     @DisplayName("ProgramBuilder-based getProgramInfo test")
     class GetProgramInfoIntegrationTest {
 
-        private ProgramBuilder builder;
+        private static ProgramBuilder builder;
+        private static ProgramService ps;
 
         @BeforeAll
-        static void initGhidra() {
+        static void setUp() throws Exception {
             GhidraTestEnv.initialize();
+
+            builder = new ProgramBuilder("testBinary", GhidraTestEnv.LANG);
+            builder.createMemory(".text", "0x401000", 0x1000);
+            builder.createEmptyFunction("main", "0x401000", 0x50, ghidra.program.model.data.DataType.DEFAULT);
+            builder.createEmptyFunction("helper", "0x401100", 0x30, ghidra.program.model.data.DataType.DEFAULT);
+            builder.createLabel("0x401200", "my_label");
+
+            ProgramDB program = builder.getProgram();
+            ps = GhidraTestEnv.programService(program);
         }
 
-        @AfterEach
-        void tearDown() {
+        @AfterAll
+        static void tearDown() {
             if (builder != null) {
                 builder.dispose();
             }
@@ -58,16 +68,7 @@ public class ProgramServiceTest {
 
         @Test
         @DisplayName("getProgramInfo returns full program details")
-        void testGetProgramInfo_Success() throws Exception {
-            builder = new ProgramBuilder("testBinary", ProgramBuilder._X64);
-            builder.createMemory(".text", "0x401000", 0x1000);
-            builder.createEmptyFunction("main", "0x401000", 0x50, ghidra.program.model.data.DataType.DEFAULT);
-            builder.createEmptyFunction("helper", "0x401100", 0x30, ghidra.program.model.data.DataType.DEFAULT);
-            builder.createLabel("0x401200", "my_label");
-
-            ProgramDB program = builder.getProgram();
-            ProgramService ps = GhidraTestEnv.programService(program);
-
+        void testGetProgramInfo_Success() {
             com.lauriewired.mcp.model.ToolOutput result = ps.getProgramInfo();
             assertInstanceOf(com.lauriewired.mcp.model.JsonOutput.class, result);
 
@@ -75,10 +76,10 @@ public class ProgramServiceTest {
                 (com.lauriewired.mcp.model.response.ProgramInfoResult) ((com.lauriewired.mcp.model.JsonOutput) result).data();
 
             assertEquals("testBinary", info.name());
-            assertEquals("x86", info.processor());
-            assertTrue(info.architecture().contains("x86"));
-            assertTrue(info.endian().equalsIgnoreCase("little"));
-            assertEquals(64, info.addressSize());
+            assertEquals("MIPS", info.processor());
+            assertTrue(info.architecture().contains("MIPS"));
+            assertTrue(info.endian().equalsIgnoreCase("big"));
+            assertEquals(32, info.addressSize());
             assertEquals(2, info.functionCount());
             assertTrue(info.symbolCount() >= 3); // at least main, helper, my_label
             assertNotNull(info.imageBase());

@@ -62,7 +62,7 @@ class ProgramBuilderProofOfConceptTest {
     @Test
     @DisplayName("ProgramBuilder creates a real program with memory and functions")
     void testCreateProgramWithFunctions() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".text", "0x401000", 0x1000);
 
         builder.createEmptyFunction("main", "0x401000", 0x50, DataType.DEFAULT);
@@ -86,7 +86,7 @@ class ProgramBuilderProofOfConceptTest {
     @Test
     @DisplayName("ProgramBuilder creates real memory blocks")
     void testMemoryBlocks() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".text", "0x401000", 0x1000);
         builder.createMemory(".data", "0x402000", 0x500);
 
@@ -103,7 +103,7 @@ class ProgramBuilderProofOfConceptTest {
     @Test
     @DisplayName("ProgramBuilder supports real transactions for writes")
     void testTransactions() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".text", "0x401000", 0x100);
         builder.createEmptyFunction("myFunc", "0x401000", 0x20, DataType.DEFAULT);
 
@@ -125,7 +125,7 @@ class ProgramBuilderProofOfConceptTest {
     @Test
     @DisplayName("ProgramBuilder supports comments")
     void testComments() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".text", "0x401000", 0x100);
         builder.createComment("0x401000", "This is an EOL comment", CommentType.EOL);
         builder.createComment("0x401000", "Pre comment", CommentType.PRE);
@@ -142,7 +142,7 @@ class ProgramBuilderProofOfConceptTest {
     @Test
     @DisplayName("ProgramBuilder supports data types")
     void testDataTypes() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".data", "0x402000", 0x100);
 
         StructureDataType myStruct = new StructureDataType("MyStruct", 0);
@@ -162,11 +162,13 @@ class ProgramBuilderProofOfConceptTest {
     @Test
     @DisplayName("ProgramBuilder supports x86 byte disassembly and function creation")
     void testDisassembly() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".text", "0x401000", 0x1000);
 
-        // x86-64: push rbp; mov rbp,rsp; nop; pop rbp; ret
-        builder.setBytes("0x401000", "55 48 89 e5 90 5d c3", true);
+        // MIPS: simple function (Pattern A)
+        builder.setBytes("0x401000",
+            "27 BD FF F8 AF BF 00 04 00 00 00 00 8F BF 00 04 27 BD 00 08 03 E0 00 08 00 00 00 00",
+            true);
         builder.createFunction("0x401000");
 
         ProgramDB program = builder.getProgram();
@@ -176,13 +178,13 @@ class ProgramBuilderProofOfConceptTest {
         // Verify real instructions exist
         Instruction first = program.getListing().getInstructionAt(builder.addr("0x401000"));
         assertNotNull(first);
-        assertTrue(first.getMnemonicString().equalsIgnoreCase("PUSH"));
+        assertTrue(first.getMnemonicString().equalsIgnoreCase("ADDIU"));
     }
 
     @Test
     @DisplayName("Real listing iteration works")
     void testListingIteration() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".text", "0x401000", 0x1000);
 
         builder.createEmptyFunction("alpha", "0x401000", 0x10, DataType.DEFAULT);

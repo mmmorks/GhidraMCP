@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -212,32 +212,25 @@ public class SearchServiceTest {
     @DisplayName("ProgramBuilder integration tests")
     class ProgramBuilderIntegrationTest {
 
-        private ProgramBuilder builder;
-        private ProgramDB program;
-        private SearchService service;
+        private static ProgramBuilder builder;
+        private static ProgramDB program;
+        private static SearchService service;
 
         @BeforeAll
-        static void initGhidra() {
+        static void setUp() throws Exception {
             GhidraTestEnv.initialize();
-        }
 
-        @AfterEach
-        void tearDown() {
-            if (builder != null) {
-                builder.dispose();
-            }
-        }
-
-        private void createDefaultProgram() throws Exception {
-            builder = new ProgramBuilder("test", ProgramBuilder._X64);
+            builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
             builder.createMemory(".text", "0x401000", 0x1000);
             builder.createMemory(".data", "0x402000", 0x100);
 
             // Write "Hello World" into .data
             builder.setBytes("0x402000", "48 65 6C 6C 6F 20 57 6F 72 6C 64", false);
 
-            // x86-64: push rbp; mov rbp,rsp; nop; pop rbp; ret
-            builder.setBytes("0x401000", "55 48 89 E5 90 5D C3", true);
+            // MIPS: simple function (Pattern A)
+            builder.setBytes("0x401000",
+                "27 BD FF F8 AF BF 00 04 00 00 00 00 8F BF 00 04 27 BD 00 08 03 E0 00 08 00 00 00 00",
+                true);
             builder.createFunction("0x401000");
 
             program = builder.getProgram();
@@ -257,11 +250,16 @@ public class SearchServiceTest {
             service = new SearchService(ps);
         }
 
+        @AfterAll
+        static void tearDown() {
+            if (builder != null) {
+                builder.dispose();
+            }
+        }
+
         @Test
         @DisplayName("searchMemory finds string in data block")
-        void testSearchMemory_StringFound() throws Exception {
-            createDefaultProgram();
-
+        void testSearchMemory_StringFound() {
             String json = service.searchMemory("Hello", true, null, 10).toStructuredJson();
 
             assertNotNull(json);
@@ -274,9 +272,7 @@ public class SearchServiceTest {
 
         @Test
         @DisplayName("searchMemory returns no matches for absent string")
-        void testSearchMemory_NoMatches() throws Exception {
-            createDefaultProgram();
-
+        void testSearchMemory_NoMatches() {
             String json = service.searchMemory("NOTHERE", true, null, 10).toStructuredJson();
 
             assertTrue(json.contains("No matches found"),
@@ -285,9 +281,7 @@ public class SearchServiceTest {
 
         @Test
         @DisplayName("searchMemory finds hex byte pattern")
-        void testSearchMemory_HexPattern() throws Exception {
-            createDefaultProgram();
-
+        void testSearchMemory_HexPattern() {
             // Search for "Hell" as hex: 48 65 6C 6C
             String json = service.searchMemory("48 65 6C 6C", false, null, 10).toStructuredJson();
 
@@ -299,9 +293,7 @@ public class SearchServiceTest {
 
         @Test
         @DisplayName("searchMemory returns error for nonexistent block name")
-        void testSearchMemory_BlockNotFound() throws Exception {
-            createDefaultProgram();
-
+        void testSearchMemory_BlockNotFound() {
             String json = service.searchMemory("Hello", true, "nonexistent", 10).toStructuredJson();
 
             assertTrue(json.contains("Memory block not found: nonexistent"),
@@ -310,11 +302,9 @@ public class SearchServiceTest {
 
         @Test
         @DisplayName("searchDisassembly finds instruction by mnemonic pattern")
-        void testSearchDisassembly_Found() throws Exception {
-            createDefaultProgram();
-
-            // Search for PUSH or NOP instructions
-            String json = service.searchDisassembly("PUSH|NOP", 0, 10).toStructuredJson();
+        void testSearchDisassembly_Found() {
+            // Search for ADDIU or NOP instructions
+            String json = service.searchDisassembly("ADDIU|NOP", 0, 10).toStructuredJson();
 
             assertNotNull(json);
             // Should find at least one instruction matching PUSH or NOP
@@ -325,27 +315,29 @@ public class SearchServiceTest {
         @Test
         @DisplayName("searchDisassembly returns error when no executable blocks exist")
         void testSearchDisassembly_NoExecutableBlocks() throws Exception {
-            // Create a program with only non-executable data blocks
-            builder = new ProgramBuilder("test", ProgramBuilder._X64);
-            builder.createMemory(".data", "0x402000", 0x100);
-            // setBytes with isExecutable=false creates data, not code
-            builder.setBytes("0x402000", "48 65 6C 6C 6F", false);
+            // This test needs its own program with only non-executable data blocks
+            ProgramBuilder localBuilder = new ProgramBuilder("test", GhidraTestEnv.LANG);
+            try {
+                localBuilder.createMemory(".data", "0x402000", 0x100);
+                // setBytes with isExecutable=false creates data, not code
+                localBuilder.setBytes("0x402000", "48 65 6C 6C 6F", false);
 
-            program = builder.getProgram();
-            ProgramService ps = GhidraTestEnv.programService(program);
-            service = new SearchService(ps);
+                ProgramDB localProgram = localBuilder.getProgram();
+                ProgramService ps = GhidraTestEnv.programService(localProgram);
+                SearchService localService = new SearchService(ps);
 
-            String json = service.searchDisassembly("PUSH", 0, 10).toStructuredJson();
+                String json = localService.searchDisassembly("PUSH", 0, 10).toStructuredJson();
 
-            assertTrue(json.contains("No executable code blocks") || json.contains("No matches"),
-                    "Should report no executable blocks or no matches, got: " + json);
+                assertTrue(json.contains("No executable code blocks") || json.contains("No matches"),
+                        "Should report no executable blocks or no matches, got: " + json);
+            } finally {
+                localBuilder.dispose();
+            }
         }
 
         @Test
         @DisplayName("searchDisassembly returns no matches for pattern not in instructions")
-        void testSearchDisassembly_NoMatches() throws Exception {
-            createDefaultProgram();
-
+        void testSearchDisassembly_NoMatches() {
             // Search for a pattern that does not match any instruction in our small function
             String json = service.searchDisassembly("XCHG.*RAX.*RBX", 0, 10).toStructuredJson();
 
@@ -357,9 +349,7 @@ public class SearchServiceTest {
 
         @Test
         @DisplayName("searchDecompiled finds match in decompiled output")
-        void testSearchDecompiled_FindsMatch() throws Exception {
-            createDefaultProgram();
-
+        void testSearchDecompiled_FindsMatch() {
             // Search for "return" which is universal in decompiled C output
             ToolOutput result = service.searchDecompiled("return", 0, 10);
             assertInstanceOf(JsonOutput.class, result, "Should return JsonOutput, got: " + result.toStructuredJson());
@@ -376,9 +366,7 @@ public class SearchServiceTest {
 
         @Test
         @DisplayName("searchDecompiled returns no matches for absent pattern")
-        void testSearchDecompiled_NoMatches() throws Exception {
-            createDefaultProgram();
-
+        void testSearchDecompiled_NoMatches() {
             String json = service.searchDecompiled("ZZZZNOTFOUND12345", 0, 10).toStructuredJson();
 
             assertTrue(json.contains("No matches found"),
@@ -387,9 +375,7 @@ public class SearchServiceTest {
 
         @Test
         @DisplayName("searchDecompiled returns error for invalid regex")
-        void testSearchDecompiled_InvalidRegex() throws Exception {
-            createDefaultProgram();
-
+        void testSearchDecompiled_InvalidRegex() {
             String json = service.searchDecompiled("(unclosed", 0, 10).toStructuredJson();
 
             assertTrue(json.contains("Invalid regex pattern"),

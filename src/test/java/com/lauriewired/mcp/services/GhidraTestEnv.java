@@ -10,6 +10,7 @@ import java.util.List;
 
 import generic.jar.ResourceFile;
 import ghidra.framework.Application;
+import ghidra.program.database.ProgramBuilder;
 import ghidra.framework.ApplicationProperties;
 import ghidra.framework.HeadlessGhidraApplicationConfiguration;
 import ghidra.program.model.listing.Program;
@@ -27,6 +28,9 @@ import utility.module.ModuleUtilities;
  * test class gracefully.
  */
 public final class GhidraTestEnv {
+    /** Shared language ID for all ProgramBuilder-based tests. */
+    public static final String LANG = ProgramBuilder._MIPS;
+
     private GhidraTestEnv() {}
 
     /** Boot Ghidra headlessly; skips via assumption if no install is found. */

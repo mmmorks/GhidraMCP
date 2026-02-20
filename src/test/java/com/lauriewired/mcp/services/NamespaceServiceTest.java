@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -106,17 +106,14 @@ public class NamespaceServiceTest {
     @DisplayName("ProgramBuilder-based happy-path tests")
     class HappyPathTests {
 
-        private ProgramBuilder builder;
-        private NamespaceService svc;
+        private static ProgramBuilder builder;
+        private static NamespaceService svc;
 
         @BeforeAll
-        static void initGhidra() {
+        static void setUp() throws Exception {
             GhidraTestEnv.initialize();
-        }
 
-        @BeforeEach
-        void setUp() throws Exception {
-            builder = new ProgramBuilder("test", ProgramBuilder._X64);
+            builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
             builder.createMemory(".text", "0x401000", 0x1000);
             builder.createEmptyFunction("main", "0x401000", 0x50, DataType.DEFAULT);
             builder.createLabel("0x401100", "my_label");
@@ -126,8 +123,8 @@ public class NamespaceServiceTest {
             svc = new NamespaceService(ps);
         }
 
-        @AfterEach
-        void tearDown() {
+        @AfterAll
+        static void tearDown() {
             if (builder != null) {
                 builder.dispose();
             }

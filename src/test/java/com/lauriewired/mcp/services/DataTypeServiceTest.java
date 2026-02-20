@@ -515,7 +515,7 @@ public class DataTypeServiceTest {
 
         @BeforeEach
         void setUp() throws Exception {
-            builder = new ProgramBuilder("test", ProgramBuilder._X64);
+            builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
             builder.createMemory(".text", "0x401000", 0x1000);
             builder.createMemory(".data", "0x402000", 0x100);
 

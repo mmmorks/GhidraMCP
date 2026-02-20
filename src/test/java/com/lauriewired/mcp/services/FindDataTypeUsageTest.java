@@ -43,7 +43,7 @@ public class FindDataTypeUsageTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
         builder.createMemory(".text", "0x401000", 0x1000);
         builder.createMemory(".data", "0x402000", 0x1000);
 
@@ -360,13 +360,13 @@ public class FindDataTypeUsageTest {
 
         // Request offset=1, limit=2
         String result = dataTypeService.findDataTypeUsage("MyStruct", null, 1, 2).toStructuredJson();
-        // With 5 results and offset=1 limit=2, we should get items at index 1 and 2
-        // The exact function names depend on iteration order, but we should have exactly 2 items
+        // On MIPS, struct return types also generate a hidden __return_storage_ptr__ param,
+        // so the total items may be higher than the number of functions.
+        // The key invariant is: the paginated response contains exactly 2 items.
         assertTrue(result.contains("\"items\""), "Should have items, got: " + result);
-        // Count occurrences of "Return type" — should be exactly 2
         int count = 0;
         int idx = 0;
-        while ((idx = result.indexOf("\"category\":\"Return type\"", idx)) != -1) {
+        while ((idx = result.indexOf("\"category\":\"", idx)) != -1) {
             count++;
             idx++;
         }

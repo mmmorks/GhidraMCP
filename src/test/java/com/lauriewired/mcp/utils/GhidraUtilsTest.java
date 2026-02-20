@@ -10,9 +10,8 @@ import java.util.Iterator;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -81,28 +80,24 @@ public class GhidraUtilsTest {
     @DisplayName("ProgramBuilder-based integration tests")
     class ProgramBuilderTests {
 
-        private ProgramBuilder builder;
-        private ProgramDB program;
+        private static ProgramBuilder builder;
+        private static ProgramDB program;
 
         @BeforeAll
-        static void initGhidra() {
+        static void setUp() throws Exception {
             GhidraTestEnv.initialize();
-        }
 
-        @BeforeEach
-        void setUp() throws Exception {
-            builder = new ProgramBuilder("utilsTest", ProgramBuilder._X64);
+            builder = new ProgramBuilder("utilsTest", GhidraTestEnv.LANG);
             builder.createMemory(".text", "0x401000", 0x2000);
 
-            // Helper at 0x401200: mov dword [rdi],0x10; ret
-            builder.setBytes("0x401200", "C7 07 10 00 00 00 C3", true);
+            // Helper at 0x401200: writes 0x10 through pointer in $a0 (Pattern B)
+            builder.setBytes("0x401200", "34 02 00 10 AC 82 00 00 03 E0 00 08 00 00 00 00", true);
             builder.createFunction("0x401200");
 
-            // Function at 0x401000 with local variable whose address escapes via call:
-            // push rbp; mov rbp,rsp; sub rsp,0x10; mov dword [rbp-4],0x42;
-            // lea rdi,[rbp-4]; call 0x401200; mov eax,[rbp-4]; leave; ret
+            // Function at 0x401000 with local variable whose address escapes via call (Pattern E)
+            // Stores 0x42 to local, passes &local to helper at 0x401200, reads local back
             builder.setBytes("0x401000",
-                "55 48 89 E5 48 83 EC 10 C7 45 FC 42 00 00 00 48 8D 7D FC E8 E8 01 00 00 8B 45 FC C9 C3",
+                "27 BD FF F0 AF BF 00 0C 34 02 00 42 AF A2 00 00 27 A4 00 00 0C 10 04 80 00 00 00 00 8F A2 00 00 8F BF 00 0C 27 BD 00 10 03 E0 00 08 00 00 00 00",
                 true);
             builder.createFunction("0x401000");
 
@@ -127,8 +122,8 @@ public class GhidraUtilsTest {
             }
         }
 
-        @AfterEach
-        void tearDown() {
+        @AfterAll
+        static void tearDown() {
             if (builder != null) {
                 builder.dispose();
             }
@@ -203,7 +198,7 @@ public class GhidraUtilsTest {
             Iterator<HighSymbol> symbols = hf.getLocalSymbolMap().getSymbols();
             assertTrue(symbols.hasNext(), "Decompiled function should have symbols");
             // Find a local_ or param_ variable
-            Pattern pattern = Pattern.compile("(local|param)_\\w+");
+            Pattern pattern = Pattern.compile("(local|param|[a-z]+Stack)_\\w+");
             while (symbols.hasNext()) {
                 String name = symbols.next().getName();
                 Matcher m = pattern.matcher(name);
@@ -265,29 +260,60 @@ public class GhidraUtilsTest {
         @Test
         @DisplayName("checkFullCommit returns true when parameter counts differ")
         void testCheckFullCommit_DifferentParamCounts() throws Exception {
-            HighFunction hf = decompile();
-
-            // Record how many decompiler params exist
-            int decompilerParamCount = hf.getLocalSymbolMap().getNumParams();
-
-            // Add enough listing params to guarantee a mismatch with the decompiler
-            Function func = hf.getFunction();
-            int tx = program.startTransaction("add extra params");
+            // Use a local builder to avoid mutating the shared program
+            ProgramBuilder localBuilder = new ProgramBuilder("checkFullCommitTest", GhidraTestEnv.LANG);
             try {
-                for (int i = func.getParameterCount(); i <= decompilerParamCount + 1; i++) {
-                    func.addParameter(
-                        new ParameterImpl("extra" + i,
-                            IntegerDataType.dataType, program),
-                        SourceType.USER_DEFINED);
-                }
-            } finally {
-                program.endTransaction(tx, true);
-            }
+                localBuilder.createMemory(".text", "0x401000", 0x2000);
+                localBuilder.setBytes("0x401200", "34 02 00 10 AC 82 00 00 03 E0 00 08 00 00 00 00", true);
+                localBuilder.createFunction("0x401200");
+                localBuilder.setBytes("0x401000",
+                    "27 BD FF F0 AF BF 00 0C 34 02 00 42 AF A2 00 00 27 A4 00 00 0C 10 04 80 00 00 00 00 8F A2 00 00 8F BF 00 0C 27 BD 00 10 03 E0 00 08 00 00 00 00",
+                    true);
+                localBuilder.createFunction("0x401000");
 
-            // Listing now has more params than the (stale) decompiler view → true
-            // Use null highSymbol which skips the isParameter early-return
-            assertTrue(GhidraUtils.checkFullCommit(null, hf),
-                "Should require full commit when listing param count exceeds decompiler param count");
+                ProgramDB localProgram = localBuilder.getProgram();
+                int txProto = localProgram.startTransaction("set helper prototype");
+                try {
+                    Function helperFunc = localProgram.getFunctionManager()
+                        .getFunctionAt(localBuilder.addr("0x401200"));
+                    if (helperFunc != null) {
+                        helperFunc.addParameter(
+                            new ParameterImpl("ptr",
+                                new PointerDataType(IntegerDataType.dataType), localProgram),
+                            SourceType.ANALYSIS);
+                    }
+                } finally {
+                    localProgram.endTransaction(txProto, true);
+                }
+
+                Function func = localProgram.getFunctionManager()
+                    .getFunctionAt(localBuilder.addr("0x401000"));
+                DecompileResults results = GhidraUtils.decompileFunction(func, localProgram);
+                HighFunction hf = results.getHighFunction();
+
+                // Record how many decompiler params exist
+                int decompilerParamCount = hf.getLocalSymbolMap().getNumParams();
+
+                // Add enough listing params to guarantee a mismatch with the decompiler
+                int tx = localProgram.startTransaction("add extra params");
+                try {
+                    for (int i = func.getParameterCount(); i <= decompilerParamCount + 1; i++) {
+                        func.addParameter(
+                            new ParameterImpl("extra" + i,
+                                IntegerDataType.dataType, localProgram),
+                            SourceType.USER_DEFINED);
+                    }
+                } finally {
+                    localProgram.endTransaction(tx, true);
+                }
+
+                // Listing now has more params than the (stale) decompiler view → true
+                // Use null highSymbol which skips the isParameter early-return
+                assertTrue(GhidraUtils.checkFullCommit(null, hf),
+                    "Should require full commit when listing param count exceeds decompiler param count");
+            } finally {
+                localBuilder.dispose();
+            }
         }
     }
 }
