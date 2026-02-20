@@ -61,7 +61,7 @@ MCP Server + Ghidra Plugin
 | `add_enum_value` | Add a value to an existing enum |
 | `find_data_type_usage` | Find all locations where a data type is used |
 
-## Analysis (5 tools)
+## Analysis (4 tools)
 
 | Tool | Description |
 |------|-------------|
@@ -69,7 +69,6 @@ MCP Server + Ghidra Plugin
 | `analyze_data_flow` | Track variable data flow in a function |
 | `get_call_graph` | Get the call graph for a function with configurable depth |
 | `list_references` | List cross-references (xrefs) to an address |
-| `list_references_from` | List all references from an address |
 
 ## Memory (7 tools)
 

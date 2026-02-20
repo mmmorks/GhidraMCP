@@ -18,7 +18,6 @@ import com.lauriewired.mcp.model.ToolOutput;
 import com.lauriewired.mcp.model.response.CallGraphResult;
 import com.lauriewired.mcp.model.response.ControlFlowResult;
 import com.lauriewired.mcp.model.response.DataFlowResult;
-import com.lauriewired.mcp.model.response.ReferenceFromItem;
 import com.lauriewired.mcp.model.response.ReferenceToItem;
 import com.lauriewired.mcp.utils.GhidraUtils;
 
@@ -42,7 +41,6 @@ import ghidra.program.model.pcode.PcodeOp;
 import ghidra.program.model.pcode.Varnode;
 import ghidra.program.model.symbol.Reference;
 import ghidra.program.model.symbol.ReferenceManager;
-import ghidra.program.model.symbol.Symbol;
 import ghidra.util.task.ConsoleTaskMonitor;
 
 /**
@@ -422,68 +420,4 @@ public class AnalysisService {
         }
     }
 
-    @McpTool(description = """
-        List all references FROM a specific address.
-
-        Shows what addresses/symbols this address references (calls, jumps, data access).
-
-        Returns: List of references with destination addresses and types
-
-        Note: Complements list_references which shows references TO an address.
-
-        Example: list_references_from("main") -> "00401000 -> 00401234 (strlen) [CALL]" """,
-        outputType = ListOutput.class, responseType = ReferenceFromItem.class)
-    public ToolOutput listReferencesFrom(
-            @Param("final Source address or symbol name (e.g., \"00401000\" or \"main\")") final String address,
-            @Param(value = "Starting index for pagination (default: 0)", defaultValue = "0") final int offset,
-            @Param(value = "Maximum number of references to return (default: 100)", defaultValue = "100") final int limit) {
-        final Program program = programService.getCurrentProgram();
-        if (program == null) return StatusOutput.error("No program loaded");
-        if (address == null) return StatusOutput.error("Address or name is required");
-
-        final List<ReferenceFromItem> refs = new ArrayList<>();
-        try {
-            // Try to get the address directly first (if addressStr is a hex address)
-            Address addr = program.getAddressFactory().getAddress(address);
-
-            // If addr is null or we couldn't get it directly, try to find it as a symbol name
-            if (addr == null) {
-                addr = GhidraUtils.getSymbolAddress(program, address);
-            }
-
-            if (addr == null) {
-                return StatusOutput.error("Could not resolve address for " + address);
-            }
-
-            final ReferenceManager refMgr = program.getReferenceManager();
-
-            // Get references from this address
-            for (final Reference ref : refMgr.getReferencesFrom(addr)) {
-                final Address toAddr = ref.getToAddress();
-                final ghidra.program.model.symbol.RefType refType = ref.getReferenceType();
-
-                final Symbol destSymbol = program.getSymbolTable().getPrimarySymbol(toAddr);
-                final String destName = destSymbol != null ? destSymbol.getName() : "unnamed";
-
-                final Function func = program.getFunctionManager().getFunctionContaining(toAddr);
-                final String funcName = func != null ? func.getName() : "not in function";
-
-                refs.add(new ReferenceFromItem(
-                        addr.toString(),
-                        toAddr.toString(),
-                        destName,
-                        refType.getName(),
-                        funcName));
-            }
-
-            if (refs.isEmpty()) {
-                return StatusOutput.error("No references found from " + address);
-            }
-
-            refs.sort(Comparator.comparing(ReferenceFromItem::from));
-            return ListOutput.paginate(refs, offset, limit);
-        } catch (Exception e) {
-            return StatusOutput.error("Error getting references from: " + e.getMessage());
-        }
-    }
 }

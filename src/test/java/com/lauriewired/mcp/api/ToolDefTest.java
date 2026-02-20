@@ -34,7 +34,7 @@ class ToolDefTest {
 
     @Test
     void testToSnakeCase_MultipleWords() {
-        assertEquals("list_references_from", Json.toSnakeCase("listReferencesFrom"));
+        assertEquals("analyze_control_flow", Json.toSnakeCase("analyzeControlFlow"));
     }
 
     @Test

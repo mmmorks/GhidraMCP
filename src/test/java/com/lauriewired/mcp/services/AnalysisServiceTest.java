@@ -213,22 +213,6 @@ public class AnalysisServiceTest {
             assertTrue(result.contains("\"message\":\"No program loaded\""));
         }
 
-        // ===== listReferencesFrom error-path tests =====
-
-        @Test
-        @DisplayName("listReferencesFrom returns error when no program is loaded")
-        void testListReferencesFrom_NoProgram() {
-            String result = analysisService.listReferencesFrom("0x1000", 0, 10).toStructuredJson();
-            assertTrue(result.contains("\"message\":\"No program loaded\""));
-        }
-
-        @Test
-        @DisplayName("listReferencesFrom returns error for null address")
-        void testListReferencesFrom_NullAddress() {
-            String result = analysisService.listReferencesFrom(null, 0, 10).toStructuredJson();
-            assertTrue(result.contains("\"message\":\"No program loaded\""));
-        }
-
         @Test
         @DisplayName("Constructor accepts null program service without throwing")
         void testConstructor_NullProgramService() {
@@ -415,51 +399,6 @@ public class AnalysisServiceTest {
 
             assertTrue(json.contains("No references found") || json.contains("\"message\""),
                     "Should report no references");
-        }
-
-        // ===== listReferencesFrom integration tests =====
-
-        @Test
-        @DisplayName("listReferencesFrom shows references from a CALL instruction")
-        void testListReferencesFrom_CallInstruction() {
-            // main at 0x401000 has a CALL to helper at 0x401100
-            // The CALL instruction creates a reference FROM main's call site
-            String json = service.listReferencesFrom("0x401000", 0, 10).toStructuredJson();
-
-            // Should find references from the function entry point or nearby
-            assertNotNull(json);
-            // May contain the CALL reference or may be "No references found" if
-            // references are from a specific instruction address not the entry point
-            assertTrue(json.contains("items") || json.contains("No references found") || json.contains("\"message\""),
-                    "Should return refs or error, got: " + json);
-        }
-
-        @Test
-        @DisplayName("listReferencesFrom returns error for address with no references")
-        void testListReferencesFrom_NoRefs() {
-            // Address 0x401500 has no outgoing references
-            String json = service.listReferencesFrom("0x401500", 0, 10).toStructuredJson();
-            assertTrue(json.contains("No references found") || json.contains("\"message\""),
-                    "Should report no references");
-        }
-
-        @Test
-        @DisplayName("listReferencesFrom resolves symbol name")
-        void testListReferencesFrom_SymbolName() {
-            // Try resolving by function name instead of address
-            String json = service.listReferencesFrom("main", 0, 10).toStructuredJson();
-            assertNotNull(json);
-            // Either finds references or reports none - both are valid
-            assertTrue(json.contains("items") || json.contains("No references found") || json.contains("\"message\""),
-                    "Should handle symbol name lookup");
-        }
-
-        @Test
-        @DisplayName("listReferencesFrom returns error for unresolvable address")
-        void testListReferencesFrom_UnresolvableAddress() {
-            String json = service.listReferencesFrom("invalid_not_a_symbol", 0, 10).toStructuredJson();
-            assertTrue(json.contains("Could not resolve address"),
-                    "Should report unresolvable address, got: " + json);
         }
 
         @Test
