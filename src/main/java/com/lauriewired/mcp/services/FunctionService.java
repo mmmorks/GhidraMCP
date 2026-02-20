@@ -1,10 +1,12 @@
 package com.lauriewired.mcp.services;
 
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 
 import com.lauriewired.mcp.api.McpTool;
 import com.lauriewired.mcp.api.Param;
@@ -27,6 +29,8 @@ import ghidra.app.decompiler.DecompileResults;
 import ghidra.app.services.CodeViewerService;
 import ghidra.framework.plugintool.PluginTool;
 import ghidra.program.model.address.Address;
+import ghidra.program.model.lang.Register;
+import ghidra.program.model.lang.RegisterValue;
 import ghidra.program.model.listing.CommentType;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Instruction;
@@ -108,10 +112,12 @@ public class FunctionService {
 
         final String effectiveFormat;
         final List<Map<String, String>> lines;
+        List<FunctionCodeResult.RegisterAssumption> registerAssumptions = null;
         switch (normalizedMode) {
             case "assembly", "asm", "disassembly" -> {
                 effectiveFormat = "assembly";
                 lines = getAssemblyLines(program, func);
+                registerAssumptions = getRegisterAssumptions(program, func.getEntryPoint());
             }
             case "pcode" -> {
                 effectiveFormat = "pcode";
@@ -123,7 +129,7 @@ public class FunctionService {
             }
         }
 
-        return new JsonOutput(new FunctionCodeResult(func.getName(), func.getSignature().getPrototypeString(), effectiveFormat, lines));
+        return new JsonOutput(new FunctionCodeResult(func.getName(), func.getSignature().getPrototypeString(), effectiveFormat, registerAssumptions, lines));
     }
 
     private List<Map<String, String>> getDecompiledCLines(final Program program, final Function func) {
@@ -173,6 +179,25 @@ public class FunctionService {
             lines.add(FunctionCodeResult.line(addr, op.toString()));
         }
         return lines;
+    }
+
+    private List<FunctionCodeResult.RegisterAssumption> getRegisterAssumptions(final Program program, final Address entryPoint) {
+        final var context = program.getProgramContext();
+        final TreeMap<String, FunctionCodeResult.RegisterAssumption> sorted = new TreeMap<>();
+
+        for (final Register reg : context.getRegisters()) {
+            final RegisterValue rv = context.getNonDefaultValue(reg, entryPoint);
+            if (rv == null || !rv.hasAnyValue()) continue;
+
+            final BigInteger val = rv.getUnsignedValueIgnoreMask();
+            final String hexValue = rv.hasValue()
+                    ? "0x" + val.toString(16).toUpperCase()
+                    : "0x" + val.toString(16).toUpperCase() + "*";
+
+            sorted.put(reg.getName(), new FunctionCodeResult.RegisterAssumption(reg.getName(), hexValue));
+        }
+
+        return sorted.isEmpty() ? null : new ArrayList<>(sorted.values());
     }
 
     @McpTool(post = true, description = """

@@ -8,6 +8,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.AfterEach;
@@ -798,5 +801,250 @@ public class FunctionServiceTest {
         ListOutput list = (ListOutput) result;
         assertEquals(1, list.items().size());
         assertTrue(list.hasMore());
+    }
+
+    // ===== Register assumptions tests =====
+
+    @Test
+    @DisplayName("Assembly mode returns null registerAssumptions when no register values are set")
+    void testGetFunctionCode_Assembly_NoRegisterAssumptions() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        builder.setBytes("0x401000", "55 48 89 e5 90 5d c3", true);
+        builder.createFunction("0x401000");
+
+        FunctionService service = serviceFor(builder.getProgram());
+        ToolOutput result = service.getFunctionCode("0x401000", "assembly");
+        FunctionCodeResult data = (FunctionCodeResult) ((JsonOutput) result).data();
+
+        assertEquals("assembly", data.format());
+        assertNull(data.registerAssumptions());
+    }
+
+    @Test
+    @DisplayName("Assembly mode includes register assumptions when non-default register values are set")
+    void testGetFunctionCode_Assembly_WithRegisterAssumptions() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+
+        // Use empty function to avoid context register conflicts with instructions.
+        // Set a non-default context register value (longMode=0 is non-default for x86-64).
+        builder.setRegisterValue("longMode", "0x401000", "0x401010", 0);
+        builder.createEmptyFunction("testFunc", "0x401000", 0x10, DataType.DEFAULT);
+
+        FunctionService service = serviceFor(builder.getProgram());
+        ToolOutput result = service.getFunctionCode("testFunc", "assembly");
+        FunctionCodeResult data = (FunctionCodeResult) ((JsonOutput) result).data();
+
+        assertNotNull(data.registerAssumptions(), "Should have register assumptions");
+        assertTrue(data.registerAssumptions().stream()
+                .anyMatch(a -> a.name().equals("longMode")),
+            "Should contain longMode register assumption");
+
+        FunctionCodeResult.RegisterAssumption longModeAssumption = data.registerAssumptions().stream()
+                .filter(a -> a.name().equals("longMode"))
+                .findFirst().orElseThrow();
+        assertEquals("0x0", longModeAssumption.value());
+    }
+
+    @Test
+    @DisplayName("C mode returns null registerAssumptions even when register values are set")
+    void testGetFunctionCode_C_NoRegisterAssumptions() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+
+        builder.setRegisterValue("longMode", "0x401000", "0x401010", 0);
+        builder.createEmptyFunction("testFunc", "0x401000", 0x10, DataType.DEFAULT);
+
+        FunctionService service = serviceFor(builder.getProgram());
+        ToolOutput result = service.getFunctionCode("testFunc", "C");
+        FunctionCodeResult data = (FunctionCodeResult) ((JsonOutput) result).data();
+
+        assertEquals("C", data.format());
+        assertNull(data.registerAssumptions(), "C mode should not include register assumptions");
+    }
+
+    @Test
+    @DisplayName("Pcode mode returns null registerAssumptions even when register values are set")
+    void testGetFunctionCode_Pcode_NoRegisterAssumptions() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+
+        builder.setRegisterValue("longMode", "0x401000", "0x401010", 0);
+        builder.createEmptyFunction("testFunc", "0x401000", 0x10, DataType.DEFAULT);
+
+        FunctionService service = serviceFor(builder.getProgram());
+        ToolOutput result = service.getFunctionCode("testFunc", "pcode");
+        FunctionCodeResult data = (FunctionCodeResult) ((JsonOutput) result).data();
+
+        assertEquals("pcode", data.format());
+        assertNull(data.registerAssumptions(), "Pcode mode should not include register assumptions");
+    }
+
+    @Test
+    @DisplayName("Register assumptions are sorted alphabetically by name")
+    void testGetFunctionCode_Assembly_RegisterAssumptionsSorted() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+
+        // longMode=0 is non-default for x86-64; this may cause the parent contextRegister
+        // to also appear as non-default, giving us multiple register assumptions to verify sorting.
+        builder.setRegisterValue("longMode", "0x401000", "0x401010", 0);
+        builder.createEmptyFunction("testFunc", "0x401000", 0x10, DataType.DEFAULT);
+
+        FunctionService service = serviceFor(builder.getProgram());
+        ToolOutput result = service.getFunctionCode("testFunc", "assembly");
+        FunctionCodeResult data = (FunctionCodeResult) ((JsonOutput) result).data();
+
+        assertNotNull(data.registerAssumptions());
+
+        // Verify alphabetical ordering of whatever assumptions are present
+        List<String> names = data.registerAssumptions().stream()
+                .map(FunctionCodeResult.RegisterAssumption::name)
+                .toList();
+        List<String> sorted = new ArrayList<>(names);
+        Collections.sort(sorted);
+        assertEquals(sorted, names, "Register assumptions should be sorted alphabetically");
+    }
+
+    @Test
+    @DisplayName("Register assumption hex value is formatted correctly (0x prefix, uppercase)")
+    void testGetFunctionCode_Assembly_HexFormatting() throws Exception {
+        builder = new ProgramBuilder("test", ProgramBuilder._X64);
+        builder.createMemory(".text", "0x401000", 0x1000);
+
+        // Set a non-default value to verify hex formatting
+        builder.setRegisterValue("longMode", "0x401000", "0x401010", 0);
+        builder.createEmptyFunction("testFunc", "0x401000", 0x10, DataType.DEFAULT);
+
+        FunctionService service = serviceFor(builder.getProgram());
+        ToolOutput result = service.getFunctionCode("testFunc", "assembly");
+        FunctionCodeResult data = (FunctionCodeResult) ((JsonOutput) result).data();
+
+        assertNotNull(data.registerAssumptions());
+        FunctionCodeResult.RegisterAssumption assumption = data.registerAssumptions().stream()
+                .filter(a -> a.name().equals("longMode"))
+                .findFirst().orElseThrow();
+        assertTrue(assumption.value().startsWith("0x"), "Value should have 0x prefix");
+    }
+
+    // ===== FunctionCodeResult record tests =====
+
+    @Test
+    @DisplayName("toDisplayText includes register assumptions header when present")
+    void testFunctionCodeResult_DisplayTextWithAssumptions() {
+        List<FunctionCodeResult.RegisterAssumption> assumptions = List.of(
+            new FunctionCodeResult.RegisterAssumption("gp", "0x12000"),
+            new FunctionCodeResult.RegisterAssumption("tp", "0x3000")
+        );
+        FunctionCodeResult result = new FunctionCodeResult("entry", "void entry(void)", "assembly", assumptions,
+            List.of(FunctionCodeResult.line("00401000", "MOV r1, r2")));
+
+        String display = result.toDisplayText();
+        assertTrue(display.contains("Register Assumptions:"));
+        assertTrue(display.contains("  assume gp = 0x12000"));
+        assertTrue(display.contains("  assume tp = 0x3000"));
+        assertTrue(display.contains("00401000: MOV r1, r2"));
+    }
+
+    @Test
+    @DisplayName("toDisplayText omits register assumptions header when null")
+    void testFunctionCodeResult_DisplayTextWithoutAssumptions() {
+        FunctionCodeResult result = new FunctionCodeResult("main", "void main(void)", "C", null,
+            List.of(FunctionCodeResult.line(null, "void main(void) {")));
+
+        String display = result.toDisplayText();
+        assertFalse(display.contains("Register Assumptions:"));
+        assertFalse(display.contains("assume"));
+        assertTrue(display.contains("void main(void) {"));
+    }
+
+    @Test
+    @DisplayName("FunctionCodeResult defensive copy prevents mutation of registerAssumptions")
+    void testFunctionCodeResult_RegisterAssumptions_DefensiveCopy() {
+        List<FunctionCodeResult.RegisterAssumption> mutableAssumptions = new ArrayList<>(List.of(
+            new FunctionCodeResult.RegisterAssumption("gp", "0x12000")
+        ));
+        FunctionCodeResult result = new FunctionCodeResult("entry", "void entry(void)", "assembly",
+            mutableAssumptions, List.of(FunctionCodeResult.line("00401000", "NOP")));
+
+        mutableAssumptions.add(new FunctionCodeResult.RegisterAssumption("tp", "0x3000"));
+        assertEquals(1, result.registerAssumptions().size(),
+            "Modifying original list should not affect record");
+    }
+
+    // ===== V850 register assumption tests =====
+
+    @Test
+    @DisplayName("V850 assembly mode includes gp register assumption")
+    void testGetFunctionCode_Assembly_V850_GpAssumption() throws Exception {
+        builder = new ProgramBuilder("test", "V850:LE:32:default");
+        builder.createMemory(".text", "0x1000", 0x1000);
+
+        builder.setRegisterValue("gp", "0x1000", "0x1010", 0x12000);
+        builder.createEmptyFunction("entry", "0x1000", 0x10, DataType.DEFAULT);
+
+        FunctionService service = serviceFor(builder.getProgram());
+        ToolOutput result = service.getFunctionCode("entry", "assembly");
+        FunctionCodeResult data = (FunctionCodeResult) ((JsonOutput) result).data();
+
+        assertNotNull(data.registerAssumptions(), "V850 should have register assumptions when gp is set");
+
+        FunctionCodeResult.RegisterAssumption gpAssumption = data.registerAssumptions().stream()
+                .filter(a -> a.name().equals("gp"))
+                .findFirst()
+                .orElse(null);
+        assertNotNull(gpAssumption, "Should contain gp register assumption");
+        assertEquals("0x12000", gpAssumption.value());
+    }
+
+    @Test
+    @DisplayName("V850 assembly mode formats large hex values with uppercase")
+    void testGetFunctionCode_Assembly_V850_LargeHexValue() throws Exception {
+        builder = new ProgramBuilder("test", "V850:LE:32:default");
+        builder.createMemory(".text", "0x1000", 0x1000);
+
+        builder.setRegisterValue("gp", "0x1000", "0x1010", 0xFF00);
+        builder.createEmptyFunction("entry", "0x1000", 0x10, DataType.DEFAULT);
+
+        FunctionService service = serviceFor(builder.getProgram());
+        ToolOutput result = service.getFunctionCode("entry", "assembly");
+        FunctionCodeResult data = (FunctionCodeResult) ((JsonOutput) result).data();
+
+        assertNotNull(data.registerAssumptions());
+        FunctionCodeResult.RegisterAssumption gpAssumption = data.registerAssumptions().stream()
+                .filter(a -> a.name().equals("gp"))
+                .findFirst().orElseThrow();
+        assertEquals("0xFF00", gpAssumption.value(), "Hex should be uppercase with 0x prefix");
+    }
+
+    @Test
+    @DisplayName("V850 assembly mode with multiple register assumptions (gp and tp)")
+    void testGetFunctionCode_Assembly_V850_MultipleRegisters() throws Exception {
+        builder = new ProgramBuilder("test", "V850:LE:32:default");
+        builder.createMemory(".text", "0x1000", 0x1000);
+
+        builder.setRegisterValue("gp", "0x1000", "0x1010", 0x12000);
+        builder.setRegisterValue("tp", "0x1000", "0x1010", 0x3000);
+        builder.createEmptyFunction("entry", "0x1000", 0x10, DataType.DEFAULT);
+
+        FunctionService service = serviceFor(builder.getProgram());
+        ToolOutput result = service.getFunctionCode("entry", "assembly");
+        FunctionCodeResult data = (FunctionCodeResult) ((JsonOutput) result).data();
+
+        assertNotNull(data.registerAssumptions());
+
+        assertTrue(data.registerAssumptions().stream().anyMatch(a -> a.name().equals("gp")),
+            "Should contain gp assumption");
+        assertTrue(data.registerAssumptions().stream().anyMatch(a -> a.name().equals("tp")),
+            "Should contain tp assumption");
+
+        // Verify sorted order (gp before tp)
+        List<String> names = data.registerAssumptions().stream()
+                .map(FunctionCodeResult.RegisterAssumption::name)
+                .toList();
+        List<String> sorted = new ArrayList<>(names);
+        Collections.sort(sorted);
+        assertEquals(sorted, names, "Register assumptions should be sorted alphabetically");
     }
 }

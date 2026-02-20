@@ -10,11 +10,15 @@ public record FunctionCodeResult(
     String function,
     String prototype,
     String format,
+    List<RegisterAssumption> registerAssumptions,
     List<Map<String, String>> lines
 ) implements Displayable {
     public FunctionCodeResult {
+        registerAssumptions = registerAssumptions != null ? List.copyOf(registerAssumptions) : null;
         lines = List.copyOf(lines);
     }
+
+    public record RegisterAssumption(String name, String value) {}
 
     public static Map<String, String> line(final String address, final String code) {
         final Map<String, String> entry = new LinkedHashMap<>(1);
@@ -25,6 +29,14 @@ public record FunctionCodeResult(
     @Override
     public String toDisplayText() {
         final StringBuilder sb = new StringBuilder();
+        if (registerAssumptions != null && !registerAssumptions.isEmpty()) {
+            sb.append("Register Assumptions:\n");
+            for (final RegisterAssumption assumption : registerAssumptions) {
+                sb.append("  assume ").append(assumption.name())
+                  .append(" = ").append(assumption.value()).append('\n');
+            }
+            sb.append('\n');
+        }
         for (final Map<String, String> entry : lines) {
             final var e = entry.entrySet().iterator().next();
             final String addr = e.getKey();

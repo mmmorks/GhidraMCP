@@ -214,7 +214,7 @@ public class ApiEndpointIntegrationTest {
         when(mockExchange.getResponseHeaders()).thenReturn(mockHeaders);
 
         when(mockFunctionService.getFunctionCode("main", "C"))
-            .thenReturn(new JsonOutput(new FunctionCodeResult("main", "int main(int argc, char **argv)", "C",
+            .thenReturn(new JsonOutput(new FunctionCodeResult("main", "int main(int argc, char **argv)", "C", null,
                 java.util.List.of(FunctionCodeResult.line(null, "int main(int argc, char **argv) { ... }")))));
 
         handler.handle(mockExchange);
@@ -242,7 +242,7 @@ public class ApiEndpointIntegrationTest {
         when(mockExchange.getResponseHeaders()).thenReturn(mockHeaders);
 
         when(mockFunctionService.getFunctionCode("main", "C"))
-            .thenReturn(new JsonOutput(new FunctionCodeResult("main", "int main(void)", "C",
+            .thenReturn(new JsonOutput(new FunctionCodeResult("main", "int main(void)", "C", null,
                 java.util.List.of(FunctionCodeResult.line(null, "int main() { ... }")))));
 
         handler.handle(mockExchange);
