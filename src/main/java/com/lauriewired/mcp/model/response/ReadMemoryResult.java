@@ -25,7 +25,7 @@ public record ReadMemoryResult(
     public record AddressComment(String address, String type, String text) {}
 
     public ReadMemoryResult {
-        comments = comments != null ? List.copyOf(comments) : List.of();
+        comments = (comments != null && !comments.isEmpty()) ? List.copyOf(comments) : null;
     }
 
     @Override
@@ -36,7 +36,7 @@ public record ReadMemoryResult(
         if (ascii != null) {
             sb.append("  | ").append(ascii);
         }
-        if (!comments.isEmpty()) {
+        if (comments != null && !comments.isEmpty()) {
             sb.append("\nComments:\n");
             for (final AddressComment c : comments) {
                 sb.append(String.format("  %s [%s]: %s\n", c.address(), c.type(), c.text()));

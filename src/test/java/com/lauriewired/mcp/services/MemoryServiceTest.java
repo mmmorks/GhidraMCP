@@ -778,11 +778,13 @@ public class MemoryServiceTest {
         assertInstanceOf(JsonOutput.class, result);
 
         ReadMemoryResult memResult = (ReadMemoryResult) ((JsonOutput) result).data();
-        assertNotNull(memResult.comments());
-        assertTrue(memResult.comments().isEmpty());
+        assertNull(memResult.comments());
 
         // Display text should not include Comments section
         assertFalse(result.toDisplayText().contains("Comments:"));
+
+        // JSON should not include comments key at all
+        assertFalse(result.toStructuredJson().contains("comments"));
     }
 
     @Test
