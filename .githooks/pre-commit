@@ -1,0 +1,72 @@
+#!/bin/bash
+# Pre-commit hook: selectively runs Java and/or Python tests
+# based on what files are staged. Runs against the staged snapshot,
+# not the working tree.
+
+# If there are no staged changes, skip.
+if git diff --cached --quiet; then
+    exit 0
+fi
+
+# Detect what changed
+STAGED_FILES=$(git diff --cached --name-only)
+
+JAVA_CHANGED=0
+PYTHON_CHANGED=0
+
+if echo "$STAGED_FILES" | grep -qE '^(src/|pom\.xml)'; then
+    JAVA_CHANGED=1
+fi
+
+if echo "$STAGED_FILES" | grep -qE '\.(py)$|^requirements\.txt$'; then
+    PYTHON_CHANGED=1
+fi
+
+# If no code files changed, skip testing entirely
+if [ "$JAVA_CHANGED" -eq 0 ] && [ "$PYTHON_CHANGED" -eq 0 ]; then
+    exit 0
+fi
+
+# Stash unstaged changes (and untracked files) so tests run
+# against exactly what will be committed.
+STASH_NAME="pre-commit-$(date +%s)"
+git stash push --keep-index --include-untracked -m "$STASH_NAME" -q
+
+# Track whether we actually created a stash entry
+STASH_CREATED=0
+if git stash list | head -1 | grep -q "$STASH_NAME"; then
+    STASH_CREATED=1
+fi
+
+restore_stash() {
+    if [ "$STASH_CREATED" -eq 1 ]; then
+        git stash pop -q
+        STASH_CREATED=0
+    fi
+}
+
+trap restore_stash EXIT
+
+STATUS=0
+
+if [ "$JAVA_CHANGED" -eq 1 ]; then
+    echo "Running mvn verify (tests + static analysis)..."
+    mvn verify -q
+    JAVA_STATUS=$?
+    if [ "$JAVA_STATUS" -ne 0 ]; then
+        STATUS=1
+    fi
+fi
+
+if [ "$PYTHON_CHANGED" -eq 1 ]; then
+    echo "Running pytest test_bridge.py..."
+    pytest test_bridge.py -q
+    PYTHON_STATUS=$?
+    if [ "$PYTHON_STATUS" -ne 0 ]; then
+        STATUS=1
+    fi
+fi
+
+restore_stash
+
+exit $STATUS
