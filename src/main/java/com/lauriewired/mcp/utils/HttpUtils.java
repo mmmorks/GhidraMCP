@@ -5,12 +5,14 @@ import java.io.InputStream;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.lauriewired.mcp.model.StatusOutput;
 import com.lauriewired.mcp.model.ToolOutput;
 import com.sun.net.httpserver.HttpExchange;
@@ -112,126 +114,24 @@ public class HttpUtils {
 
     /**
      * Parse a flat JSON object body into a Map of string key-value pairs.
-     * Handles string values (with escaped quotes), numeric/boolean values
-     * (converted to strings), and null values (skipped).
+     * Handles string values, numeric/boolean values (converted to strings),
+     * and skips null values and nested objects/arrays.
      */
     public static Map<String, String> parseJsonBody(final String body) {
-        final Map<String, String> result = new java.util.LinkedHashMap<>();
+        final Map<String, String> result = new LinkedHashMap<>();
         if (body == null || body.isEmpty()) return result;
 
-        final String trimmed = body.trim();
-        if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return result;
+        final JsonNode root = Json.readTree(body.trim());
+        if (root == null || !root.isObject()) return result;
 
-        // Strip outer braces
-        final String inner = trimmed.substring(1, trimmed.length() - 1).trim();
-        if (inner.isEmpty()) return result;
-
-        int i = 0;
-        while (i < inner.length()) {
-            // Find key
-            final int qs = inner.indexOf('"', i);
-            if (qs < 0) break;
-            final int qe = findNextUnescapedQuote(inner, qs + 1);
-            if (qe < 0) break;
-            final String key = unescapeJsonValue(inner.substring(qs + 1, qe));
-
-            // Find colon
-            final int colon = inner.indexOf(':', qe + 1);
-            if (colon < 0) break;
-
-            // Skip whitespace after colon
-            int valStart = colon + 1;
-            while (valStart < inner.length() && Character.isWhitespace(inner.charAt(valStart))) valStart++;
-            if (valStart >= inner.length()) break;
-
-            final char firstChar = inner.charAt(valStart);
-
-            if (firstChar == '"') {
-                // String value
-                final int valEnd = findNextUnescapedQuote(inner, valStart + 1);
-                if (valEnd < 0) break;
-                result.put(key, unescapeJsonValue(inner.substring(valStart + 1, valEnd)));
-                i = valEnd + 1;
-            } else if (firstChar == '{' || firstChar == '[') {
-                // Nested object or array — skip entirely (not a flat value)
-                int depth = 1;
-                final char open = firstChar;
-                final char close = (open == '{') ? '}' : ']';
-                int pos = valStart + 1;
-                boolean inStr = false;
-                while (pos < inner.length() && depth > 0) {
-                    final char c = inner.charAt(pos);
-                    if (c == '"' && (pos == 0 || inner.charAt(pos - 1) != '\\')) {
-                        inStr = !inStr;
-                    } else if (!inStr) {
-                        if (c == open) depth++;
-                        else if (c == close) depth--;
-                    }
-                    pos++;
-                }
-                // Don't put nested structures in the flat map
-                i = pos;
-            } else if (inner.startsWith("null", valStart)) {
-                // Null value — skip
-                i = valStart + 4;
-            } else {
-                // Numeric, boolean, or other literal value
-                int valEnd = valStart;
-                while (valEnd < inner.length() && inner.charAt(valEnd) != ',' && inner.charAt(valEnd) != '}') {
-                    valEnd++;
-                }
-                result.put(key, inner.substring(valStart, valEnd).trim());
-                i = valEnd;
-            }
-
-            // Skip comma
-            while (i < inner.length() && (inner.charAt(i) == ',' || Character.isWhitespace(inner.charAt(i)))) i++;
+        final var fields = root.fields();
+        while (fields.hasNext()) {
+            final var entry = fields.next();
+            final JsonNode value = entry.getValue();
+            if (value.isNull() || value.isObject() || value.isArray()) continue;
+            result.put(entry.getKey(), value.asText());
         }
-
         return result;
-    }
-
-    /**
-     * Find the next unescaped double-quote in a string.
-     */
-    static int findNextUnescapedQuote(final String s, final int fromIndex) {
-        int i = fromIndex;
-        while (i < s.length()) {
-            final int q = s.indexOf('"', i);
-            if (q < 0) return -1;
-            int backslashes = 0;
-            int j = q - 1;
-            while (j >= 0 && s.charAt(j) == '\\') { backslashes++; j--; }
-            if (backslashes % 2 == 0) return q;
-            i = q + 1;
-        }
-        return -1;
-    }
-
-    /**
-     * Unescape a JSON string value.
-     */
-    static String unescapeJsonValue(final String s) {
-        if (s == null || s.indexOf('\\') < 0) return s;
-        final StringBuilder sb = new StringBuilder(s.length());
-        for (int i = 0; i < s.length(); i++) {
-            final char c = s.charAt(i);
-            if (c == '\\' && i + 1 < s.length()) {
-                final char next = s.charAt(i + 1);
-                switch (next) {
-                    case '"':  sb.append('"');  i++; break;
-                    case '\\': sb.append('\\'); i++; break;
-                    case 'n':  sb.append('\n'); i++; break;
-                    case 'r':  sb.append('\r'); i++; break;
-                    case 't':  sb.append('\t'); i++; break;
-                    case '/':  sb.append('/');  i++; break;
-                    default:   sb.append(c);         break;
-                }
-            } else {
-                sb.append(c);
-            }
-        }
-        return sb.toString();
     }
 
     /**
@@ -309,7 +209,7 @@ public class HttpUtils {
         if (output instanceof StatusOutput status && !status.success()) {
             sendJsonErrorResponse(exchange, 400, status.message());
         } else {
-            final Map<String, Object> envelope = new java.util.LinkedHashMap<>();
+            final Map<String, Object> envelope = new LinkedHashMap<>();
             envelope.put("status", "success");
             // Parse the structured JSON back to an object so it's embedded inline
             envelope.put("data", Json.readValue(output.toStructuredJson(), Object.class));
@@ -335,7 +235,7 @@ public class HttpUtils {
      * If data looks like JSON (starts with { or [), embeds it raw; otherwise quotes as string.
      */
     public static void sendJsonResponse(final HttpExchange exchange, final String data) throws IOException {
-        final Map<String, Object> envelope = new java.util.LinkedHashMap<>();
+        final Map<String, Object> envelope = new LinkedHashMap<>();
         envelope.put("status", "success");
         if (data != null && !data.isEmpty()) {
             final String trimmed = data.trim();
@@ -354,7 +254,7 @@ public class HttpUtils {
      * Send a JSON error response: {"status":"error","error":"..."}
      */
     public static void sendJsonErrorResponse(final HttpExchange exchange, final int statusCode, final String errorMessage) throws IOException {
-        final Map<String, Object> envelope = new java.util.LinkedHashMap<>();
+        final Map<String, Object> envelope = new LinkedHashMap<>();
         envelope.put("status", "error");
         envelope.put("error", errorMessage);
         sendRawJson(exchange, statusCode, Json.serialize(envelope));
@@ -374,34 +274,15 @@ public class HttpUtils {
     
     /**
      * Escape a string for JSON output.
-     * Single-pass implementation handling all JSON-required escapes including
-     * control characters U+0000–U+001F.
+     * Delegates to Jackson for correct escaping of all special and control characters.
      */
     public static String escapeJson(final String text) {
         if (text == null) {
             return null;
         }
-
-        final StringBuilder sb = new StringBuilder(text.length() + 16);
-        for (int i = 0; i < text.length(); i++) {
-            final char c = text.charAt(i);
-            switch (c) {
-                case '\\': sb.append("\\\\"); break;
-                case '"':  sb.append("\\\""); break;
-                case '\n': sb.append("\\n");  break;
-                case '\r': sb.append("\\r");  break;
-                case '\t': sb.append("\\t");  break;
-                case '\b': sb.append("\\b");  break;
-                case '\f': sb.append("\\f");  break;
-                default:
-                    if (c < 0x20) {
-                        sb.append(String.format("\\u%04x", (int) c));
-                    } else {
-                        sb.append(c);
-                    }
-                    break;
-            }
-        }
-        return sb.toString();
+        // Jackson's serialize wraps in quotes: "escaped content"
+        // Strip the surrounding quotes to get just the escaped content.
+        final String quoted = Json.serialize(text);
+        return quoted.substring(1, quoted.length() - 1);
     }
 }
