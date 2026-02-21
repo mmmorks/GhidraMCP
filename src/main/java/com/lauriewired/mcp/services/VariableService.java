@@ -376,6 +376,8 @@ public class VariableService {
         Returns: JSON with status, applied type changes, and count
 
         Note: Supports built-in types, pointers, and structures. Windows-style types also supported.
+        Use category-qualified paths (e.g., "/generic_clib_64/int") to disambiguate
+        when multiple types share the same name.
 
         Example: set_variable_types("00401000", {"local_10": "int", "local_14": "char *"}) """,
         outputType = JsonOutput.class, responseType = SetVariableTypesResult.class)

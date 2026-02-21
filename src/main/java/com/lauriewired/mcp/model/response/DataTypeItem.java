@@ -1,3 +1,3 @@
 package com.lauriewired.mcp.model.response;
 
-public record DataTypeItem(String kind, String name, String summary, Integer size) {}
+public record DataTypeItem(String kind, String name, String summary, Integer size, String categoryPath) {}

@@ -459,11 +459,12 @@ public class DataTypeService {
     }
 
     /**
-     * Find a data type by name in all categories/folders of the data type manager
-     * This searches through all categories rather than just the root
+     * Find a data type by name in all categories/folders of the data type manager.
+     * Supports category-path-qualified names (e.g., "/generic_clib_64/int") for
+     * disambiguation when multiple types share the same name.
      *
      * @param dtm data type manager
-     * @param typeName name of the data type to find
+     * @param typeName name or category-qualified path of the data type to find
      * @return the data type if found, null otherwise
      */
     public DataType findDataTypeByNameInAllCategories(final DataTypeManager dtm, final String typeName) {
@@ -471,7 +472,16 @@ public class DataTypeService {
             return null;
         }
 
-        // Try exact match first
+        // If typeName contains '/', treat it as a category-qualified path
+        if (typeName.contains("/")) {
+            final String normalizedPath = typeName.startsWith("/") ? typeName : "/" + typeName;
+            final DataType pathResult = dtm.getDataType(normalizedPath);
+            if (pathResult != null) {
+                return pathResult;
+            }
+        }
+
+        // Try exact-case match first, then case-insensitive
         final DataType result = searchByNameInAllCategories(dtm, typeName);
         if (result != null) {
             return result;
@@ -482,23 +492,59 @@ public class DataTypeService {
     }
 
     /**
-     * Helper method to search for a data type by name in all categories
+     * Helper method to search for a data type by name in all categories.
+     * Collects all matches and returns the best one based on priority ordering:
+     * exact-case matches preferred over case-insensitive, root category preferred,
+     * then shallowest path, then alphabetical path as tiebreaker.
      */
     private DataType searchByNameInAllCategories(final DataTypeManager dtm, final String name) {
-        // Get all data types from the manager
+        final List<DataType> exactMatches = new ArrayList<>();
+        final List<DataType> caseInsensitiveMatches = new ArrayList<>();
+
         final Iterator<DataType> allTypes = dtm.getAllDataTypes();
         while (allTypes.hasNext()) {
             final DataType dt = allTypes.next();
-            // Check if the name matches exactly (case-sensitive)
             if (dt.getName().equals(name)) {
-                return dt;
-            }
-            // For case-insensitive, we want an exact match except for case
-            if (dt.getName().equalsIgnoreCase(name)) {
-                return dt;
+                exactMatches.add(dt);
+            } else if (dt.getName().equalsIgnoreCase(name)) {
+                caseInsensitiveMatches.add(dt);
             }
         }
+
+        if (!exactMatches.isEmpty()) {
+            return selectBestMatch(exactMatches);
+        }
+        if (!caseInsensitiveMatches.isEmpty()) {
+            return selectBestMatch(caseInsensitiveMatches);
+        }
         return null;
+    }
+
+    /**
+     * Select the best match from a list of data types with the same name.
+     * Priority: root category ("/") first, then shallowest category path,
+     * then alphabetical path as tiebreaker.
+     */
+    private DataType selectBestMatch(final List<DataType> matches) {
+        if (matches.size() == 1) {
+            return matches.get(0);
+        }
+        matches.sort(Comparator
+                .<DataType, Integer>comparing(dt -> {
+                    final String path = dt.getCategoryPath().getPath();
+                    return "/".equals(path) ? 0 : 1;
+                })
+                .thenComparingInt(dt -> {
+                    final String path = dt.getCategoryPath().getPath();
+                    // Count path depth by number of '/' separators
+                    int depth = 0;
+                    for (int i = 0; i < path.length(); i++) {
+                        if (path.charAt(i) == '/') depth++;
+                    }
+                    return depth;
+                })
+                .thenComparing(dt -> dt.getCategoryPath().getPath()));
+        return matches.get(0);
     }
 
     /**
@@ -514,7 +560,16 @@ public class DataTypeService {
             return null;
         }
 
-        // First try to find exact match in all categories
+        // If typeName contains '/', try direct path lookup first
+        if (typeName.contains("/")) {
+            final String normalizedPath = typeName.startsWith("/") ? typeName : "/" + typeName;
+            final DataType pathResult = dtm.getDataType(normalizedPath);
+            if (pathResult != null) {
+                return pathResult;
+            }
+        }
+
+        // Try to find exact match in all categories
         final DataType dataType = findDataTypeByNameInAllCategories(dtm, typeName);
         if (dataType != null) {
             return dataType;
@@ -860,7 +915,8 @@ public class DataTypeService {
                            .append(comp.getFieldName());
                 }
                 summary.append("}");
-                items.add(new DataTypeItem("struct", struct.getName(), summary.toString(), null));
+                items.add(new DataTypeItem("struct", struct.getName(), summary.toString(), null,
+                        struct.getCategoryPath().getPath()));
             }
         }
 
@@ -882,7 +938,8 @@ public class DataTypeService {
                     summary.append(names[i]).append("=").append(enumType.getValue(names[i]));
                 }
                 summary.append("}");
-                items.add(new DataTypeItem("enum", enumType.getName(), summary.toString(), enumType.getLength()));
+                items.add(new DataTypeItem("enum", enumType.getName(), summary.toString(), enumType.getLength(),
+                        enumType.getCategoryPath().getPath()));
             }
         }
 
@@ -895,11 +952,14 @@ public class DataTypeService {
         For structures: returns full field layout with offsets, types, sizes, and comments.
         For enums: returns all values sorted numerically with hex and decimal representation.
 
-        Returns: Detailed data type information
+        Returns: Detailed data type information including category_path for disambiguation.
+
+        Note: Accepts category-qualified paths (e.g., "/generic_clib_64/int") to select
+        a specific type when multiple types share the same name.
 
         Example: get_data_type("POINT") -> "Structure: POINT\\nSize: 8 bytes\\nFields:\\n  [0000] x: int..." """)
     public ToolOutput getDataType(
-            @Param("Name of the data type to examine (e.g., \"POINT\", \"FILE_FLAGS\")") final String name) {
+            @Param("Name or category-qualified path of the data type (e.g., \"POINT\", \"/generic_clib_64/int\")") final String name) {
         final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
         if (name == null || name.isEmpty()) return StatusOutput.error("Data type name is required");
@@ -920,6 +980,7 @@ public class DataTypeService {
                     dataType.getName(),
                     dataType.getLength(),
                     dataType.getDescription(),
+                    dataType.getCategoryPath().getPath(),
                     null,
                     null);
             return new JsonOutput(result);
@@ -942,6 +1003,7 @@ public class DataTypeService {
                 struct.getName(),
                 struct.getLength(),
                 null,
+                struct.getCategoryPath().getPath(),
                 fields,
                 null);
     }
@@ -964,6 +1026,7 @@ public class DataTypeService {
                 enumType.getName(),
                 enumType.getLength(),
                 null,
+                enumType.getCategoryPath().getPath(),
                 null,
                 values);
     }

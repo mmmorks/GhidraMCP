@@ -1190,6 +1190,175 @@ public class DataTypeServiceTest {
             }
         }
 
+        // ===== Priority-ordered type resolution tests =====
+
+        @Test
+        @DisplayName("findDataTypeByNameInAllCategories prefers root category over deeper paths")
+        void testFindDataType_PrefersRootCategory() {
+            // Create a struct in root category
+            service.createStructure("PriorityTest", 0, null, null);
+            // Create another struct with the same name in a nested category directly via DTM
+            int tx = program.startTransaction("add nested duplicate");
+            try {
+                var dtm = program.getDataTypeManager();
+                var struct = new ghidra.program.model.data.StructureDataType(
+                        new ghidra.program.model.data.CategoryPath("/deep/nested"),
+                        "PriorityTest", 0, dtm);
+                dtm.addDataType(struct, null);
+            } finally {
+                program.endTransaction(tx, true);
+            }
+
+            var dtm = program.getDataTypeManager();
+            DataType found = service.findDataTypeByNameInAllCategories(dtm, "PriorityTest");
+            assertNotNull(found, "Should find PriorityTest");
+            assertEquals("/", found.getCategoryPath().getPath(),
+                    "Should prefer root category, got: " + found.getCategoryPath().getPath());
+        }
+
+        @Test
+        @DisplayName("findDataTypeByNameInAllCategories prefers shallower category path")
+        void testFindDataType_PrefersShallowerPath() {
+            // Create struct at shallow depth via service
+            service.createStructure("DepthTest", 0, "/shallow", null);
+            // Create another at deeper path directly via DTM
+            int tx = program.startTransaction("add deep duplicate");
+            try {
+                var dtm = program.getDataTypeManager();
+                var struct = new ghidra.program.model.data.StructureDataType(
+                        new ghidra.program.model.data.CategoryPath("/deep/nested/path"),
+                        "DepthTest", 0, dtm);
+                dtm.addDataType(struct, null);
+            } finally {
+                program.endTransaction(tx, true);
+            }
+
+            var dtm = program.getDataTypeManager();
+            DataType found = service.findDataTypeByNameInAllCategories(dtm, "DepthTest");
+            assertNotNull(found, "Should find DepthTest");
+            assertEquals("/shallow", found.getCategoryPath().getPath(),
+                    "Should prefer shallower path, got: " + found.getCategoryPath().getPath());
+        }
+
+        // ===== Path-qualified name resolution tests =====
+
+        @Test
+        @DisplayName("findDataTypeByNameInAllCategories resolves category-qualified path")
+        void testFindDataType_CategoryQualifiedPath() {
+            service.createStructure("PathTest", 0, "/MyCategory", null);
+
+            var dtm = program.getDataTypeManager();
+            // Should resolve with leading slash
+            DataType found = service.findDataTypeByNameInAllCategories(dtm, "/MyCategory/PathTest");
+            assertNotNull(found, "Should find via /MyCategory/PathTest");
+            assertEquals("PathTest", found.getName());
+        }
+
+        @Test
+        @DisplayName("findDataTypeByNameInAllCategories resolves path without leading slash")
+        void testFindDataType_PathWithoutLeadingSlash() {
+            service.createStructure("NoSlashTest", 0, "/SomeCategory", null);
+
+            var dtm = program.getDataTypeManager();
+            // Should resolve without leading slash (auto-normalized)
+            DataType found = service.findDataTypeByNameInAllCategories(dtm, "SomeCategory/NoSlashTest");
+            assertNotNull(found, "Should find via SomeCategory/NoSlashTest");
+            assertEquals("NoSlashTest", found.getName());
+        }
+
+        @Test
+        @DisplayName("resolveDataType resolves category-qualified path")
+        void testResolveDataType_CategoryQualifiedPath() {
+            service.createStructure("ResolvePathTest", 0, "/TypeCategory", null);
+
+            var dtm = program.getDataTypeManager();
+            DataType found = service.resolveDataType(dtm, "/TypeCategory/ResolvePathTest");
+            assertNotNull(found, "Should resolve via path in resolveDataType");
+            assertEquals("ResolvePathTest", found.getName());
+        }
+
+        @Test
+        @DisplayName("path-qualified lookup can disambiguate same-named types")
+        void testPathDisambiguation() {
+            // Create first struct via service
+            service.createStructure("AmbiguousType", 0, "/CategoryA", null);
+
+            // Create second struct with same name in different category directly via DTM
+            // (service's createStructure rejects duplicates by name)
+            int tx = program.startTransaction("add duplicate");
+            try {
+                var dtm = program.getDataTypeManager();
+                var struct = new ghidra.program.model.data.StructureDataType(
+                        new ghidra.program.model.data.CategoryPath("/CategoryB"),
+                        "AmbiguousType", 0, dtm);
+                dtm.addDataType(struct, null);
+            } finally {
+                program.endTransaction(tx, true);
+            }
+
+            var dtm = program.getDataTypeManager();
+            DataType fromA = service.findDataTypeByNameInAllCategories(dtm, "/CategoryA/AmbiguousType");
+            DataType fromB = service.findDataTypeByNameInAllCategories(dtm, "/CategoryB/AmbiguousType");
+            assertNotNull(fromA, "Should find from CategoryA");
+            assertNotNull(fromB, "Should find from CategoryB");
+            assertEquals("/CategoryA", fromA.getCategoryPath().getPath());
+            assertEquals("/CategoryB", fromB.getCategoryPath().getPath());
+        }
+
+        // ===== categoryPath in responses tests =====
+
+        @Test
+        @DisplayName("listDataTypes includes category_path in JSON response")
+        void testListDataTypes_IncludesCategoryPath() {
+            service.createStructure("CatPathStruct", 0, "/TestCat", null);
+            service.createEnum("CatPathEnum", 4, "/EnumCat",
+                java.util.Map.of("A", 1L));
+
+            String json = service.listDataTypes("all", 0, 100).toStructuredJson();
+            assertTrue(json.contains("category_path"),
+                    "Should contain category_path field, got: " + json);
+        }
+
+        @Test
+        @DisplayName("getDataType includes category_path in struct JSON response")
+        void testGetDataType_IncludesCategoryPath_Struct() {
+            service.createStructure("CatDetailStruct", 0, "/DetailCat", null);
+
+            String json = service.getDataType("CatDetailStruct").toStructuredJson();
+            assertTrue(json.contains("category_path"),
+                    "Should contain category_path field, got: " + json);
+            assertTrue(json.contains("/DetailCat"),
+                    "Should contain the category path value, got: " + json);
+        }
+
+        @Test
+        @DisplayName("getDataType includes category_path in enum JSON response")
+        void testGetDataType_IncludesCategoryPath_Enum() {
+            service.createEnum("CatDetailEnum", 4, "/EnumDetail",
+                java.util.Map.of("X", 1L));
+
+            String json = service.getDataType("CatDetailEnum").toStructuredJson();
+            assertTrue(json.contains("category_path"),
+                    "Should contain category_path field, got: " + json);
+            assertTrue(json.contains("/EnumDetail"),
+                    "Should contain the category path value, got: " + json);
+        }
+
+        // ===== Backward compatibility tests =====
+
+        @Test
+        @DisplayName("bare names still resolve correctly (backward compat)")
+        void testBareNames_BackwardCompat() {
+            service.createStructure("PlainStruct", 0, null, null);
+            service.createEnum("PlainEnum", 4, null, java.util.Map.of("V", 1L));
+
+            var dtm = program.getDataTypeManager();
+            DataType foundStruct = service.findDataTypeByNameInAllCategories(dtm, "PlainStruct");
+            DataType foundEnum = service.findDataTypeByNameInAllCategories(dtm, "PlainEnum");
+            assertNotNull(foundStruct, "Bare struct name should still resolve");
+            assertNotNull(foundEnum, "Bare enum name should still resolve");
+        }
+
         @Test
         @DisplayName("resolveDataType handles array syntax with real DataTypeManager")
         void testResolveDataType_ArraySyntax() {

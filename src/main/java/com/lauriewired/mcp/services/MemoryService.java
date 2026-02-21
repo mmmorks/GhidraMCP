@@ -205,6 +205,8 @@ public class MemoryService {
 
         Note: Data types can be built-in types, structures, enums, or arrays.
         Array syntax: "type[size]" e.g., "char[256]" for a string buffer.
+        Use category-qualified paths (e.g., "/generic_clib_64/int") to disambiguate
+        when multiple types share the same name.
 
         Example: set_address_data_type({"00402000": "POINT", "00403000": "int"}) """,
         outputType = JsonOutput.class, responseType = SetDataTypesResult.class)

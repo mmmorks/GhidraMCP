@@ -9,6 +9,7 @@ public record DataTypeDetailResult(
     String name,
     int size,
     String description,
+    String categoryPath,
     List<Field> fields,
     List<Value> values
 ) implements Displayable {
@@ -26,6 +27,9 @@ public record DataTypeDetailResult(
 
         if ("Structure".equals(kind)) {
             sb.append("Structure: ").append(name).append("\n");
+            if (categoryPath != null) {
+                sb.append("Category: ").append(categoryPath).append("\n");
+            }
             sb.append("Size: ").append(size).append(" bytes\n");
             if (description != null) {
                 sb.append("Description: ").append(description).append("\n");
@@ -48,6 +52,9 @@ public record DataTypeDetailResult(
             }
         } else if ("Enum".equals(kind)) {
             sb.append("Enum: ").append(name).append("\n");
+            if (categoryPath != null) {
+                sb.append("Category: ").append(categoryPath).append("\n");
+            }
             sb.append("Size: ").append(size).append(" bytes\n");
             if (description != null) {
                 sb.append("Description: ").append(description).append("\n");
@@ -62,6 +69,9 @@ public record DataTypeDetailResult(
             }
         } else {
             sb.append("Data Type: ").append(name).append("\n");
+            if (categoryPath != null) {
+                sb.append("Category: ").append(categoryPath).append("\n");
+            }
             sb.append("Kind: ").append(kind).append("\n");
             sb.append("Size: ").append(size).append(" bytes\n");
             if (description != null) {

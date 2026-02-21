@@ -76,7 +76,7 @@ class ResponseRecordDisplayTextTest {
                 new DataTypeDetailResult.Field(0, "x", "int", 4, "x coordinate"),
                 new DataTypeDetailResult.Field(4, "y", "int", 4, null)
             );
-            var result = new DataTypeDetailResult("Structure", "POINT", 8, "A 2D point", fields, null);
+            var result = new DataTypeDetailResult("Structure", "POINT", 8, "A 2D point", null, fields, null);
             String text = result.toDisplayText();
 
             assertTrue(text.contains("Structure: POINT"));
@@ -90,7 +90,7 @@ class ResponseRecordDisplayTextTest {
         @Test
         @DisplayName("toDisplayText for Structure with no fields")
         void testStructureEmpty() {
-            var result = new DataTypeDetailResult("Structure", "EMPTY", 0, null, List.of(), null);
+            var result = new DataTypeDetailResult("Structure", "EMPTY", 0, null, null, List.of(), null);
             String text = result.toDisplayText();
 
             assertTrue(text.contains("Structure: EMPTY"));
@@ -104,7 +104,7 @@ class ResponseRecordDisplayTextTest {
             var fields = List.of(
                 new DataTypeDetailResult.Field(0, null, "byte", 1, null)
             );
-            var result = new DataTypeDetailResult("Structure", "S", 1, null, fields, null);
+            var result = new DataTypeDetailResult("Structure", "S", 1, null, null, fields, null);
             String text = result.toDisplayText();
 
             assertTrue(text.contains("(unnamed)"));
@@ -118,7 +118,7 @@ class ResponseRecordDisplayTextTest {
                 new DataTypeDetailResult.Value("WRITE", 2),
                 new DataTypeDetailResult.Value("EXEC", 4)
             );
-            var result = new DataTypeDetailResult("Enum", "Permissions", 4, "File permissions", null, values);
+            var result = new DataTypeDetailResult("Enum", "Permissions", 4, "File permissions", null, null, values);
             String text = result.toDisplayText();
 
             assertTrue(text.contains("Enum: Permissions"));
@@ -132,7 +132,7 @@ class ResponseRecordDisplayTextTest {
         @Test
         @DisplayName("toDisplayText for Enum with no values")
         void testEnumEmpty() {
-            var result = new DataTypeDetailResult("Enum", "Empty", 4, null, null, List.of());
+            var result = new DataTypeDetailResult("Enum", "Empty", 4, null, null, null, List.of());
             String text = result.toDisplayText();
 
             assertTrue(text.contains("Enum: Empty"));
@@ -142,7 +142,7 @@ class ResponseRecordDisplayTextTest {
         @Test
         @DisplayName("toDisplayText for other data type kinds")
         void testOtherKind() {
-            var result = new DataTypeDetailResult("Typedef", "DWORD", 4, "Unsigned 32-bit", null, null);
+            var result = new DataTypeDetailResult("Typedef", "DWORD", 4, "Unsigned 32-bit", null, null, null);
             String text = result.toDisplayText();
 
             assertTrue(text.contains("Data Type: DWORD"));
@@ -154,7 +154,7 @@ class ResponseRecordDisplayTextTest {
         @Test
         @DisplayName("toDisplayText for other kind without description")
         void testOtherKindNoDescription() {
-            var result = new DataTypeDetailResult("Pointer", "int *", 8, null, null, null);
+            var result = new DataTypeDetailResult("Pointer", "int *", 8, null, null, null, null);
             String text = result.toDisplayText();
 
             assertTrue(text.contains("Data Type: int *"));
