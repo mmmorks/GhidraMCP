@@ -596,6 +596,17 @@ public class DataTypeService {
             }
         }
 
+        // Check for C-style pointer syntax like "type *" or "type **"
+        if (typeName.endsWith("*")) {
+            final String baseTypeName = typeName.substring(0, typeName.length() - 1).trim();
+            if (!baseTypeName.isEmpty()) {
+                final DataType baseType = resolveDataType(dtm, baseTypeName);
+                if (baseType != null) {
+                    return new ghidra.program.model.data.PointerDataType(baseType);
+                }
+            }
+        }
+
         // Check for Windows-style pointer types (PXXX)
         if (typeName.startsWith("P") && typeName.length() > 1) {
             final String baseTypeName = typeName.substring(1);

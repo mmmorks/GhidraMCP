@@ -1108,6 +1108,40 @@ public class DataTypeServiceTest {
         }
 
         @Test
+        @DisplayName("resolveDataType handles C-style pointer types")
+        void testResolveDataType_CStylePointerTypes() {
+            var dtm = program.getDataTypeManager();
+
+            // Create a struct so we have a guaranteed resolvable type
+            service.createStructure("TestPoint", 0, null, null);
+
+            // "TestPoint *" should resolve to a pointer to TestPoint
+            DataType structPtr = service.resolveDataType(dtm, "TestPoint *");
+            assertNotNull(structPtr, "TestPoint * should resolve");
+            assertTrue(structPtr instanceof ghidra.program.model.data.Pointer,
+                    "TestPoint * should be a Pointer type");
+
+            // "TestPoint **" should resolve to a pointer to pointer
+            DataType structPtrPtr = service.resolveDataType(dtm, "TestPoint **");
+            assertNotNull(structPtrPtr, "TestPoint ** should resolve");
+            assertTrue(structPtrPtr instanceof ghidra.program.model.data.Pointer,
+                    "TestPoint ** should be a Pointer type");
+
+            // Built-in pointer types should also work if the base type resolves
+            DataType intType = service.resolveDataType(dtm, "int");
+            if (intType != null) {
+                DataType intPtr = service.resolveDataType(dtm, "int *");
+                assertNotNull(intPtr, "int * should resolve when int resolves");
+                assertTrue(intPtr instanceof ghidra.program.model.data.Pointer,
+                        "int * should be a Pointer type");
+            }
+
+            // Pointer to unknown type should return null
+            DataType unknownPtr = service.resolveDataType(dtm, "CompletelyUnknownType12345 *");
+            assertNull(unknownPtr, "Pointer to unknown type should return null");
+        }
+
+        @Test
         @DisplayName("resolveDataType returns null for completely unknown types")
         void testResolveDataType_UnknownType() {
             var dtm = program.getDataTypeManager();
