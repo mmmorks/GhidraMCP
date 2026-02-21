@@ -58,10 +58,17 @@ public class CommentServiceTest {
         }
 
         @Test
-        @DisplayName("setComment returns failure message for null comment")
+        @DisplayName("setComment with null comment clears (fails here due to no program)")
         void testSetComment_NullComment() {
             String result = commentService.setComment("0x1000", null, "pre").toStructuredJson();
-            assertTrue(result.contains("Failed to set comment"));
+            assertTrue(result.contains("Failed to set comment")); // fails because no program loaded
+        }
+
+        @Test
+        @DisplayName("setComment with empty comment clears (fails here due to no program)")
+        void testSetComment_EmptyComment() {
+            String result = commentService.setComment("0x1000", "", "pre").toStructuredJson();
+            assertTrue(result.contains("Failed to set comment")); // fails because no program loaded
         }
 
         @Test
@@ -288,6 +295,38 @@ public class CommentServiceTest {
                 "Post comment should appear in pcode output, got: " + codes);
             assertTrue(codes.stream().anyMatch(c -> c.equals("; Repeatable comment")),
                 "Repeatable comment should appear in pcode output, got: " + codes);
+        }
+
+        @Test
+        @DisplayName("setComment with empty string clears an existing comment")
+        void testSetComment_EmptyStringClearsComment() {
+            svc.setComment("0x401000", "Temporary comment", "eol");
+            List<String> before = assemblyCodeLines();
+            assertTrue(before.stream().anyMatch(c -> c.contains("Temporary comment")),
+                "Comment should be present before clearing, got: " + before);
+
+            String result = svc.setComment("0x401000", "", "eol").toStructuredJson();
+            assertTrue(result.contains("Comment cleared successfully"), "Should report cleared, got: " + result);
+
+            List<String> after = assemblyCodeLines();
+            assertTrue(after.stream().noneMatch(c -> c.contains("Temporary comment")),
+                "Comment should be removed after clearing, got: " + after);
+        }
+
+        @Test
+        @DisplayName("setComment with null clears an existing comment")
+        void testSetComment_NullClearsComment() {
+            svc.setComment("0x401000", "Another comment", "pre");
+            List<String> before = assemblyCodeLines();
+            assertTrue(before.stream().anyMatch(c -> c.contains("Another comment")),
+                "Comment should be present before clearing, got: " + before);
+
+            String result = svc.setComment("0x401000", null, "pre").toStructuredJson();
+            assertTrue(result.contains("Comment cleared successfully"), "Should report cleared, got: " + result);
+
+            List<String> after = assemblyCodeLines();
+            assertTrue(after.stream().noneMatch(c -> c.contains("Another comment")),
+                "Comment should be removed after clearing, got: " + after);
         }
 
         @Test

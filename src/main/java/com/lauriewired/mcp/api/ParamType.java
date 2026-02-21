@@ -96,7 +96,8 @@ public enum ParamType {
      * Parse a raw string value (from GET query or POST body) into the appropriate typed value.
      */
     public Object parseFromString(final String raw, final Object defaultValue) {
-        if (raw == null || raw.isEmpty()) return defaultValue;
+        if (raw == null) return defaultValue;
+        if (raw.isEmpty() && this != STRING) return defaultValue;
 
         return switch (this) {
             case STRING -> raw;

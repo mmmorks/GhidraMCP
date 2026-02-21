@@ -30,13 +30,15 @@ public class CommentService {
         Set a comment at an address.
 
         Creates or replaces a comment of the specified type.
+        Use an empty string "" to clear/delete an existing comment.
 
         Returns: Success or failure message
 
         Examples:
             set_comment("00401010", "Initialize config", "decompiler")
             set_comment("00401010", "Save return address", "eol")
-            set_comment("00401000", "--- Main Entry ---", "plate") """,
+            set_comment("00401000", "--- Main Entry ---", "plate")
+            set_comment("00401010", "", "eol") """,
         outputType = StatusOutput.class, responseType = StatusOutput.class)
     public ToolOutput setComment(
             @Param("final Target address (e.g., \"00401000\" or \"ram:00401000\")") final String address,
@@ -56,8 +58,10 @@ public class CommentService {
         if (commentType == null) {
             return StatusOutput.error("Failed to set comment. Valid types: pre, post, eol, plate, repeatable");
         }
-        final boolean success = setCommentAtAddress(address, comment, commentType, "Set " + type + " comment");
-        return success ? StatusOutput.ok("Comment set successfully") : StatusOutput.error("Failed to set comment. Valid types: pre, post, eol, plate, repeatable");
+        final boolean clearing = comment == null || comment.isBlank();
+        final boolean success = setCommentAtAddress(address, comment, commentType, (clearing ? "Clear " : "Set ") + type + " comment");
+        if (!success) return StatusOutput.error("Failed to set comment. Valid types: pre, post, eol, plate, repeatable");
+        return StatusOutput.ok(clearing ? "Comment cleared successfully" : "Comment set successfully");
     }
 
     /**
@@ -66,11 +70,14 @@ public class CommentService {
     private boolean setCommentAtAddress(final String addressStr, final String comment, final CommentType commentType, final String transactionName) {
         final Program program = programService.getCurrentProgram();
         if (program == null) return false;
-        if (addressStr == null || addressStr.isEmpty() || comment == null) return false;
+        if (addressStr == null || addressStr.isEmpty()) return false;
+
+        // Empty or blank comment clears the comment (Ghidra uses null to clear)
+        final String effectiveComment = (comment == null || comment.isBlank()) ? null : comment;
 
         try (var tx = ProgramTransaction.start(program, transactionName)) {
             final Address addr = program.getAddressFactory().getAddress(addressStr);
-            program.getListing().setComment(addr, commentType, comment);
+            program.getListing().setComment(addr, commentType, effectiveComment);
             tx.commit();
             return true;
         } catch (Exception e) {

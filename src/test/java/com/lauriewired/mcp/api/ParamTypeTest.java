@@ -91,8 +91,19 @@ class ParamTypeTest {
     }
 
     @Test
-    void testParseFromString_StringEmpty() {
-        assertEquals("default", ParamType.STRING.parseFromString("", "default"));
+    void testParseFromString_StringEmpty_ReturnsEmptyString() {
+        // Empty string is a valid STRING value (e.g., clearing a comment)
+        assertEquals("", ParamType.STRING.parseFromString("", "default"));
+    }
+
+    @Test
+    void testParseFromString_IntegerEmpty_ReturnsDefault() {
+        assertEquals(0, ParamType.INTEGER.parseFromString("", 0));
+    }
+
+    @Test
+    void testParseFromString_BooleanEmpty_ReturnsDefault() {
+        assertEquals(true, ParamType.BOOLEAN.parseFromString("", true));
     }
 
     @Test
