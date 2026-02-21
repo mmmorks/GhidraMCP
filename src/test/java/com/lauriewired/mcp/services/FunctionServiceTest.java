@@ -311,7 +311,7 @@ public class FunctionServiceTest {
         @DisplayName("listFunctions handles empty function list")
         void testGetAllFunctionNames_NoFunctions() {
             String result = service.listFunctions(0, 10).toStructuredJson();
-            assertTrue(result.contains("\"total_items\":0"));
+            assertTrue(result.contains("\"remaining\":0"));
         }
 
         @Test
@@ -739,7 +739,7 @@ public class FunctionServiceTest {
         @DisplayName("searchFunctionsByName returns empty when no matches")
         void testSearchFunctionsByName_NoMatches() {
             String json = service.searchFunctionsByName("zzz_not_found", 0, 100).toStructuredJson();
-            assertTrue(json.contains("\"total_items\":0"));
+            assertTrue(json.contains("\"remaining\":0"));
         }
     }
 

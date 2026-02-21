@@ -2,16 +2,24 @@ package com.lauriewired.mcp.model;
 
 import java.util.List;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.lauriewired.mcp.utils.Json;
 
 /**
  * Output for tools that return paginated lists of items.
  * Items can be any type — record objects are serialized via Jackson.
  */
-public record ListOutput(List<?> items, int totalItems, int offset, int limit) implements ToolOutput {
+public record ListOutput(List<?> items,
+                         @JsonIgnore int totalItems,
+                         @JsonIgnore int offset,
+                         @JsonIgnore int limit) implements ToolOutput {
 
     /** Maximum allowed page size for any paginated endpoint. */
     public static final int MAX_LIMIT = 1000;
+
+    /** Nested pagination metadata. nextOffset is null when no more pages remain. */
+    public record Pagination(int remaining, Integer nextOffset) {}
 
     /** Defensive copy: ensure the list is unmodifiable. */
     public ListOutput {
@@ -21,6 +29,19 @@ public record ListOutput(List<?> items, int totalItems, int offset, int limit) i
     /** Whether more results are available beyond the current page. */
     public boolean hasMore() {
         return (offset + limit) < totalItems;
+    }
+
+    /** Number of items remaining beyond this page. */
+    @JsonIgnore
+    public int remaining() {
+        return Math.max(0, totalItems - offset - items.size());
+    }
+
+    /** Pagination metadata nested under a single key. */
+    @JsonProperty("pagination")
+    public Pagination pagination() {
+        final Integer nextOffset = hasMore() ? offset + limit : null;
+        return new Pagination(remaining(), nextOffset);
     }
 
     /**
@@ -64,13 +85,12 @@ public record ListOutput(List<?> items, int totalItems, int offset, int limit) i
         final int endItem = offset + items.size();
 
         sb.append("\n--- PAGINATION INFO ---\n");
-        sb.append(String.format("Showing items %d-%d of %d total items\n", startItem, endItem, totalItems));
+        sb.append(String.format("Showing items %d-%d (remaining: %d)\n", startItem, endItem, remaining()));
 
         if (hasMore()) {
             final int nextOffset = offset + limit;
             sb.append(String.format("To see more results, call this API again with offset=%d&limit=%d\n",
                 nextOffset, limit));
-            sb.append(String.format("Remaining items: %d\n", totalItems - endItem));
         } else {
             sb.append("All results shown (no more pages)\n");
         }

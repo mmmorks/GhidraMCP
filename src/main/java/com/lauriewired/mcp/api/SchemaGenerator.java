@@ -82,13 +82,20 @@ public final class SchemaGenerator {
         itemsArray.put("items", Json.convertValue(itemSchema, Map.class));
         properties.put("items", itemsArray);
 
-        properties.put("total_items", Map.of("type", "integer"));
-        properties.put("offset", Map.of("type", "integer"));
-        properties.put("limit", Map.of("type", "integer"));
-        properties.put("has_more", Map.of("type", "boolean"));
+        // Nested pagination object
+        final Map<String, Object> paginationProps = new LinkedHashMap<>();
+        paginationProps.put("remaining", Map.of("type", "integer"));
+        paginationProps.put("next_offset", Map.of("type", "integer"));
+
+        final Map<String, Object> paginationObj = new LinkedHashMap<>();
+        paginationObj.put("type", "object");
+        paginationObj.put("properties", paginationProps);
+        paginationObj.put("required", List.of("remaining"));
+        paginationObj.put("additionalProperties", false);
+        properties.put("pagination", paginationObj);
 
         schema.put("properties", properties);
-        schema.put("required", List.of("items", "total_items", "has_more"));
+        schema.put("required", List.of("items", "pagination"));
         schema.put("additionalProperties", false);
         return schema;
     }
