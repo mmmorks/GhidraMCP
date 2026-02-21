@@ -16,6 +16,7 @@ from bridge_mcp_ghidra import (
     _parse_args,
     _fetch_tool_definitions,
     _call_tool,
+    _VALID_TOOL_NAME,
 )
 
 
@@ -221,6 +222,39 @@ def _echo_server():
     server.shutdown()
 
 
+class _ErrorHandler(BaseHTTPRequestHandler):
+    """Returns HTTP error responses with JSON envelope body."""
+
+    def _respond_error(self):
+        body = json.dumps({"status": "error", "error": "server-side failure"})
+        self.send_response(500)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(body.encode())
+
+    def do_GET(self, *_):
+        self._respond_error()
+
+    def do_POST(self, *_):
+        # consume request body
+        length = int(self.headers.get("Content-Length", 0))
+        self.rfile.read(length)
+        self._respond_error()
+
+    def log_message(self, *_):
+        pass
+
+
+@pytest.fixture()
+def _error_server():
+    server = HTTPServer(("127.0.0.1", 0), _ErrorHandler)
+    port = server.server_address[1]
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    yield f"http://127.0.0.1:{port}"
+    server.shutdown()
+
+
 class TestCallTool:
     @pytest.mark.anyio
     async def test_get_request(self, _echo_server):
@@ -277,3 +311,108 @@ class TestCallTool:
         async with httpx.AsyncClient() as client:
             _, data, _ = await _call_tool(client, _echo_server, tool_def, {})
         assert data["method"] == "GET"
+
+    # -- Tool name validation (path injection prevention) --
+
+    @pytest.mark.anyio
+    async def test_rejects_path_traversal_name(self):
+        tool_def = {"name": "../../../etc/passwd", "method": "GET"}
+        async with httpx.AsyncClient() as client:
+            display, data, is_error = await _call_tool(client, "http://127.0.0.1:1", tool_def, {})
+        assert is_error
+        assert "Invalid tool name" in display
+
+    @pytest.mark.anyio
+    async def test_rejects_name_with_slashes(self):
+        tool_def = {"name": "foo/bar", "method": "GET"}
+        async with httpx.AsyncClient() as client:
+            display, _, is_error = await _call_tool(client, "http://127.0.0.1:1", tool_def, {})
+        assert is_error
+        assert "Invalid tool name" in display
+
+    @pytest.mark.anyio
+    async def test_rejects_name_with_dots(self):
+        tool_def = {"name": "foo.bar", "method": "GET"}
+        async with httpx.AsyncClient() as client:
+            display, _, is_error = await _call_tool(client, "http://127.0.0.1:1", tool_def, {})
+        assert is_error
+        assert "Invalid tool name" in display
+
+    @pytest.mark.anyio
+    async def test_rejects_uppercase_name(self):
+        tool_def = {"name": "MyTool", "method": "GET"}
+        async with httpx.AsyncClient() as client:
+            display, _, is_error = await _call_tool(client, "http://127.0.0.1:1", tool_def, {})
+        assert is_error
+        assert "Invalid tool name" in display
+
+    @pytest.mark.anyio
+    async def test_rejects_empty_name(self):
+        tool_def = {"name": "", "method": "GET"}
+        async with httpx.AsyncClient() as client:
+            display, _, is_error = await _call_tool(client, "http://127.0.0.1:1", tool_def, {})
+        assert is_error
+        assert "Invalid tool name" in display
+
+    @pytest.mark.anyio
+    async def test_accepts_valid_snake_case_name(self, _echo_server):
+        tool_def = {"name": "list_functions", "method": "GET"}
+        async with httpx.AsyncClient() as client:
+            _, data, is_error = await _call_tool(client, _echo_server, tool_def, {})
+        assert not is_error
+
+    # -- HTTP error handling (raise_for_status on both GET and POST) --
+
+    @pytest.mark.anyio
+    async def test_get_http_error_parses_envelope(self, _error_server):
+        tool_def = {"name": "my_tool", "method": "GET"}
+        async with httpx.AsyncClient() as client:
+            display, _, is_error = await _call_tool(client, _error_server, tool_def, {})
+        assert is_error
+        assert "server-side failure" in display
+
+    @pytest.mark.anyio
+    async def test_post_http_error_parses_envelope(self, _error_server):
+        tool_def = {"name": "my_tool", "method": "POST"}
+        async with httpx.AsyncClient() as client:
+            display, _, is_error = await _call_tool(client, _error_server, tool_def, {"key": "val"})
+        assert is_error
+        assert "server-side failure" in display
+
+
+# ---------------------------------------------------------------------------
+# _VALID_TOOL_NAME regex
+# ---------------------------------------------------------------------------
+
+class TestValidToolNameRegex:
+    def test_simple_name(self):
+        assert _VALID_TOOL_NAME.match("list_functions")
+
+    def test_single_word(self):
+        assert _VALID_TOOL_NAME.match("decompile")
+
+    def test_name_with_digits(self):
+        assert _VALID_TOOL_NAME.match("get_data2")
+
+    def test_rejects_leading_digit(self):
+        assert not _VALID_TOOL_NAME.match("2fast")
+
+    def test_rejects_leading_underscore(self):
+        assert not _VALID_TOOL_NAME.match("_private")
+
+    def test_rejects_uppercase(self):
+        assert not _VALID_TOOL_NAME.match("CamelCase")
+
+    def test_rejects_dots(self):
+        assert not _VALID_TOOL_NAME.match("a.b")
+
+    def test_rejects_slashes(self):
+        assert not _VALID_TOOL_NAME.match("a/b")
+
+    def test_rejects_empty(self):
+        assert not _VALID_TOOL_NAME.match("")
+
+    def test_rejects_spaces(self):
+        assert not _VALID_TOOL_NAME.match("has space")
+
+

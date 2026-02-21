@@ -18,6 +18,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import signal
 import sys
 
@@ -28,6 +29,8 @@ from mcp.types import ErrorData, Tool, TextContent, ToolAnnotations, CallToolRes
 import mcp.server.stdio
 
 logger = logging.getLogger("ghidra-mcp-bridge")
+
+_VALID_TOOL_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
 def _parse_args() -> argparse.Namespace:
@@ -95,6 +98,8 @@ async def _fetch_tool_definitions(client: httpx.AsyncClient, server_url: str) ->
 async def _call_tool(client: httpx.AsyncClient, server_url: str, tool_def: dict, arguments: dict) -> tuple[str, dict | None, bool]:
     """Dispatch a tool call as GET or POST to the Ghidra plugin."""
     endpoint = tool_def["name"]
+    if not _VALID_TOOL_NAME.match(endpoint):
+        return f"Invalid tool name: {endpoint!r}", None, True
     method = tool_def.get("method", "GET").upper()
     url = f"{server_url}/{endpoint}"
 
@@ -106,8 +111,14 @@ async def _call_tool(client: httpx.AsyncClient, server_url: str, tool_def: dict,
         else:
             params = {k: _serialize_query_value(v) for k, v in arguments.items() if v is not None}
             resp = await client.get(url, params=params)
+        resp.raise_for_status()
         return _handle_response(resp.text)
+    except httpx.HTTPStatusError as e:
+        return _handle_response(e.response.text)
     except httpx.HTTPError as e:
+        return f"Request failed: {e}", None, True
+    except Exception as e:
+        logger.error("Unexpected error calling tool %s: %s", endpoint, e)
         return f"Request failed: {e}", None, True
 
 
@@ -120,21 +131,23 @@ async def main():
     async with httpx.AsyncClient(timeout=args.timeout) as client:
         tools = await _fetch_tool_definitions(client, server_url)
         if not tools:
-            logger.warning("No tools fetched — bridge will start with zero tools. "
-                           "Ensure Ghidra is running with GhidraMCP plugin on %s", server_url)
+            sys.exit(f"Fatal: no tools fetched from {server_url}/mcp/tools — "
+                     "is Ghidra running with the GhidraMCP plugin?")
 
         tool_lookup = {t["name"]: t for t in tools}
+        _refresh_lock = asyncio.Lock()
 
         async def _refresh_tools():
             """Re-fetch tool definitions from the Ghidra plugin."""
             nonlocal tools, tool_lookup
-            new_tools = await _fetch_tool_definitions(client, server_url)
-            if new_tools:
-                tools = new_tools
-                tool_lookup = {t["name"]: t for t in tools}
-                logger.debug("Refreshed %d tools from %s", len(tools), server_url)
-            elif tools:
-                logger.debug("Tool refresh returned empty list; keeping %d existing tools", len(tools))
+            async with _refresh_lock:
+                new_tools = await _fetch_tool_definitions(client, server_url)
+                if new_tools:
+                    tools = new_tools
+                    tool_lookup = {t["name"]: t for t in tools}
+                    logger.debug("Refreshed %d tools from %s", len(tools), server_url)
+                elif tools:
+                    logger.debug("Tool refresh returned empty list; keeping %d existing tools", len(tools))
 
         server = Server("ghidra-mcp")
 
