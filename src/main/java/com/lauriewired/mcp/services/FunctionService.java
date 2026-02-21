@@ -29,6 +29,7 @@ import ghidra.app.cmd.function.ApplyFunctionSignatureCmd;
 import ghidra.app.decompiler.DecompInterface;
 import ghidra.app.decompiler.DecompileResults;
 import ghidra.app.services.CodeViewerService;
+import ghidra.app.util.parser.FunctionSignatureParser;
 import ghidra.framework.plugintool.PluginTool;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.data.DataType;
@@ -473,12 +474,64 @@ public class FunctionService {
     }
 
     /**
-     * Parse and apply the function signature by manually resolving types through DataTypeService.
-     * This avoids Ghidra's FunctionSignatureParser which can trigger modal dialogs for ambiguous types.
+     * Parse and apply a function signature. Tries Ghidra's FunctionSignatureParser first
+     * (full C syntax support) with null service to avoid modal dialogs. Falls back to
+     * manual parsing with DataTypeService resolution for types the parser can't find.
      */
     @SuppressWarnings("UseSpecificCatch")
     private StatusOutput parseFunctionSignatureAndApply(final Program program, final Address addr, final String prototype) {
-        // Parse the prototype string
+        final DataTypeManager dtm = program.getDataTypeManager();
+
+        // Try Ghidra's parser with null service — full C syntax, no modal dialogs
+        try {
+            final FunctionSignatureParser parser = new FunctionSignatureParser(dtm, null);
+            final FunctionDefinitionDataType sig = parser.parse(null, prototype);
+            if (sig != null) {
+                return applySignature(program, addr, sig);
+            }
+        } catch (ghidra.util.exception.CancelledException e) {
+            Msg.info(this, "FunctionSignatureParser cancelled, trying manual parsing");
+        } catch (Exception e) {
+            Msg.info(this, "FunctionSignatureParser failed, trying manual parsing: " + e.getMessage());
+        }
+
+        // Fallback: manual parsing with DataTypeService resolution (handles ambiguous types)
+        return parseAndApplyManually(program, addr, prototype);
+    }
+
+    /**
+     * Apply a parsed FunctionDefinitionDataType to the function at the given address.
+     */
+    private StatusOutput applySignature(final Program program, final Address addr,
+                                        final FunctionDefinitionDataType sig) {
+        try (var tx = ProgramTransaction.start(program, "Set function prototype")) {
+            final ApplyFunctionSignatureCmd cmd =
+                    new ApplyFunctionSignatureCmd(addr, sig, SourceType.USER_DEFINED);
+            final boolean cmdResult = cmd.applyTo(program, new ConsoleTaskMonitor());
+
+            if (cmdResult) {
+                tx.commit();
+                Msg.info(this, "Successfully applied function signature");
+                return StatusOutput.ok("Function prototype set successfully");
+            } else {
+                final String msg = "Command failed: " + cmd.getStatusMsg();
+                Msg.error(this, msg);
+                return StatusOutput.error("Failed to set function prototype: " + msg);
+            }
+        } catch (Exception e) {
+            final String msg = "Error applying function signature: " + e.getMessage();
+            Msg.error(this, msg, e);
+            return StatusOutput.error("Failed to set function prototype: " + msg);
+        }
+    }
+
+    /**
+     * Manual prototype parsing fallback. Parses the prototype string, resolves each type
+     * through DataTypeService (which handles ambiguous types like ushort without dialogs),
+     * and builds a FunctionDefinitionDataType.
+     */
+    @SuppressWarnings("UseSpecificCatch")
+    private StatusOutput parseAndApplyManually(final Program program, final Address addr, final String prototype) {
         final ParsedPrototype parsed;
         try {
             parsed = parsePrototype(prototype);
@@ -507,33 +560,14 @@ public class FunctionService {
             paramDefs.add(new ParameterDefinitionImpl(param.name, paramType, null));
         }
 
-        // Build the FunctionDefinitionDataType and apply
-        try (var tx = ProgramTransaction.start(program, "Set function prototype")) {
-            final FunctionDefinitionDataType sig = new FunctionDefinitionDataType("tmpSig");
-            sig.setReturnType(returnType);
-            sig.setArguments(paramDefs.toArray(new ParameterDefinition[0]));
-            if (parsed.hasVarArgs) {
-                sig.setVarArgs(true);
-            }
-
-            final ApplyFunctionSignatureCmd cmd =
-                    new ApplyFunctionSignatureCmd(addr, sig, SourceType.USER_DEFINED);
-            final boolean cmdResult = cmd.applyTo(program, new ConsoleTaskMonitor());
-
-            if (cmdResult) {
-                tx.commit();
-                Msg.info(this, "Successfully applied function signature");
-                return StatusOutput.ok("Function prototype set successfully");
-            } else {
-                final String msg = "Command failed: " + cmd.getStatusMsg();
-                Msg.error(this, msg);
-                return StatusOutput.error("Failed to set function prototype: " + msg);
-            }
-        } catch (Exception e) {
-            final String msg = "Error applying function signature: " + e.getMessage();
-            Msg.error(this, msg, e);
-            return StatusOutput.error("Failed to set function prototype: " + msg);
+        final FunctionDefinitionDataType sig = new FunctionDefinitionDataType("tmpSig");
+        sig.setReturnType(returnType);
+        sig.setArguments(paramDefs.toArray(new ParameterDefinition[0]));
+        if (parsed.hasVarArgs) {
+            sig.setVarArgs(true);
         }
+
+        return applySignature(program, addr, sig);
     }
 
     // --- Prototype parsing ---
