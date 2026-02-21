@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -49,11 +50,13 @@ public class FunctionServiceTest {
     }
 
     private static FunctionService serviceFor(ProgramDB program) {
-        return new FunctionService(null, GhidraTestEnv.programService(program));
+        ProgramService ps = GhidraTestEnv.programService(program);
+        return new FunctionService(null, ps, new DataTypeService(ps));
     }
 
     private static FunctionService nullProgramService() {
-        return new FunctionService(null, new ProgramService(null));
+        ProgramService ps = new ProgramService(null);
+        return new FunctionService(null, ps, new DataTypeService(ps));
     }
 
     // ===== Tests that need no ProgramBuilder =====
@@ -121,7 +124,7 @@ public class FunctionServiceTest {
         @Test
         @DisplayName("Constructor accepts null tool without throwing")
         void testConstructor_NullTool() {
-            assertDoesNotThrow(() -> new FunctionService(null, new ProgramService(null)));
+            assertDoesNotThrow(() -> new FunctionService(null, new ProgramService(null), null));
         }
 
         @Test
@@ -198,6 +201,153 @@ public class FunctionServiceTest {
             mutableAssumptions.add(new FunctionCodeResult.RegisterAssumption("tp", "0x3000"));
             assertEquals(1, result.registerAssumptions().size(),
                 "Modifying original list should not affect record");
+        }
+    }
+
+    // ===== Prototype parsing unit tests (no Ghidra required) =====
+
+    @Nested
+    @DisplayName("Prototype parsing")
+    class PrototypeParsingTests {
+
+        @Test
+        @DisplayName("parsePrototype parses simple prototype")
+        void testParsePrototype_Simple() {
+            var parsed = FunctionService.parsePrototype("int process_data(char *buffer, size_t length)");
+            assertEquals("int", parsed.returnType);
+            assertEquals(2, parsed.params.size());
+            assertEquals("char *", parsed.params.get(0).type);
+            assertEquals("buffer", parsed.params.get(0).name);
+            assertEquals("size_t", parsed.params.get(1).type);
+            assertEquals("length", parsed.params.get(1).name);
+            assertFalse(parsed.hasVarArgs);
+        }
+
+        @Test
+        @DisplayName("parsePrototype handles void return and void params")
+        void testParsePrototype_VoidVoid() {
+            var parsed = FunctionService.parsePrototype("void func(void)");
+            assertEquals("void", parsed.returnType);
+            assertTrue(parsed.params.isEmpty());
+            assertFalse(parsed.hasVarArgs);
+        }
+
+        @Test
+        @DisplayName("parsePrototype handles empty param list")
+        void testParsePrototype_EmptyParams() {
+            var parsed = FunctionService.parsePrototype("void func()");
+            assertEquals("void", parsed.returnType);
+            assertTrue(parsed.params.isEmpty());
+        }
+
+        @Test
+        @DisplayName("parsePrototype handles pointer return type")
+        void testParsePrototype_PointerReturn() {
+            var parsed = FunctionService.parsePrototype("char * get_name(int id)");
+            assertEquals("char *", parsed.returnType);
+            assertEquals(1, parsed.params.size());
+            assertEquals("int", parsed.params.get(0).type);
+            assertEquals("id", parsed.params.get(0).name);
+        }
+
+        @Test
+        @DisplayName("parsePrototype handles double pointer param")
+        void testParsePrototype_DoublePointer() {
+            var parsed = FunctionService.parsePrototype("int main(int argc, char **argv)");
+            assertEquals("int", parsed.returnType);
+            assertEquals(2, parsed.params.size());
+            assertEquals("char **", parsed.params.get(1).type);
+            assertEquals("argv", parsed.params.get(1).name);
+        }
+
+        @Test
+        @DisplayName("parsePrototype handles multi-word types")
+        void testParsePrototype_MultiWordTypes() {
+            var parsed = FunctionService.parsePrototype("unsigned int compute(unsigned short x)");
+            assertEquals("unsigned int", parsed.returnType);
+            assertEquals(1, parsed.params.size());
+            assertEquals("unsigned short", parsed.params.get(0).type);
+            assertEquals("x", parsed.params.get(0).name);
+        }
+
+        @Test
+        @DisplayName("parsePrototype handles varargs")
+        void testParsePrototype_VarArgs() {
+            var parsed = FunctionService.parsePrototype("int printf(char *fmt, ...)");
+            assertEquals("int", parsed.returnType);
+            assertEquals(1, parsed.params.size());
+            assertEquals("char *", parsed.params.get(0).type);
+            assertEquals("fmt", parsed.params.get(0).name);
+            assertTrue(parsed.hasVarArgs);
+        }
+
+        @Test
+        @DisplayName("parsePrototype handles pointer star attached to name")
+        void testParsePrototype_StarAttachedToName() {
+            var parsed = FunctionService.parsePrototype("int func(char *buf)");
+            assertEquals("int", parsed.returnType);
+            assertEquals("char *", parsed.params.get(0).type);
+            assertEquals("buf", parsed.params.get(0).name);
+        }
+
+        @Test
+        @DisplayName("parsePrototype rejects missing parentheses")
+        void testParsePrototype_MissingParens() {
+            assertThrows(IllegalArgumentException.class,
+                () -> FunctionService.parsePrototype("int func"));
+        }
+
+        @Test
+        @DisplayName("parsePrototype rejects bare type with no function name")
+        void testParsePrototype_NoFuncName() {
+            assertThrows(IllegalArgumentException.class,
+                () -> FunctionService.parsePrototype("int(void)"));
+        }
+
+        @Test
+        @DisplayName("extractReturnType extracts simple return type")
+        void testExtractReturnType_Simple() {
+            assertEquals("int", FunctionService.extractReturnType("int func"));
+        }
+
+        @Test
+        @DisplayName("extractReturnType extracts pointer return type")
+        void testExtractReturnType_Pointer() {
+            assertEquals("void *", FunctionService.extractReturnType("void * func"));
+        }
+
+        @Test
+        @DisplayName("parseParam parses type and name")
+        void testParseParam_Simple() {
+            var param = FunctionService.parseParam("int count");
+            assertEquals("int", param.type);
+            assertEquals("count", param.name);
+        }
+
+        @Test
+        @DisplayName("parseParam parses pointer type")
+        void testParseParam_Pointer() {
+            var param = FunctionService.parseParam("char *buffer");
+            assertEquals("char *", param.type);
+            assertEquals("buffer", param.name);
+        }
+
+        @Test
+        @DisplayName("parseParam handles unnamed parameter")
+        void testParseParam_Unnamed() {
+            var param = FunctionService.parseParam("int");
+            assertEquals("int", param.type);
+            assertEquals("", param.name);
+        }
+
+        @Test
+        @DisplayName("splitParams splits by comma respecting parens")
+        void testSplitParams_WithParens() {
+            String[] parts = FunctionService.splitParams("int a, void (*cb)(int, int), char *c");
+            assertEquals(3, parts.length);
+            assertEquals("int a", parts[0]);
+            assertEquals(" void (*cb)(int, int)", parts[1]);
+            assertEquals(" char *c", parts[2]);
         }
     }
 
@@ -705,11 +855,11 @@ public class FunctionServiceTest {
         }
 
         @Test
-        @DisplayName("setFunctionPrototype NPE when tool is null but function exists")
-        void testSetFunctionPrototype_NullTool_CausesNPE() {
+        @DisplayName("setFunctionPrototype succeeds without PluginTool (no modal dialogs)")
+        void testSetFunctionPrototype_NullTool_Succeeds() {
             String result = service.setFunctionPrototype("myFunc", "int test(void)").toStructuredJson();
-            assertTrue(result.contains("Failed to set function prototype"),
-                "Should report prototype error due to null tool, got: " + result);
+            assertTrue(result.contains("Function prototype set successfully"),
+                "Should succeed without PluginTool, got: " + result);
         }
 
         @Test
@@ -1116,5 +1266,128 @@ public class FunctionServiceTest {
         ListOutput list = (ListOutput) result;
         assertEquals(1, list.items().size());
         assertTrue(list.hasMore());
+    }
+
+    // --- setFunctionPrototype with ambiguous types (ushort, uint, etc.) ---
+
+    @Test
+    @DisplayName("setFunctionPrototype resolves ushort parameter without modal dialog")
+    void testSetFunctionPrototype_UshortParam() throws Exception {
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        builder.createEmptyFunction("myFunc", "0x401000", 0x50, DataType.DEFAULT);
+
+        ProgramDB program = builder.getProgram();
+        FunctionService service = serviceFor(program);
+
+        String result = service.setFunctionPrototype("myFunc", "void myFunc(ushort value)").toStructuredJson();
+        assertTrue(result.contains("Function prototype set successfully"),
+            "ushort should resolve without modal dialog, got: " + result);
+
+        // Verify the parameter type was applied
+        Function func = program.getFunctionManager().getFunctionAt(builder.addr("0x401000"));
+        assertEquals(1, func.getParameterCount());
+        assertEquals("value", func.getParameter(0).getName());
+        assertTrue(func.getParameter(0).getDataType().getName().toLowerCase().contains("ushort"),
+            "Parameter type should be ushort, got: " + func.getParameter(0).getDataType().getName());
+    }
+
+    @Test
+    @DisplayName("setFunctionPrototype resolves ushort return type without modal dialog")
+    void testSetFunctionPrototype_UshortReturn() throws Exception {
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        builder.createEmptyFunction("myFunc", "0x401000", 0x50, DataType.DEFAULT);
+
+        ProgramDB program = builder.getProgram();
+        FunctionService service = serviceFor(program);
+
+        String result = service.setFunctionPrototype("myFunc", "ushort myFunc(int x)").toStructuredJson();
+        assertTrue(result.contains("Function prototype set successfully"),
+            "ushort return type should resolve without modal dialog, got: " + result);
+
+        Function func = program.getFunctionManager().getFunctionAt(builder.addr("0x401000"));
+        assertTrue(func.getReturnType().getName().toLowerCase().contains("ushort"),
+            "Return type should be ushort, got: " + func.getReturnType().getName());
+    }
+
+    @Test
+    @DisplayName("setFunctionPrototype resolves multiple ambiguous types in one prototype")
+    void testSetFunctionPrototype_MultipleAmbiguousTypes() throws Exception {
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        builder.createEmptyFunction("myFunc", "0x401000", 0x50, DataType.DEFAULT);
+
+        ProgramDB program = builder.getProgram();
+        FunctionService service = serviceFor(program);
+
+        String result = service.setFunctionPrototype("myFunc",
+            "uint myFunc(ushort a, uchar b)").toStructuredJson();
+        assertTrue(result.contains("Function prototype set successfully"),
+            "Multiple ambiguous types should all resolve, got: " + result);
+
+        Function func = program.getFunctionManager().getFunctionAt(builder.addr("0x401000"));
+        assertTrue(func.getReturnType().getName().toLowerCase().contains("uint"),
+            "Return type should be uint, got: " + func.getReturnType().getName());
+        assertEquals(2, func.getParameterCount());
+        assertTrue(func.getParameter(0).getDataType().getName().toLowerCase().contains("ushort"),
+            "First param should be ushort, got: " + func.getParameter(0).getDataType().getName());
+        assertTrue(func.getParameter(1).getDataType().getName().toLowerCase().contains("uchar"),
+            "Second param should be uchar, got: " + func.getParameter(1).getDataType().getName());
+    }
+
+    @Test
+    @DisplayName("setFunctionPrototype resolves category-qualified type path")
+    void testSetFunctionPrototype_CategoryQualifiedType() throws Exception {
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        builder.createEmptyFunction("myFunc", "0x401000", 0x50, DataType.DEFAULT);
+
+        ProgramDB program = builder.getProgram();
+        FunctionService service = serviceFor(program);
+
+        // Use explicit built-in path to disambiguate
+        String result = service.setFunctionPrototype("myFunc",
+            "void myFunc(/ushort value)").toStructuredJson();
+        assertTrue(result.contains("Function prototype set successfully"),
+            "Category-qualified path should resolve, got: " + result);
+    }
+
+    @Test
+    @DisplayName("setFunctionPrototype returns error for unresolvable type")
+    void testSetFunctionPrototype_UnresolvableType() throws Exception {
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        builder.createEmptyFunction("myFunc", "0x401000", 0x50, DataType.DEFAULT);
+
+        ProgramDB program = builder.getProgram();
+        FunctionService service = serviceFor(program);
+
+        String result = service.setFunctionPrototype("myFunc",
+            "void myFunc(nonexistent_type_xyz x)").toStructuredJson();
+        assertTrue(result.contains("could not resolve type"),
+            "Should report unresolvable type, got: " + result);
+    }
+
+    @Test
+    @DisplayName("setFunctionPrototype resolves pointer to ushort without modal dialog")
+    void testSetFunctionPrototype_PointerToUshort() throws Exception {
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        builder.createEmptyFunction("myFunc", "0x401000", 0x50, DataType.DEFAULT);
+
+        ProgramDB program = builder.getProgram();
+        FunctionService service = serviceFor(program);
+
+        String result = service.setFunctionPrototype("myFunc",
+            "void myFunc(ushort *ptr)").toStructuredJson();
+        assertTrue(result.contains("Function prototype set successfully"),
+            "ushort * should resolve without modal dialog, got: " + result);
+
+        Function func = program.getFunctionManager().getFunctionAt(builder.addr("0x401000"));
+        assertEquals(1, func.getParameterCount());
+        String paramTypeName = func.getParameter(0).getDataType().getName();
+        assertTrue(paramTypeName.contains("ushort") && paramTypeName.contains("*"),
+            "Parameter type should be ushort *, got: " + paramTypeName);
     }
 }

@@ -27,18 +27,29 @@ import com.lauriewired.mcp.utils.ProgramTransaction;
 
 import ghidra.program.model.data.Array;
 import ghidra.program.model.data.ArrayDataType;
+import ghidra.program.model.data.BooleanDataType;
+import ghidra.program.model.data.BuiltInDataTypeManager;
 import ghidra.program.model.data.CategoryPath;
+import ghidra.program.model.data.CharDataType;
 import ghidra.program.model.data.Composite;
 import ghidra.program.model.data.DataType;
 import ghidra.program.model.data.DataTypeComponent;
 import ghidra.program.model.data.DataTypeManager;
 import ghidra.program.model.data.Enum;
 import ghidra.program.model.data.EnumDataType;
+import ghidra.program.model.data.IntegerDataType;
+import ghidra.program.model.data.LongLongDataType;
 import ghidra.program.model.data.Pointer;
 import ghidra.program.model.data.ProgramBasedDataTypeManager;
+import ghidra.program.model.data.ShortDataType;
 import ghidra.program.model.data.Structure;
 import ghidra.program.model.data.StructureDataType;
 import ghidra.program.model.data.TypeDef;
+import ghidra.program.model.data.UnsignedCharDataType;
+import ghidra.program.model.data.UnsignedIntegerDataType;
+import ghidra.program.model.data.UnsignedLongLongDataType;
+import ghidra.program.model.data.UnsignedShortDataType;
+import ghidra.program.model.data.VoidDataType;
 import ghidra.program.model.listing.Data;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.FunctionIterator;
@@ -613,7 +624,7 @@ public class DataTypeService {
 
             // Special case for PVOID
             if (baseTypeName.equals("VOID")) {
-                return new ghidra.program.model.data.PointerDataType(dtm.getDataType("/void"));
+                return new ghidra.program.model.data.PointerDataType(VoidDataType.dataType);
             }
 
             // Try to find the base type
@@ -623,43 +634,31 @@ public class DataTypeService {
             }
 
             // Base type not found, fall back to void*
-            return new ghidra.program.model.data.PointerDataType(dtm.getDataType("/void"));
+            return new ghidra.program.model.data.PointerDataType(VoidDataType.dataType);
         }
 
-        // Handle common built-in types
+        // Handle common built-in types using static instances (always available,
+        // even when the program's DTM hasn't been populated by analysis)
         switch (typeName.toLowerCase()) {
-            case "int", "long" -> {
-                return dtm.getDataType("/int");
-            }
-            case "uint", "unsigned int", "unsigned long", "dword" -> {
-                return dtm.getDataType("/uint");
-            }
-            case "short" -> {
-                return dtm.getDataType("/short");
-            }
-            case "ushort", "unsigned short", "word" -> {
-                return dtm.getDataType("/ushort");
-            }
-            case "char", "byte" -> {
-                return dtm.getDataType("/char");
-            }
-            case "uchar", "unsigned char" -> {
-                return dtm.getDataType("/uchar");
-            }
-            case "longlong", "__int64" -> {
-                return dtm.getDataType("/longlong");
-            }
-            case "ulonglong", "unsigned __int64" -> {
-                return dtm.getDataType("/ulonglong");
-            }
-            case "bool", "boolean" -> {
-                return dtm.getDataType("/bool");
-            }
-            case "void" -> {
-                return dtm.getDataType("/void");
-            }
+            case "int", "long" -> { return IntegerDataType.dataType; }
+            case "uint", "unsigned int", "unsigned long", "dword" -> { return UnsignedIntegerDataType.dataType; }
+            case "short" -> { return ShortDataType.dataType; }
+            case "ushort", "unsigned short", "word" -> { return UnsignedShortDataType.dataType; }
+            case "char", "byte" -> { return CharDataType.dataType; }
+            case "uchar", "unsigned char" -> { return UnsignedCharDataType.dataType; }
+            case "longlong", "__int64" -> { return LongLongDataType.dataType; }
+            case "ulonglong", "unsigned __int64" -> { return UnsignedLongLongDataType.dataType; }
+            case "bool", "boolean" -> { return BooleanDataType.dataType; }
+            case "void" -> { return VoidDataType.dataType; }
             default -> {
-                // Try as a direct path
+                // Try built-in type manager as a fallback
+                final DataTypeManager builtIn = BuiltInDataTypeManager.getDataTypeManager();
+                final DataType builtInType = findDataTypeByNameInAllCategories(builtIn, typeName);
+                if (builtInType != null) {
+                    return builtInType;
+                }
+
+                // Try as a direct path in program DTM
                 final DataType directType = dtm.getDataType("/" + typeName);
                 if (directType != null) {
                     return directType;

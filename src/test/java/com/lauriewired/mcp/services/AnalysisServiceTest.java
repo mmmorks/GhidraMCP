@@ -41,7 +41,7 @@ public class AnalysisServiceTest {
         @BeforeEach
         void setUp() {
             ProgramService programService = new ProgramService(null);
-            FunctionService functionService = new FunctionService(null, programService);
+            FunctionService functionService = new FunctionService(null, programService, new DataTypeService(programService));
             analysisService = new AnalysisService(programService, functionService);
         }
 
@@ -269,7 +269,7 @@ public class AnalysisServiceTest {
             }
 
             ProgramService ps = GhidraTestEnv.programService(program);
-            FunctionService fs = new FunctionService(null, ps);
+            FunctionService fs = new FunctionService(null, ps, new DataTypeService(ps));
             service = new AnalysisService(ps, fs);
         }
 
@@ -462,7 +462,7 @@ public class AnalysisServiceTest {
             }
 
             ProgramService ps = GhidraTestEnv.programService(program);
-            fs = new FunctionService(null, ps);
+            fs = new FunctionService(null, ps, new DataTypeService(ps));
             service = new AnalysisService(ps, fs);
         }
 

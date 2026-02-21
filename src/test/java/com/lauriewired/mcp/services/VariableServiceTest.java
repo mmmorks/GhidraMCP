@@ -48,7 +48,7 @@ public class VariableServiceTest {
         @BeforeEach
         void setUp() {
             ProgramService programService = new ProgramService(null);
-            FunctionService functionService = new FunctionService(null, programService);
+            FunctionService functionService = new FunctionService(null, programService, new DataTypeService(programService));
             variableService = new VariableService(programService, functionService);
         }
 
@@ -244,7 +244,7 @@ public class VariableServiceTest {
             }
 
             ProgramService ps = GhidraTestEnv.programService(program);
-            fs = new FunctionService(null, ps);
+            fs = new FunctionService(null, ps, new DataTypeService(ps));
             svc = new VariableService(ps, fs);
         }
 

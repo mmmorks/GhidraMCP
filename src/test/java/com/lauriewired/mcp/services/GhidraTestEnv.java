@@ -62,7 +62,8 @@ public final class GhidraTestEnv {
 
     /** FunctionService backed by a real Program (no PluginTool). */
     static FunctionService functionService(Program program) {
-        return new FunctionService(null, programService(program));
+        ProgramService ps = programService(program);
+        return new FunctionService(null, ps, new DataTypeService(ps));
     }
 
     // --- Ghidra install detection ---

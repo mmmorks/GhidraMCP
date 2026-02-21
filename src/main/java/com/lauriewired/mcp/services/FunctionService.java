@@ -7,6 +7,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import com.lauriewired.mcp.api.McpTool;
 import com.lauriewired.mcp.api.Param;
@@ -23,11 +25,17 @@ import com.lauriewired.mcp.model.response.RenameFunctionsResult;
 import com.lauriewired.mcp.utils.GhidraUtils;
 import com.lauriewired.mcp.utils.ProgramTransaction;
 
+import ghidra.app.cmd.function.ApplyFunctionSignatureCmd;
 import ghidra.app.decompiler.DecompInterface;
 import ghidra.app.decompiler.DecompileResults;
 import ghidra.app.services.CodeViewerService;
 import ghidra.framework.plugintool.PluginTool;
 import ghidra.program.model.address.Address;
+import ghidra.program.model.data.DataType;
+import ghidra.program.model.data.DataTypeManager;
+import ghidra.program.model.data.FunctionDefinitionDataType;
+import ghidra.program.model.data.ParameterDefinition;
+import ghidra.program.model.data.ParameterDefinitionImpl;
 import ghidra.program.model.lang.Register;
 import ghidra.program.model.lang.RegisterValue;
 import ghidra.program.model.listing.CommentType;
@@ -49,16 +57,22 @@ import ghidra.util.task.ConsoleTaskMonitor;
 public class FunctionService {
     private final PluginTool tool;
     private final ProgramService programService;
+    private final DataTypeService dataTypeService;
+
+    private static final Pattern IDENTIFIER_PATTERN = Pattern.compile("[a-zA-Z_][a-zA-Z0-9_]*");
 
     /**
      * Creates a new FunctionService
      *
      * @param tool the plugin tool
      * @param programService the program service for accessing the current program
+     * @param dataTypeService the data type service for resolving types without modal dialogs
      */
-    public FunctionService(final PluginTool tool, final ProgramService programService) {
+    public FunctionService(final PluginTool tool, final ProgramService programService,
+                           final DataTypeService dataTypeService) {
         this.tool = tool;
         this.programService = programService;
+        this.dataTypeService = dataTypeService;
     }
 
     @McpTool(description = """
@@ -459,31 +473,51 @@ public class FunctionService {
     }
 
     /**
-     * Parse and apply the function signature with error handling
+     * Parse and apply the function signature by manually resolving types through DataTypeService.
+     * This avoids Ghidra's FunctionSignatureParser which can trigger modal dialogs for ambiguous types.
      */
     @SuppressWarnings("UseSpecificCatch")
     private StatusOutput parseFunctionSignatureAndApply(final Program program, final Address addr, final String prototype) {
+        // Parse the prototype string
+        final ParsedPrototype parsed;
+        try {
+            parsed = parsePrototype(prototype);
+        } catch (IllegalArgumentException e) {
+            final String msg = "Failed to parse prototype: " + e.getMessage();
+            Msg.error(this, msg);
+            return StatusOutput.error("Failed to set function prototype: " + msg);
+        }
+
+        final DataTypeManager dtm = program.getDataTypeManager();
+
+        // Resolve return type
+        final DataType returnType = dataTypeService.resolveDataType(dtm, parsed.returnType);
+        if (returnType == null) {
+            return StatusOutput.error("Failed to set function prototype: could not resolve return type '" + parsed.returnType + "'");
+        }
+
+        // Resolve parameter types
+        final List<ParameterDefinition> paramDefs = new ArrayList<>();
+        for (final ParsedParam param : parsed.params) {
+            final DataType paramType = dataTypeService.resolveDataType(dtm, param.type);
+            if (paramType == null) {
+                return StatusOutput.error("Failed to set function prototype: could not resolve type '" +
+                        param.type + "' for parameter '" + param.name + "'");
+            }
+            paramDefs.add(new ParameterDefinitionImpl(param.name, paramType, null));
+        }
+
+        // Build the FunctionDefinitionDataType and apply
         try (var tx = ProgramTransaction.start(program, "Set function prototype")) {
-            final ghidra.program.model.data.DataTypeManager dtm = program.getDataTypeManager();
-
-            final ghidra.app.services.DataTypeManagerService dtms =
-                tool.getService(ghidra.app.services.DataTypeManagerService.class);
-
-            final ghidra.app.util.parser.FunctionSignatureParser parser =
-                new ghidra.app.util.parser.FunctionSignatureParser(dtm, dtms);
-
-            final ghidra.program.model.data.FunctionDefinitionDataType sig = parser.parse(null, prototype);
-
-            if (sig == null) {
-                final String msg = "Failed to parse function prototype";
-                Msg.error(this, msg);
-                return StatusOutput.error("Failed to set function prototype: " + msg);
+            final FunctionDefinitionDataType sig = new FunctionDefinitionDataType("tmpSig");
+            sig.setReturnType(returnType);
+            sig.setArguments(paramDefs.toArray(new ParameterDefinition[0]));
+            if (parsed.hasVarArgs) {
+                sig.setVarArgs(true);
             }
 
-            final ghidra.app.cmd.function.ApplyFunctionSignatureCmd cmd =
-                new ghidra.app.cmd.function.ApplyFunctionSignatureCmd(
-                    addr, sig, SourceType.USER_DEFINED);
-
+            final ApplyFunctionSignatureCmd cmd =
+                    new ApplyFunctionSignatureCmd(addr, sig, SourceType.USER_DEFINED);
             final boolean cmdResult = cmd.applyTo(program, new ConsoleTaskMonitor());
 
             if (cmdResult) {
@@ -500,5 +534,143 @@ public class FunctionService {
             Msg.error(this, msg, e);
             return StatusOutput.error("Failed to set function prototype: " + msg);
         }
+    }
+
+    // --- Prototype parsing ---
+
+    /**
+     * Parsed representation of a C function prototype.
+     */
+    static class ParsedPrototype {
+        final String returnType;
+        final List<ParsedParam> params;
+        final boolean hasVarArgs;
+
+        ParsedPrototype(final String returnType, final List<ParsedParam> params, final boolean hasVarArgs) {
+            this.returnType = returnType;
+            this.params = params;
+            this.hasVarArgs = hasVarArgs;
+        }
+    }
+
+    /**
+     * A single parsed parameter (type + name).
+     */
+    static class ParsedParam {
+        final String type;
+        final String name;
+
+        ParsedParam(final String type, final String name) {
+            this.type = type;
+            this.name = name;
+        }
+    }
+
+    /**
+     * Parse a C-style function prototype into return type, parameters, and varargs flag.
+     * The function name in the prototype is ignored.
+     *
+     * @param prototype e.g. "int process_data(char *buffer, size_t length)"
+     * @return parsed prototype components
+     * @throws IllegalArgumentException if the prototype cannot be parsed
+     */
+    static ParsedPrototype parsePrototype(final String prototype) {
+        final int openParen = prototype.indexOf('(');
+        final int closeParen = prototype.lastIndexOf(')');
+        if (openParen < 0 || closeParen < 0 || closeParen <= openParen) {
+            throw new IllegalArgumentException("missing parentheses");
+        }
+
+        // Extract return type from prefix (everything before '(', minus the function name)
+        final String prefix = prototype.substring(0, openParen).trim();
+        final String returnType = extractReturnType(prefix);
+
+        // Parse parameters
+        final String paramStr = prototype.substring(openParen + 1, closeParen).trim();
+        final List<ParsedParam> params = new ArrayList<>();
+        boolean hasVarArgs = false;
+
+        if (!paramStr.isEmpty() && !paramStr.equalsIgnoreCase("void")) {
+            final String[] paramParts = splitParams(paramStr);
+            for (final String part : paramParts) {
+                final String trimmed = part.trim();
+                if (trimmed.isEmpty()) continue;
+                if (trimmed.equals("...")) {
+                    hasVarArgs = true;
+                    continue;
+                }
+                params.add(parseParam(trimmed));
+            }
+        }
+
+        return new ParsedPrototype(returnType, params, hasVarArgs);
+    }
+
+    /**
+     * Extract the return type from the prefix before '('.
+     * The last identifier is the function name (ignored); everything before it is the return type.
+     */
+    static String extractReturnType(final String prefix) {
+        final Matcher matcher = IDENTIFIER_PATTERN.matcher(prefix);
+        int lastIdentStart = -1;
+        while (matcher.find()) {
+            lastIdentStart = matcher.start();
+        }
+        if (lastIdentStart <= 0) {
+            throw new IllegalArgumentException("could not determine return type from: " + prefix);
+        }
+
+        final String returnType = prefix.substring(0, lastIdentStart).trim();
+        if (returnType.isEmpty()) {
+            throw new IllegalArgumentException("could not determine return type from: " + prefix);
+        }
+        return returnType;
+    }
+
+    /**
+     * Parse a single parameter declaration into type and name.
+     * The last identifier is the parameter name; everything before it is the type.
+     */
+    static ParsedParam parseParam(final String param) {
+        final Matcher matcher = IDENTIFIER_PATTERN.matcher(param);
+        int lastIdentStart = -1;
+        int lastIdentEnd = -1;
+        while (matcher.find()) {
+            lastIdentStart = matcher.start();
+            lastIdentEnd = matcher.end();
+        }
+        if (lastIdentStart < 0) {
+            throw new IllegalArgumentException("could not parse parameter: " + param);
+        }
+
+        final String name = param.substring(lastIdentStart, lastIdentEnd);
+        final String type = param.substring(0, lastIdentStart).trim();
+
+        // Single identifier with no preceding type — treat as unnamed parameter
+        if (type.isEmpty()) {
+            return new ParsedParam(name, "");
+        }
+
+        return new ParsedParam(type, name);
+    }
+
+    /**
+     * Split parameter list by commas, respecting nested parentheses.
+     */
+    static String[] splitParams(final String paramStr) {
+        final List<String> params = new ArrayList<>();
+        int depth = 0;
+        int start = 0;
+        for (int i = 0; i < paramStr.length(); i++) {
+            final char c = paramStr.charAt(i);
+            if (c == '(') depth++;
+            else if (c == ')') depth--;
+            else if (c == ',' && depth == 0) {
+                params.add(paramStr.substring(start, i));
+                start = i + 1;
+            }
+        }
+        params.add(paramStr.substring(start));
+        return params.toArray(new String[0]);
     }
 }
