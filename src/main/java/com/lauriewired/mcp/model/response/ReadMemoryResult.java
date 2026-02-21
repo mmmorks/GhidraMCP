@@ -1,5 +1,7 @@
 package com.lauriewired.mcp.model.response;
 
+import java.util.List;
+
 import com.lauriewired.mcp.model.Displayable;
 
 /**
@@ -9,14 +11,22 @@ import com.lauriewired.mcp.model.Displayable;
  * @param format   output format (hex, decimal, binary, ascii)
  * @param bytes    space-separated byte values formatted per the requested format
  * @param ascii    printable ASCII representation (null for binary/ascii formats)
+ * @param comments comments found within the address range (empty if none)
  */
 public record ReadMemoryResult(
     String address,
     int size,
     String format,
     String bytes,
-    String ascii
+    String ascii,
+    List<AddressComment> comments
 ) implements Displayable {
+
+    public record AddressComment(String address, String type, String text) {}
+
+    public ReadMemoryResult {
+        comments = comments != null ? List.copyOf(comments) : List.of();
+    }
 
     @Override
     public String toDisplayText() {
@@ -25,6 +35,12 @@ public record ReadMemoryResult(
         sb.append(bytes);
         if (ascii != null) {
             sb.append("  | ").append(ascii);
+        }
+        if (!comments.isEmpty()) {
+            sb.append("\nComments:\n");
+            for (final AddressComment c : comments) {
+                sb.append(String.format("  %s [%s]: %s\n", c.address(), c.type(), c.text()));
+            }
         }
         return sb.toString();
     }

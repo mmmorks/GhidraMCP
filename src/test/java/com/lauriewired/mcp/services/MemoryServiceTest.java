@@ -29,6 +29,7 @@ import com.lauriewired.mcp.model.response.SetDataTypesResult;
 import ghidra.program.database.ProgramBuilder;
 import ghidra.program.database.ProgramDB;
 import ghidra.program.model.data.IntegerDataType;
+import ghidra.program.model.listing.CommentType;
 
 /**
  * Integration tests for MemoryService using ProgramBuilder-based real Ghidra programs.
@@ -721,6 +722,67 @@ public class MemoryServiceTest {
             assertEquals(1, data.count());
         }
         // Otherwise it's an expected "not found" error from DTM resolution
+    }
+
+    @Test
+    @DisplayName("readMemory returns comments within the address range")
+    void testReadMemory_WithComments() throws Exception {
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
+        builder.createMemory(".text", "0x401000", 0x100);
+        builder.setBytes("0x401000", "48 65 6C 6C 6F 00 00 00", false);
+        ProgramDB program = builder.getProgram();
+
+        // Set comments at addresses within the range
+        int txId = program.startTransaction("Set comments");
+        try {
+            var listing = program.getListing();
+            listing.setComment(builder.addr("0x401000"), CommentType.EOL, "end of line");
+            listing.setComment(builder.addr("0x401004"), CommentType.PRE, "pre comment");
+            listing.setComment(builder.addr("0x401004"), CommentType.PLATE, "plate comment");
+        } finally {
+            program.endTransaction(txId, true);
+        }
+
+        MemoryService ms = serviceFor(program);
+        ToolOutput result = ms.readMemory("0x401000", 8, "hex");
+        assertInstanceOf(JsonOutput.class, result);
+
+        ReadMemoryResult memResult = (ReadMemoryResult) ((JsonOutput) result).data();
+        assertNotNull(memResult.comments());
+        assertFalse(memResult.comments().isEmpty());
+
+        // Verify specific comments
+        var comments = memResult.comments();
+        assertTrue(comments.stream().anyMatch(c ->
+                c.address().contains("401000") && "eol".equals(c.type()) && "end of line".equals(c.text())));
+        assertTrue(comments.stream().anyMatch(c ->
+                c.address().contains("401004") && "pre".equals(c.type()) && "pre comment".equals(c.text())));
+        assertTrue(comments.stream().anyMatch(c ->
+                c.address().contains("401004") && "plate".equals(c.type()) && "plate comment".equals(c.text())));
+
+        // Verify display text includes comments
+        String display = result.toDisplayText();
+        assertTrue(display.contains("Comments:"));
+        assertTrue(display.contains("end of line"));
+    }
+
+    @Test
+    @DisplayName("readMemory returns empty comments when none exist")
+    void testReadMemory_NoComments() throws Exception {
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
+        builder.createMemory(".text", "0x401000", 0x100);
+        builder.setBytes("0x401000", "48 69", false);
+
+        MemoryService ms = serviceFor(builder.getProgram());
+        ToolOutput result = ms.readMemory("0x401000", 2, "hex");
+        assertInstanceOf(JsonOutput.class, result);
+
+        ReadMemoryResult memResult = (ReadMemoryResult) ((JsonOutput) result).data();
+        assertNotNull(memResult.comments());
+        assertTrue(memResult.comments().isEmpty());
+
+        // Display text should not include Comments section
+        assertFalse(result.toDisplayText().contains("Comments:"));
     }
 
     @Test

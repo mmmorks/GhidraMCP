@@ -14,6 +14,7 @@ import com.lauriewired.mcp.model.response.DataItem;
 import com.lauriewired.mcp.model.response.MemoryPermissionsResult;
 import com.lauriewired.mcp.model.response.MemorySegmentItem;
 import com.lauriewired.mcp.model.response.ReadMemoryResult;
+import com.lauriewired.mcp.model.response.ReadMemoryResult.AddressComment;
 import com.lauriewired.mcp.model.response.RenameDataResult;
 import com.lauriewired.mcp.model.response.SetDataTypesResult;
 import com.lauriewired.mcp.utils.HttpUtils;
@@ -23,6 +24,8 @@ import ghidra.program.model.address.Address;
 import ghidra.program.model.data.DataType;
 import ghidra.program.model.data.DataTypeManager;
 import ghidra.program.model.listing.CodeUnit;
+import ghidra.program.model.listing.CodeUnitIterator;
+import ghidra.program.model.listing.CommentType;
 import ghidra.program.model.listing.Data;
 import ghidra.program.model.listing.DataIterator;
 import ghidra.program.model.listing.Instruction;
@@ -341,7 +344,10 @@ public class MemoryService {
             final String ascii = ("hex".equals(effectiveFormat) || "decimal".equals(effectiveFormat))
                     ? buildAsciiString(bytes) : null;
 
-            return new JsonOutput(new ReadMemoryResult(addr.toString(), size, effectiveFormat, formattedBytes, ascii));
+            // Collect comments within the address range
+            final List<AddressComment> comments = collectComments(program.getListing(), addr, endAddr);
+
+            return new JsonOutput(new ReadMemoryResult(addr.toString(), size, effectiveFormat, formattedBytes, ascii, comments));
         } catch (Exception e) {
             return StatusOutput.error("Error reading memory: " + e.getMessage());
         }
@@ -452,6 +458,32 @@ public class MemoryService {
         } catch (Exception e) {
             return StatusOutput.error("Error getting data type: " + e.getMessage());
         }
+    }
+
+    private static final CommentType[] COMMENT_TYPES = {
+        CommentType.PLATE, CommentType.PRE, CommentType.EOL,
+        CommentType.POST, CommentType.REPEATABLE
+    };
+
+    private static final String[] COMMENT_TYPE_NAMES = {
+        "plate", "pre", "eol", "post", "repeatable"
+    };
+
+    private List<AddressComment> collectComments(final Listing listing, final Address start, final Address end) {
+        final List<AddressComment> comments = new ArrayList<>();
+        final CodeUnitIterator it = listing.getCodeUnits(start, true);
+        while (it.hasNext()) {
+            final CodeUnit cu = it.next();
+            if (cu.getAddress().compareTo(end) > 0) break;
+            final String addr = cu.getAddress().toString();
+            for (int i = 0; i < COMMENT_TYPES.length; i++) {
+                final String text = listing.getComment(COMMENT_TYPES[i], cu.getAddress());
+                if (text != null) {
+                    comments.add(new AddressComment(addr, COMMENT_TYPE_NAMES[i], text));
+                }
+            }
+        }
+        return comments;
     }
 
     private String formatBytes(final byte[] bytes, final String format) {
