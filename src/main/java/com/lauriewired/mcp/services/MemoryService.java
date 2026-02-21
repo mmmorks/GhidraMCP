@@ -239,6 +239,32 @@ public class MemoryService {
             resolved.put(addr, resolvedDataType);
         }
 
+        // Pre-validate code unit conflicts when not clearing existing data
+        if (!clearExisting) {
+            final Listing preCheckListing = program.getListing();
+            for (final Address addr : resolved.keySet()) {
+                final Instruction instr = preCheckListing.getInstructionAt(addr);
+                if (instr != null) {
+                    return StatusOutput.error("Failed at " + addr + ": Instructions exist. " +
+                           "Use clear_existing=true to overwrite.");
+                }
+
+                final Data existingData = preCheckListing.getDefinedDataAt(addr);
+                if (existingData != null) {
+                    return StatusOutput.error(String.format("Failed at %s: Existing data '%s'. " +
+                           "Use clear_existing=true to overwrite.",
+                           addr, existingData.getDataType().getName()));
+                }
+
+                // Check for conflicting code units that span this address
+                final CodeUnit cu = preCheckListing.getCodeUnitContaining(addr);
+                if (cu != null && !cu.getAddress().equals(addr)) {
+                    return StatusOutput.error("Failed at " + addr + ": Conflicting code units. " +
+                           "Try setting clear_existing=true.");
+                }
+            }
+        }
+
         try (var tx = ProgramTransaction.start(program, "Set data types")) {
             final Listing listing = program.getListing();
             final Map<String, String> applied = new LinkedHashMap<>();

@@ -784,7 +784,7 @@ public class DataTypeServiceTest {
         }
 
         @Test
-        @DisplayName("updateStructure reports field-not-found for type change on missing field")
+        @DisplayName("updateStructure returns error for type change on missing field")
         void testUpdateStructure_TypeChange_FieldNotFound() {
             service.createStructure("TypeMissTest", 0, null, null);
 
@@ -800,8 +800,8 @@ public class DataTypeServiceTest {
 
             java.util.Map<String, String> typeChanges = java.util.Map.of("missing_field", "int");
             String json = service.updateStructure("TypeMissTest", null, null, null, typeChanges).toStructuredJson();
-            assertTrue(json.contains("not found") || json.contains("FAILED"),
-                    "Should report field not found, got: " + json);
+            assertTrue(json.contains("not found") || json.contains("error"),
+                    "Should return error for missing field, got: " + json);
         }
 
         @Test
@@ -832,7 +832,7 @@ public class DataTypeServiceTest {
         }
 
         @Test
-        @DisplayName("updateStructure field rename not found")
+        @DisplayName("updateStructure returns error for rename of non-existent field")
         void testUpdateStructure_RenameFieldNotFound() {
             service.createStructure("RenameMissTest", 0, null, null);
 
@@ -848,8 +848,8 @@ public class DataTypeServiceTest {
 
             java.util.Map<String, String> renames = java.util.Map.of("nonexistent", "new_name");
             String json = service.updateStructure("RenameMissTest", null, null, renames, null).toStructuredJson();
-            assertTrue(json.contains("not found") || json.contains("FAILED"),
-                    "Should report not found, got: " + json);
+            assertTrue(json.contains("not found") || json.contains("error"),
+                    "Should return error for missing field, got: " + json);
         }
 
         // ===== updateEnum: valueChanges, size, rename =====
@@ -868,15 +868,15 @@ public class DataTypeServiceTest {
         }
 
         @Test
-        @DisplayName("updateEnum reports not found for missing value name in valueChanges")
+        @DisplayName("updateEnum returns error for missing value name in valueChanges")
         void testUpdateEnum_ValueChange_NotFound() {
             java.util.Map<String, Long> values = java.util.Map.of("EXISTS", 1L);
             service.createEnum("ValChangeMiss", 4, null, values);
 
             java.util.Map<String, Long> valueChanges = java.util.Map.of("MISSING", 99L);
             String json = service.updateEnum("ValChangeMiss", null, null, null, valueChanges).toStructuredJson();
-            assertTrue(json.contains("not found") || json.contains("FAILED"),
-                    "Should report not found, got: " + json);
+            assertTrue(json.contains("not found") || json.contains("error"),
+                    "Should return error for missing value, got: " + json);
         }
 
         @Test
@@ -890,13 +890,13 @@ public class DataTypeServiceTest {
         }
 
         @Test
-        @DisplayName("updateEnum with invalid size reports failure")
+        @DisplayName("updateEnum returns error for invalid size")
         void testUpdateEnum_InvalidSize() {
             service.createEnum("SizeTestEnum", 4, null, java.util.Map.of("X", 1L));
 
             String json = service.updateEnum("SizeTestEnum", null, 3, null, null).toStructuredJson();
-            assertTrue(json.contains("Invalid enum size") || json.contains("must be 1, 2, 4, or 8") || json.contains("FAILED"),
-                    "Should report invalid size, got: " + json);
+            assertTrue(json.contains("Invalid enum size") || json.contains("must be 1, 2, 4, or 8") || json.contains("error"),
+                    "Should return error for invalid size, got: " + json);
         }
 
         @Test
@@ -908,14 +908,14 @@ public class DataTypeServiceTest {
         }
 
         @Test
-        @DisplayName("updateEnum value rename not found")
+        @DisplayName("updateEnum returns error for rename of non-existent value")
         void testUpdateEnum_ValueRenameNotFound() {
             service.createEnum("RenameValMiss", 4, null, java.util.Map.of("EXISTS", 1L));
 
             java.util.Map<String, String> renames = java.util.Map.of("MISSING", "NEW_NAME");
             String json = service.updateEnum("RenameValMiss", null, null, renames, null).toStructuredJson();
-            assertTrue(json.contains("not found") || json.contains("FAILED"),
-                    "Should report not found, got: " + json);
+            assertTrue(json.contains("not found") || json.contains("error"),
+                    "Should return error for missing value, got: " + json);
         }
 
         @Test
@@ -931,15 +931,15 @@ public class DataTypeServiceTest {
         }
 
         @Test
-        @DisplayName("updateEnum different size change reports not supported")
+        @DisplayName("updateEnum returns error for unsupported size change")
         void testUpdateEnum_DifferentSize() {
             service.createEnum("DiffSizeEnum", 4, null, java.util.Map.of("A", 1L));
 
             // Try changing to a different valid size
             String json = service.updateEnum("DiffSizeEnum", null, 8, null, null).toStructuredJson();
             // The code says "Size change to X bytes not supported on existing enum"
-            assertTrue(json.contains("not supported") || json.contains("FAILED") || json.contains("succeeded"),
-                    "Should handle size change, got: " + json);
+            assertTrue(json.contains("not supported") || json.contains("error"),
+                    "Should return error for unsupported size change, got: " + json);
         }
 
         // ===== createStructure edge cases =====
@@ -1089,6 +1089,105 @@ public class DataTypeServiceTest {
             assertNull(service.findDataTypeByNameInAllCategories(null, "int"));
             assertNull(service.findDataTypeByNameInAllCategories(dtm, null));
             assertNull(service.findDataTypeByNameInAllCategories(dtm, ""));
+        }
+
+        // ===== Atomicity verification tests =====
+
+        @Test
+        @DisplayName("updateStructure: batch rename failure leaves all fields unchanged")
+        void testUpdateStructure_Atomicity_NoPartialRenames() {
+            service.createStructure("AtomicRenameTest", 0, null, null);
+
+            int tx = program.startTransaction("add fields");
+            try {
+                var dtm = program.getDataTypeManager();
+                DataType found = dtm.getDataType("/AtomicRenameTest");
+                ghidra.program.model.data.Structure struct = (ghidra.program.model.data.Structure) found;
+                struct.add(ghidra.program.model.data.IntegerDataType.dataType, "field_a", null);
+                struct.add(ghidra.program.model.data.IntegerDataType.dataType, "field_b", null);
+            } finally {
+                program.endTransaction(tx, true);
+            }
+
+            // Batch with one valid and one invalid rename — should fail entirely
+            java.util.Map<String, String> renames = new java.util.LinkedHashMap<>();
+            renames.put("field_a", "renamed_a");
+            renames.put("nonexistent", "renamed_x");
+            String json = service.updateStructure("AtomicRenameTest", null, null, renames, null).toStructuredJson();
+            assertTrue(json.contains("not found") || json.contains("error"),
+                    "Should return error, got: " + json);
+
+            // Verify field_a was NOT renamed (atomicity)
+            var dtm = program.getDataTypeManager();
+            DataType found = dtm.getDataType("/AtomicRenameTest");
+            ghidra.program.model.data.Structure struct = (ghidra.program.model.data.Structure) found;
+            assertEquals("field_a", struct.getComponent(0).getFieldName(),
+                    "field_a should be unchanged after failed batch");
+            assertEquals("field_b", struct.getComponent(1).getFieldName(),
+                    "field_b should be unchanged after failed batch");
+        }
+
+        @Test
+        @DisplayName("updateEnum: batch rename failure leaves all values unchanged")
+        void testUpdateEnum_Atomicity_NoPartialRenames() {
+            java.util.Map<String, Long> values = new java.util.LinkedHashMap<>();
+            values.put("VAL_A", 1L);
+            values.put("VAL_B", 2L);
+            service.createEnum("AtomicEnumTest", 4, null, values);
+
+            // Batch with one valid and one invalid rename — should fail entirely
+            java.util.Map<String, String> renames = new java.util.LinkedHashMap<>();
+            renames.put("VAL_A", "RENAMED_A");
+            renames.put("NONEXISTENT", "RENAMED_X");
+            String json = service.updateEnum("AtomicEnumTest", null, null, renames, null).toStructuredJson();
+            assertTrue(json.contains("not found") || json.contains("error"),
+                    "Should return error, got: " + json);
+
+            // Verify VAL_A was NOT renamed (atomicity)
+            var dtm = program.getDataTypeManager();
+            DataType found = service.findDataTypeByNameInAllCategories(dtm, "AtomicEnumTest");
+            assertNotNull(found, "Enum should still exist");
+            ghidra.program.model.data.Enum enumType = (ghidra.program.model.data.Enum) found;
+            java.util.Set<String> names = java.util.Set.of(enumType.getNames());
+            assertTrue(names.contains("VAL_A"),
+                    "VAL_A should be unchanged after failed batch, got: " + names);
+            assertTrue(names.contains("VAL_B"),
+                    "VAL_B should be unchanged after failed batch, got: " + names);
+        }
+
+        @Test
+        @DisplayName("updateStructure: type change with invalid type returns error, no partial changes")
+        void testUpdateStructure_Atomicity_TypeChangeInvalidType() {
+            service.createStructure("AtomicTypeTest", 0, null, null);
+
+            int tx = program.startTransaction("add fields");
+            try {
+                var dtm = program.getDataTypeManager();
+                DataType found = dtm.getDataType("/AtomicTypeTest");
+                ghidra.program.model.data.Structure struct = (ghidra.program.model.data.Structure) found;
+                struct.add(ghidra.program.model.data.IntegerDataType.dataType, "field_a", null);
+                struct.add(ghidra.program.model.data.IntegerDataType.dataType, "field_b", null);
+            } finally {
+                program.endTransaction(tx, true);
+            }
+
+            var dtm = program.getDataTypeManager();
+            DataType shortType = service.resolveDataType(dtm, "short");
+            if (shortType != null) {
+                // One valid type change and one invalid — should fail entirely
+                java.util.Map<String, String> typeChanges = new java.util.LinkedHashMap<>();
+                typeChanges.put("field_a", "short");
+                typeChanges.put("field_b", "CompletelyUnknownType12345");
+                String json = service.updateStructure("AtomicTypeTest", null, null, null, typeChanges).toStructuredJson();
+                assertTrue(json.contains("not found") || json.contains("error"),
+                        "Should return error for invalid type, got: " + json);
+
+                // Verify field_a's type was NOT changed
+                DataType found = dtm.getDataType("/AtomicTypeTest");
+                ghidra.program.model.data.Structure struct = (ghidra.program.model.data.Structure) found;
+                assertEquals("int", struct.getComponent(0).getDataType().getName(),
+                        "field_a type should be unchanged after failed batch");
+            }
         }
 
         @Test

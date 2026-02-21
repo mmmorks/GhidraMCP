@@ -786,6 +786,60 @@ public class MemoryServiceTest {
     }
 
     @Test
+    @DisplayName("setAddressDataType pre-validates code unit conflicts without clearExisting")
+    void testSetAddressDataType_PreValidatesConflicts() throws Exception {
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
+        builder.createMemory(".data", "0x402000", 0x100);
+        builder.setBytes("0x402000", "42 00 00 00 43 00 00 00", false);
+        builder.applyDataType("0x402000", IntegerDataType.dataType);
+        ProgramDB program = builder.getProgram();
+
+        MemoryService ms = serviceFor(program);
+
+        // Try to set data type at address that already has defined data, without clearExisting
+        var types = new LinkedHashMap<String, String>();
+        types.put("0x402000", "int");
+        ToolOutput result = ms.setAddressDataType(types, false);
+
+        String json = result.toStructuredJson();
+        assertTrue(json.contains("Existing data") || json.contains("error"),
+                "Should report conflict for existing data, got: " + json);
+    }
+
+    @Test
+    @DisplayName("setAddressDataType pre-validates instruction conflicts without clearExisting")
+    void testSetAddressDataType_PreValidatesInstructionConflicts() throws Exception {
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        // MIPS instruction bytes
+        builder.setBytes("0x401000",
+            "27 BD FF F8 AF BF 00 04 00 00 00 00 8F BF 00 04 27 BD 00 08 03 E0 00 08 00 00 00 00",
+            true);
+        builder.createFunction("0x401000");
+        ProgramDB program = builder.getProgram();
+
+        MemoryService ms = serviceFor(program);
+
+        // Find a type that actually resolves on this DTM
+        DataTypeService dts = new DataTypeService(GhidraTestEnv.programService(program));
+        var dtm = program.getDataTypeManager();
+        var resolvedType = dts.resolveDataType(dtm, "int");
+        if (resolvedType == null) {
+            // If int doesn't resolve, skip this test — DTM-specific
+            return;
+        }
+
+        // Try to set data type at instruction address without clearExisting
+        var types = new LinkedHashMap<String, String>();
+        types.put("0x401000", "int");
+        ToolOutput result = ms.setAddressDataType(types, false);
+
+        String json = result.toStructuredJson();
+        assertTrue(json.contains("Instructions exist") || json.contains("error"),
+                "Should report instruction conflict, got: " + json);
+    }
+
+    @Test
     @DisplayName("setAddressDataType applies multiple types atomically")
     void testSetAddressDataType_Multiple() throws Exception {
         builder = new ProgramBuilder("test", GhidraTestEnv.LANG);

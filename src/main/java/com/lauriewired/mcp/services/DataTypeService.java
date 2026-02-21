@@ -70,7 +70,7 @@ public class DataTypeService {
     @McpTool(post = true, outputType = JsonOutput.class, responseType = UpdateResult.class, description = """
         Bulk update a structure: rename fields, change field types, resize, and/or rename.
 
-        All changes are applied in a single transaction with per-field error reporting.
+        All inputs are validated before any changes are applied (all-or-nothing).
 
         Returns: Per-field results with success/failure status and summary
 
@@ -92,125 +92,141 @@ public class DataTypeService {
         final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
 
-        try (var tx = ProgramTransaction.start(program, "Update structure")) {
-            final ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
-            final DataType dt = findDataTypeByNameInAllCategories(dtm, name);
-            if (!(dt instanceof Structure)) {
-                return StatusOutput.error("Structure '" + name + "' not found");
-            }
-            final Structure struct = (Structure) dt;
+        // --- Pre-validation (outside transaction) ---
+        final ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
+        final DataType dt = findDataTypeByNameInAllCategories(dtm, name);
+        if (!(dt instanceof Structure)) {
+            return StatusOutput.error("Structure '" + name + "' not found");
+        }
+        final Structure struct = (Structure) dt;
 
+        // Build set of existing field names
+        final Set<String> existingNames = new HashSet<>();
+        for (int i = 0; i < struct.getNumComponents(); i++) {
+            final DataTypeComponent comp = struct.getComponent(i);
+            final String fn = comp.getFieldName();
+            if (fn != null) existingNames.add(fn);
+        }
+
+        // Build reverse lookup: new_name -> old_name from fieldRenames
+        final Map<String, String> reverseRenames = new HashMap<>();
+        if (fieldRenames != null) {
+            // Pre-validate: detect rename target collisions with fields not being renamed away
+            final Set<String> renameTargets = new HashSet<>();
+            for (final Map.Entry<String, String> entry : fieldRenames.entrySet()) {
+                final String newFieldName = entry.getValue();
+                if (!renameTargets.add(newFieldName)) {
+                    return StatusOutput.error("Duplicate rename target: multiple fields renamed to '" + newFieldName + "'");
+                }
+                // Collision: new name matches an existing field that isn't being renamed away
+                if (existingNames.contains(newFieldName) && !fieldRenames.containsKey(newFieldName)) {
+                    return StatusOutput.error("Rename collision: '" + newFieldName +
+                            "' already exists as a field and is not being renamed");
+                }
+            }
+            for (final Map.Entry<String, String> entry : fieldRenames.entrySet()) {
+                reverseRenames.put(entry.getValue(), entry.getKey());
+            }
+        }
+
+        // Resolve typeChanges keys to old field names — fail fast on any error
+        final Map<String, String> resolvedTypeChanges = new LinkedHashMap<>();
+        if (typeChanges != null) {
+            for (final Map.Entry<String, String> entry : typeChanges.entrySet()) {
+                final String key = entry.getKey();
+                final String resolved = resolveFieldKey(key, reverseRenames, existingNames);
+                if (resolved.startsWith("ERROR:")) {
+                    return StatusOutput.error(resolved.substring(6));
+                }
+                resolvedTypeChanges.put(resolved, entry.getValue());
+            }
+        }
+
+        // Validate all field rename sources exist
+        if (fieldRenames != null) {
+            for (final String oldFieldName : fieldRenames.keySet()) {
+                if (findComponentIndex(struct, oldFieldName) < 0) {
+                    return StatusOutput.error("Field '" + oldFieldName + "' not found in structure '" + name + "'");
+                }
+            }
+        }
+
+        // Build a mutable copy so we can remove entries consumed by renames
+        final Map<String, String> remainingTypeChanges = new LinkedHashMap<>(resolvedTypeChanges);
+
+        // Resolve all data types and validate field targets for type-only changes
+        final Map<String, DataType> resolvedDataTypes = new LinkedHashMap<>();
+        if (fieldRenames != null) {
+            for (final Map.Entry<String, String> entry : fieldRenames.entrySet()) {
+                final String oldFieldName = entry.getKey();
+                final String newTypeName = remainingTypeChanges.remove(oldFieldName);
+                if (newTypeName != null) {
+                    final DataType resolvedType = resolveDataType(dtm, newTypeName);
+                    if (resolvedType == null) {
+                        return StatusOutput.error("Data type '" + newTypeName + "' not found for field '" + oldFieldName + "'");
+                    }
+                    resolvedDataTypes.put(oldFieldName, resolvedType);
+                }
+            }
+        }
+
+        for (final Map.Entry<String, String> entry : remainingTypeChanges.entrySet()) {
+            final String fieldName = entry.getKey();
+            final String newTypeName = entry.getValue();
+            if (findComponentIndex(struct, fieldName) < 0) {
+                return StatusOutput.error("Field '" + fieldName + "' not found in structure '" + name + "'");
+            }
+            final DataType resolvedType = resolveDataType(dtm, newTypeName);
+            if (resolvedType == null) {
+                return StatusOutput.error("Data type '" + newTypeName + "' not found for field '" + fieldName + "'");
+            }
+            resolvedDataTypes.put(fieldName, resolvedType);
+        }
+
+        // --- Transaction (all validated, apply changes) ---
+        try (var tx = ProgramTransaction.start(program, "Update structure")) {
             final List<String> results = new ArrayList<>();
             int succeeded = 0;
-            int failed = 0;
 
-            // Build set of existing field names
-            final Set<String> existingNames = new HashSet<>();
-            for (int i = 0; i < struct.getNumComponents(); i++) {
-                final DataTypeComponent comp = struct.getComponent(i);
-                final String fn = comp.getFieldName();
-                if (fn != null) existingNames.add(fn);
-            }
-
-            // Build reverse lookup: new_name -> old_name from fieldRenames
-            final Map<String, String> reverseRenames = new HashMap<>();
-            if (fieldRenames != null) {
-                // Pre-validate: detect rename target collisions with fields not being renamed away
-                final Set<String> renameTargets = new HashSet<>();
-                for (final Map.Entry<String, String> entry : fieldRenames.entrySet()) {
-                    final String newFieldName = entry.getValue();
-                    if (!renameTargets.add(newFieldName)) {
-                        return StatusOutput.error("Duplicate rename target: multiple fields renamed to '" + newFieldName + "'");
-                    }
-                    // Collision: new name matches an existing field that isn't being renamed away
-                    if (existingNames.contains(newFieldName) && !fieldRenames.containsKey(newFieldName)) {
-                        return StatusOutput.error("Rename collision: '" + newFieldName +
-                                "' already exists as a field and is not being renamed");
-                    }
-                }
-                for (final Map.Entry<String, String> entry : fieldRenames.entrySet()) {
-                    reverseRenames.put(entry.getValue(), entry.getKey());
-                }
-            }
-
-            // Resolve typeChanges keys to old field names
-            final Map<String, String> resolvedTypeChanges = new LinkedHashMap<>();
-            if (typeChanges != null) {
-                for (final Map.Entry<String, String> entry : typeChanges.entrySet()) {
-                    final String key = entry.getKey();
-                    final String resolved = resolveFieldKey(key, reverseRenames, existingNames);
-                    if (resolved.startsWith("ERROR:")) {
-                        results.add("  " + key + " -> " + resolved.substring(6) + " [FAILED]");
-                        failed++;
-                    } else {
-                        resolvedTypeChanges.put(resolved, entry.getValue());
-                    }
-                }
-            }
-
-            // Apply field renames and type changes
+            // Apply field renames (+ combined type changes)
             if (fieldRenames != null) {
                 for (final Map.Entry<String, String> entry : fieldRenames.entrySet()) {
                     final String oldFieldName = entry.getKey();
                     final String newFieldName = entry.getValue();
-                    final String newTypeName = resolvedTypeChanges.remove(oldFieldName);
 
                     final int idx = findComponentIndex(struct, oldFieldName);
-                    if (idx < 0) {
-                        results.add("  " + oldFieldName + " -> not found [FAILED]");
-                        failed++;
-                        continue;
-                    }
-
                     final DataTypeComponent comp = struct.getComponent(idx);
                     DataType fieldType = comp.getDataType();
                     int fieldLen = comp.getLength();
 
-                    if (newTypeName != null) {
-                        final DataType resolved = resolveDataType(dtm, newTypeName);
-                        if (resolved != null) {
-                            fieldType = resolved;
-                            fieldLen = resolved.getLength();
-                        } else {
-                            results.add("  " + oldFieldName + " -> renamed to '" + newFieldName +
-                                    "', type '" + newTypeName + "' not found [PARTIAL]");
-                            struct.replace(idx, comp.getDataType(), comp.getLength(),
-                                    newFieldName, comp.getComment());
-                            succeeded++;
-                            continue;
-                        }
+                    final DataType newType = resolvedDataTypes.get(oldFieldName);
+                    if (newType != null) {
+                        fieldType = newType;
+                        fieldLen = newType.getLength();
                     }
 
                     struct.replace(idx, fieldType, fieldLen, newFieldName, comp.getComment());
                     final StringBuilder msg = new StringBuilder("  " + oldFieldName + " -> renamed to '" + newFieldName + "'");
-                    if (newTypeName != null) msg.append(", type changed to '").append(newTypeName).append("'");
+                    if (newType != null) {
+                        final String newTypeName = resolvedTypeChanges.get(oldFieldName);
+                        msg.append(", type changed to '").append(newTypeName).append("'");
+                    }
                     msg.append(" [OK]");
                     results.add(msg.toString());
                     succeeded++;
                 }
             }
 
-            // Apply remaining type-only changes (not covered by renames)
-            for (final Map.Entry<String, String> entry : resolvedTypeChanges.entrySet()) {
+            // Apply remaining type-only changes
+            for (final Map.Entry<String, String> entry : remainingTypeChanges.entrySet()) {
                 final String fieldName = entry.getKey();
                 final String newTypeName = entry.getValue();
 
                 final int idx = findComponentIndex(struct, fieldName);
-                if (idx < 0) {
-                    results.add("  " + fieldName + " -> not found [FAILED]");
-                    failed++;
-                    continue;
-                }
-
                 final DataTypeComponent comp = struct.getComponent(idx);
-                final DataType resolved = resolveDataType(dtm, newTypeName);
-                if (resolved == null) {
-                    results.add("  " + fieldName + " -> type '" + newTypeName + "' not found [FAILED]");
-                    failed++;
-                    continue;
-                }
+                final DataType resolvedType = resolvedDataTypes.get(fieldName);
 
-                struct.replace(idx, resolved, resolved.getLength(),
+                struct.replace(idx, resolvedType, resolvedType.getLength(),
                         comp.getFieldName(), comp.getComment());
                 results.add("  " + fieldName + " -> type changed to '" + newTypeName + "' [OK]");
                 succeeded++;
@@ -224,19 +240,14 @@ public class DataTypeService {
 
             // Rename struct last
             if (newName != null && !newName.isEmpty()) {
-                try {
-                    dt.setName(newName);
-                    results.add("Struct renamed from '" + name + "' to '" + newName + "'");
-                } catch (Exception e) {
-                    results.add("Struct rename failed: " + e.getMessage() + " [FAILED]");
-                    failed++;
-                }
+                dt.setName(newName);
+                results.add("Struct renamed from '" + name + "' to '" + newName + "'");
             }
 
             tx.commit();
 
             final UpdateResult result = new UpdateResult(name, results,
-                    new UpdateResult.Summary(succeeded, failed));
+                    new UpdateResult.Summary(succeeded, 0));
             return new JsonOutput(result);
         } catch (Exception e) {
             Msg.error(this, "Error updating structure", e);
@@ -247,7 +258,7 @@ public class DataTypeService {
     @McpTool(post = true, outputType = JsonOutput.class, responseType = UpdateResult.class, description = """
         Bulk update an enum: rename values, change numeric values, resize, and/or rename.
 
-        All changes are applied in a single transaction with per-entry error reporting.
+        All inputs are validated before any changes are applied (all-or-nothing).
 
         Returns: Per-entry results with success/failure status and summary
 
@@ -269,74 +280,103 @@ public class DataTypeService {
         final Program program = programService.getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
 
-        try (var tx = ProgramTransaction.start(program, "Update enum")) {
-            final ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
-            final DataType dt = findDataTypeByNameInAllCategories(dtm, name);
-            if (!(dt instanceof Enum)) {
-                return StatusOutput.error("Enum '" + name + "' not found");
-            }
-            final Enum enumType = (Enum) dt;
+        // --- Pre-validation (outside transaction) ---
+        final ProgramBasedDataTypeManager dtm = program.getDataTypeManager();
+        final DataType dt = findDataTypeByNameInAllCategories(dtm, name);
+        if (!(dt instanceof Enum)) {
+            return StatusOutput.error("Enum '" + name + "' not found");
+        }
+        final Enum enumType = (Enum) dt;
 
+        // Build set of existing value names
+        final Set<String> existingNames = new HashSet<>();
+        for (final String n : enumType.getNames()) {
+            existingNames.add(n);
+        }
+
+        // Build reverse lookup: new_name -> old_name from valueRenames
+        final Map<String, String> reverseRenames = new HashMap<>();
+        if (valueRenames != null) {
+            // Pre-validate: detect rename target collisions with values not being renamed away
+            final Set<String> renameTargets = new HashSet<>();
+            for (final Map.Entry<String, String> entry : valueRenames.entrySet()) {
+                final String newValName = entry.getValue();
+                if (!renameTargets.add(newValName)) {
+                    return StatusOutput.error("Duplicate rename target: multiple values renamed to '" + newValName + "'");
+                }
+                if (existingNames.contains(newValName) && !valueRenames.containsKey(newValName)) {
+                    return StatusOutput.error("Rename collision: '" + newValName +
+                            "' already exists as a value and is not being renamed");
+                }
+            }
+            for (final Map.Entry<String, String> entry : valueRenames.entrySet()) {
+                reverseRenames.put(entry.getValue(), entry.getKey());
+            }
+        }
+
+        // Resolve valueChanges keys to old value names — fail fast on any error
+        final Map<String, Long> resolvedValueChanges = new LinkedHashMap<>();
+        if (valueChanges != null) {
+            for (final Map.Entry<String, Long> entry : valueChanges.entrySet()) {
+                final String key = entry.getKey();
+                final String resolved = resolveFieldKey(key, reverseRenames, existingNames);
+                if (resolved.startsWith("ERROR:")) {
+                    return StatusOutput.error(resolved.substring(6));
+                }
+                resolvedValueChanges.put(resolved, entry.getValue());
+            }
+        }
+
+        // Validate all value rename sources exist
+        if (valueRenames != null) {
+            for (final String oldValName : valueRenames.keySet()) {
+                if (!existingNames.contains(oldValName)) {
+                    return StatusOutput.error("Value '" + oldValName + "' not found in enum '" + name + "'");
+                }
+            }
+        }
+
+        // Build a mutable copy so we can remove entries consumed by renames
+        final Map<String, Long> remainingValueChanges = new LinkedHashMap<>(resolvedValueChanges);
+
+        // Validate all value-only change targets exist (after removing rename-consumed entries)
+        if (valueRenames != null) {
+            for (final String oldValName : valueRenames.keySet()) {
+                remainingValueChanges.remove(oldValName);
+            }
+        }
+        for (final String valName : remainingValueChanges.keySet()) {
+            if (!existingNames.contains(valName)) {
+                return StatusOutput.error("Value '" + valName + "' not found in enum '" + name + "'");
+            }
+        }
+
+        // Validate size
+        if (size != null) {
+            if (size != 1 && size != 2 && size != 4 && size != 8) {
+                return StatusOutput.error("Invalid enum size: " + size + " (must be 1, 2, 4, or 8)");
+            }
+            if (size != enumType.getLength()) {
+                return StatusOutput.error("Size change to " + size + " bytes not supported on existing enum");
+            }
+        }
+
+        // --- Transaction (all validated, apply changes) ---
+        try (var tx = ProgramTransaction.start(program, "Update enum")) {
             final List<String> results = new ArrayList<>();
             int succeeded = 0;
-            int failed = 0;
 
-            // Build set of existing value names
-            final Set<String> existingNames = new HashSet<>();
-            for (final String n : enumType.getNames()) {
-                existingNames.add(n);
-            }
+            // Re-build the remaining value changes for the apply phase
+            final Map<String, Long> applyValueChanges = new LinkedHashMap<>(resolvedValueChanges);
 
-            // Build reverse lookup: new_name -> old_name from valueRenames
-            final Map<String, String> reverseRenames = new HashMap<>();
-            if (valueRenames != null) {
-                // Pre-validate: detect rename target collisions with values not being renamed away
-                final Set<String> renameTargets = new HashSet<>();
-                for (final Map.Entry<String, String> entry : valueRenames.entrySet()) {
-                    final String newValName = entry.getValue();
-                    if (!renameTargets.add(newValName)) {
-                        return StatusOutput.error("Duplicate rename target: multiple values renamed to '" + newValName + "'");
-                    }
-                    if (existingNames.contains(newValName) && !valueRenames.containsKey(newValName)) {
-                        return StatusOutput.error("Rename collision: '" + newValName +
-                                "' already exists as a value and is not being renamed");
-                    }
-                }
-                for (final Map.Entry<String, String> entry : valueRenames.entrySet()) {
-                    reverseRenames.put(entry.getValue(), entry.getKey());
-                }
-            }
-
-            // Resolve valueChanges keys to old value names
-            final Map<String, Long> resolvedValueChanges = new LinkedHashMap<>();
-            if (valueChanges != null) {
-                for (final Map.Entry<String, Long> entry : valueChanges.entrySet()) {
-                    final String key = entry.getKey();
-                    final String resolved = resolveFieldKey(key, reverseRenames, existingNames);
-                    if (resolved.startsWith("ERROR:")) {
-                        results.add("  " + key + " -> " + resolved.substring(6) + " [FAILED]");
-                        failed++;
-                    } else {
-                        resolvedValueChanges.put(resolved, entry.getValue());
-                    }
-                }
-            }
-
-            // Phase 1: Gather current values and remove entries that need updating
-            // Phase 2: Re-add with new names/values
+            // Apply value renames (+ combined value changes)
             if (valueRenames != null) {
                 for (final Map.Entry<String, String> entry : valueRenames.entrySet()) {
                     final String oldValName = entry.getKey();
                     final String newValName = entry.getValue();
 
-                    if (!existingNames.contains(oldValName)) {
-                        results.add("  " + oldValName + " -> not found [FAILED]");
-                        failed++;
-                        continue;
-                    }
-
                     final long currentValue = enumType.getValue(oldValName);
-                    final Long newValue = resolvedValueChanges.remove(oldValName);
+                    final Long newValue = applyValueChanges.remove(oldValName);
                     final long finalValue = (newValue != null) ? newValue : currentValue;
 
                     enumType.remove(oldValName);
@@ -351,15 +391,9 @@ public class DataTypeService {
             }
 
             // Apply remaining value-only changes
-            for (final Map.Entry<String, Long> entry : resolvedValueChanges.entrySet()) {
+            for (final Map.Entry<String, Long> entry : applyValueChanges.entrySet()) {
                 final String valName = entry.getKey();
                 final long newValue = entry.getValue();
-
-                if (!existingNames.contains(valName)) {
-                    results.add("  " + valName + " -> not found [FAILED]");
-                    failed++;
-                    continue;
-                }
 
                 enumType.remove(valName);
                 enumType.add(valName, newValue);
@@ -367,37 +401,16 @@ public class DataTypeService {
                 succeeded++;
             }
 
-            // Apply size change
-            if (size != null) {
-                if (size != 1 && size != 2 && size != 4 && size != 8) {
-                    results.add("Invalid enum size: " + size + " (must be 1, 2, 4, or 8) [FAILED]");
-                    failed++;
-                } else {
-                    // Ghidra doesn't expose a direct setLength — we update via internal API
-                    // The Enum interface doesn't have setLength, but we can cast if needed
-                    // For now, report size change only if it differs
-                    if (size != enumType.getLength()) {
-                        results.add("Size change to " + size + " bytes not supported on existing enum [FAILED]");
-                        failed++;
-                    }
-                }
-            }
-
             // Rename enum last
             if (newName != null && !newName.isEmpty()) {
-                try {
-                    dt.setName(newName);
-                    results.add("Enum renamed from '" + name + "' to '" + newName + "'");
-                } catch (Exception e) {
-                    results.add("Enum rename failed: " + e.getMessage() + " [FAILED]");
-                    failed++;
-                }
+                dt.setName(newName);
+                results.add("Enum renamed from '" + name + "' to '" + newName + "'");
             }
 
             tx.commit();
 
             final UpdateResult result = new UpdateResult(name, results,
-                    new UpdateResult.Summary(succeeded, failed));
+                    new UpdateResult.Summary(succeeded, 0));
             return new JsonOutput(result);
         } catch (Exception e) {
             Msg.error(this, "Error updating enum", e);
