@@ -1101,7 +1101,7 @@ public class DataTypeService {
             final String target = fieldName != null && !fieldName.isEmpty()
                     ? typeName + "." + fieldName
                     : typeName;
-            return StatusOutput.error("No usages found for data type: " + target);
+            return StatusOutput.ok("No usages found for data type: " + target);
         }
 
         return ListOutput.paginate(results, offset, limit);

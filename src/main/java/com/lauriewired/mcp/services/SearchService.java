@@ -240,7 +240,7 @@ public class SearchService {
         }
 
         if (results.isEmpty()) {
-            return StatusOutput.error("No matches found for query: " + query);
+            return StatusOutput.ok("No matches found for query: " + query);
         }
 
         return new JsonOutput(new SearchMemoryResult(query, results.size(), results));
@@ -313,7 +313,7 @@ public class SearchService {
         }
 
         if (codeBlocks.isEmpty()) {
-            return StatusOutput.error("No executable code blocks found in program");
+            return StatusOutput.ok("No executable code blocks found in program");
         }
 
         final List<SearchDisassemblyResult.DisasmMatch> matches = new ArrayList<>();
@@ -380,7 +380,7 @@ public class SearchService {
         }
 
         if (resultCount == 0) {
-            return StatusOutput.error("No matches found for pattern: " + query);
+            return StatusOutput.ok("No matches found for pattern: " + query);
         }
 
         return new JsonOutput(new SearchDisassemblyResult(query, resultCount, matches));
@@ -500,7 +500,7 @@ public class SearchService {
         }
 
         if (matches.isEmpty()) {
-            return StatusOutput.error("No matches found for pattern: " + query);
+            return StatusOutput.ok("No matches found for pattern: " + query);
         }
 
         return new JsonOutput(new SearchDecompiledResult(query,

@@ -410,7 +410,7 @@ public class AnalysisService {
             }
 
             if (refs.isEmpty()) {
-                return StatusOutput.error("No references found to " + address);
+                return StatusOutput.ok("No references found to " + address);
             }
 
             refs.sort(Comparator.comparing(ReferenceToItem::from));

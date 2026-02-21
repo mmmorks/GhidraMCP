@@ -186,7 +186,6 @@ public class HttpUtils {
         "No current location", "No tool available",
         "Code viewer service not available", "Decompilation failed",
         "No high function", "Could not", "No code unit",
-        "No references found", "No matches found", "No executable code",
         "Rename failed", "Symbol not found", "DataTypeService not available"
     };
 
