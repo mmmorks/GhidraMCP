@@ -703,6 +703,41 @@ public class DataTypeServiceTest {
         }
 
         @Test
+        @DisplayName("getDataType uses fieldN_0xH naming for unnamed struct fields")
+        void testGetDataType_UnnamedFields() {
+            service.createStructure("UnnamedFieldsStruct", 0, null, null);
+
+            int tx = program.startTransaction("add unnamed fields");
+            try {
+                var dtm = program.getDataTypeManager();
+                DataType found = dtm.getDataType("/UnnamedFieldsStruct");
+                assertNotNull(found, "Structure should exist");
+                ghidra.program.model.data.Structure struct = (ghidra.program.model.data.Structure) found;
+                // Add fields with null names (unnamed)
+                struct.add(ghidra.program.model.data.IntegerDataType.dataType, -1, null, null);
+                struct.add(ghidra.program.model.data.ShortDataType.dataType, -1, null, null);
+                // Add a named field to verify mixed behavior
+                struct.add(ghidra.program.model.data.IntegerDataType.dataType, -1, "named_field", null);
+            } finally {
+                program.endTransaction(tx, true);
+            }
+
+            String json = service.getDataType("UnnamedFieldsStruct").toStructuredJson();
+
+            // Unnamed fields should use the fieldN_0xH convention
+            assertTrue(json.contains("field0_0x0"),
+                    "First unnamed field should be 'field0_0x0', got: " + json);
+            assertTrue(json.contains("field1_0x4"),
+                    "Second unnamed field should be 'field1_0x4', got: " + json);
+            // Named field should keep its name
+            assertTrue(json.contains("named_field"),
+                    "Named field should keep its name, got: " + json);
+            // Should NOT contain "(unnamed)"
+            assertTrue(!json.contains("(unnamed)"),
+                    "Should not contain '(unnamed)', got: " + json);
+        }
+
+        @Test
         @DisplayName("getDataType returns enum details")
         void testGetDataType_Enum() {
             java.util.Map<String, Long> values = java.util.Map.of(

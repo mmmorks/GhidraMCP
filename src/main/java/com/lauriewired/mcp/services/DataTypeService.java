@@ -910,9 +910,12 @@ public class DataTypeService {
                 for (int i = 0; i < struct.getNumComponents(); i++) {
                     final DataTypeComponent comp = struct.getComponent(i);
                     if (i > 0) summary.append(", ");
+                    final String fieldName = comp.getFieldName() != null
+                            ? comp.getFieldName()
+                            : "field" + i + "_0x" + Integer.toHexString(comp.getOffset());
                     summary.append(comp.getDataType().getName())
                            .append(" ")
-                           .append(comp.getFieldName());
+                           .append(fieldName);
                 }
                 summary.append("}");
                 items.add(new DataTypeItem("struct", struct.getName(), summary.toString(), null,
@@ -989,10 +992,14 @@ public class DataTypeService {
 
     private DataTypeDetailResult formatStructureResult(final Structure struct) {
         final List<DataTypeDetailResult.Field> fields = new ArrayList<>();
-        for (final DataTypeComponent comp : struct.getComponents()) {
+        for (int i = 0; i < struct.getNumComponents(); i++) {
+            final DataTypeComponent comp = struct.getComponent(i);
+            final String fieldName = comp.getFieldName() != null
+                    ? comp.getFieldName()
+                    : "field" + i + "_0x" + Integer.toHexString(comp.getOffset());
             fields.add(new DataTypeDetailResult.Field(
                     comp.getOffset(),
-                    comp.getFieldName() != null ? comp.getFieldName() : "(unnamed)",
+                    fieldName,
                     comp.getDataType().getName(),
                     comp.getLength(),
                     comp.getComment()));
