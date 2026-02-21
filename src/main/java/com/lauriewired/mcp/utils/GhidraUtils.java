@@ -78,21 +78,25 @@ public class GhidraUtils {
         
         // Set up decompiler for accessing the decompiled function
         final var decomp = new DecompInterface();
-        decomp.openProgram(program);
-        decomp.setSimplificationStyle("decompile"); // Full decompilation
-        
-        // Decompile the function
-        final var results = decomp.decompileFunction(func, 60, new ConsoleTaskMonitor());
-        
-        if (results == null || !results.decompileCompleted()) {
-            Msg.error(GhidraUtils.class, "Could not decompile function: " + 
-                     Optional.ofNullable(results)
-                         .map(DecompileResults::getErrorMessage)
-                         .orElse("Unknown error"));
-            return null;
+        try {
+            decomp.openProgram(program);
+            decomp.setSimplificationStyle("decompile"); // Full decompilation
+
+            // Decompile the function
+            final var results = decomp.decompileFunction(func, 60, new ConsoleTaskMonitor());
+
+            if (results == null || !results.decompileCompleted()) {
+                Msg.error(GhidraUtils.class, "Could not decompile function: " +
+                         Optional.ofNullable(results)
+                             .map(DecompileResults::getErrorMessage)
+                             .orElse("Unknown error"));
+                return null;
+            }
+
+            return results;
+        } finally {
+            decomp.dispose();
         }
-        
-        return results;
     }
 
     /**

@@ -133,10 +133,14 @@ public class FunctionService {
 
     private List<Map<String, String>> getDecompiledCLines(final Program program, final Function func) {
         final DecompInterface decomp = new DecompInterface();
-        decomp.openProgram(program);
-        final DecompileResults result = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
-        final List<Map<String, String>> lines = GhidraUtils.extractDecompiledLines(result, func);
-        return !lines.isEmpty() ? lines : List.of(FunctionCodeResult.line(null, "Decompilation failed"));
+        try {
+            decomp.openProgram(program);
+            final DecompileResults result = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
+            final List<Map<String, String>> lines = GhidraUtils.extractDecompiledLines(result, func);
+            return !lines.isEmpty() ? lines : List.of(FunctionCodeResult.line(null, "Decompilation failed"));
+        } finally {
+            decomp.dispose();
+        }
     }
 
     private List<Map<String, String>> getAssemblyLines(final Program program, final Function func) {
@@ -180,47 +184,51 @@ public class FunctionService {
 
     private List<Map<String, String>> getPcodeLines(final Program program, final Function func) {
         final DecompInterface decomp = new DecompInterface();
-        decomp.openProgram(program);
-        final DecompileResults result = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
-        if (result == null || !result.decompileCompleted()) {
-            return List.of(FunctionCodeResult.line(null, "Decompilation failed"));
-        }
-
-        final var highFunction = result.getHighFunction();
-        if (highFunction == null) {
-            return List.of(FunctionCodeResult.line(null, "No high function available"));
-        }
-
-        final Listing listing = program.getListing();
-        final List<Map<String, String>> lines = new ArrayList<>();
-        final var iter = highFunction.getPcodeOps();
-        Address prevAddr = null;
-        while (iter.hasNext()) {
-            final var op = iter.next();
-            final Address opAddr = op.getSeqnum().getTarget();
-            final String addr = opAddr.toString();
-
-            // Emit comments once per new instruction address
-            if (!opAddr.equals(prevAddr)) {
-                // Post comment for previous address (below that instruction's ops)
-                if (prevAddr != null) {
-                    addCommentLines(lines, listing.getComment(CommentType.POST, prevAddr), prevAddr.toString());
-                }
-                // Plate, pre, EOL, repeatable before this instruction's ops
-                addCommentLines(lines, listing.getComment(CommentType.PLATE, opAddr), addr);
-                addCommentLines(lines, listing.getComment(CommentType.PRE, opAddr), addr);
-                addCommentLines(lines, listing.getComment(CommentType.EOL, opAddr), addr);
-                addCommentLines(lines, listing.getComment(CommentType.REPEATABLE, opAddr), addr);
-                prevAddr = opAddr;
+        try {
+            decomp.openProgram(program);
+            final DecompileResults result = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
+            if (result == null || !result.decompileCompleted()) {
+                return List.of(FunctionCodeResult.line(null, "Decompilation failed"));
             }
 
-            lines.add(FunctionCodeResult.line(addr, op.toString()));
+            final var highFunction = result.getHighFunction();
+            if (highFunction == null) {
+                return List.of(FunctionCodeResult.line(null, "No high function available"));
+            }
+
+            final Listing listing = program.getListing();
+            final List<Map<String, String>> lines = new ArrayList<>();
+            final var iter = highFunction.getPcodeOps();
+            Address prevAddr = null;
+            while (iter.hasNext()) {
+                final var op = iter.next();
+                final Address opAddr = op.getSeqnum().getTarget();
+                final String addr = opAddr.toString();
+
+                // Emit comments once per new instruction address
+                if (!opAddr.equals(prevAddr)) {
+                    // Post comment for previous address (below that instruction's ops)
+                    if (prevAddr != null) {
+                        addCommentLines(lines, listing.getComment(CommentType.POST, prevAddr), prevAddr.toString());
+                    }
+                    // Plate, pre, EOL, repeatable before this instruction's ops
+                    addCommentLines(lines, listing.getComment(CommentType.PLATE, opAddr), addr);
+                    addCommentLines(lines, listing.getComment(CommentType.PRE, opAddr), addr);
+                    addCommentLines(lines, listing.getComment(CommentType.EOL, opAddr), addr);
+                    addCommentLines(lines, listing.getComment(CommentType.REPEATABLE, opAddr), addr);
+                    prevAddr = opAddr;
+                }
+
+                lines.add(FunctionCodeResult.line(addr, op.toString()));
+            }
+            // Post comment for the final address
+            if (prevAddr != null) {
+                addCommentLines(lines, listing.getComment(CommentType.POST, prevAddr), prevAddr.toString());
+            }
+            return lines;
+        } finally {
+            decomp.dispose();
         }
-        // Post comment for the final address
-        if (prevAddr != null) {
-            addCommentLines(lines, listing.getComment(CommentType.POST, prevAddr), prevAddr.toString());
-        }
-        return lines;
     }
 
     private List<FunctionCodeResult.RegisterAssumption> getRegisterAssumptions(final Program program, final Address entryPoint) {

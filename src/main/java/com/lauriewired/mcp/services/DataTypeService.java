@@ -115,6 +115,19 @@ public class DataTypeService {
             // Build reverse lookup: new_name -> old_name from fieldRenames
             final Map<String, String> reverseRenames = new HashMap<>();
             if (fieldRenames != null) {
+                // Pre-validate: detect rename target collisions with fields not being renamed away
+                final Set<String> renameTargets = new HashSet<>();
+                for (final Map.Entry<String, String> entry : fieldRenames.entrySet()) {
+                    final String newFieldName = entry.getValue();
+                    if (!renameTargets.add(newFieldName)) {
+                        return StatusOutput.error("Duplicate rename target: multiple fields renamed to '" + newFieldName + "'");
+                    }
+                    // Collision: new name matches an existing field that isn't being renamed away
+                    if (existingNames.contains(newFieldName) && !fieldRenames.containsKey(newFieldName)) {
+                        return StatusOutput.error("Rename collision: '" + newFieldName +
+                                "' already exists as a field and is not being renamed");
+                    }
+                }
                 for (final Map.Entry<String, String> entry : fieldRenames.entrySet()) {
                     reverseRenames.put(entry.getValue(), entry.getKey());
                 }
@@ -277,6 +290,18 @@ public class DataTypeService {
             // Build reverse lookup: new_name -> old_name from valueRenames
             final Map<String, String> reverseRenames = new HashMap<>();
             if (valueRenames != null) {
+                // Pre-validate: detect rename target collisions with values not being renamed away
+                final Set<String> renameTargets = new HashSet<>();
+                for (final Map.Entry<String, String> entry : valueRenames.entrySet()) {
+                    final String newValName = entry.getValue();
+                    if (!renameTargets.add(newValName)) {
+                        return StatusOutput.error("Duplicate rename target: multiple values renamed to '" + newValName + "'");
+                    }
+                    if (existingNames.contains(newValName) && !valueRenames.containsKey(newValName)) {
+                        return StatusOutput.error("Rename collision: '" + newValName +
+                                "' already exists as a value and is not being renamed");
+                    }
+                }
                 for (final Map.Entry<String, String> entry : valueRenames.entrySet()) {
                     reverseRenames.put(entry.getValue(), entry.getKey());
                 }

@@ -101,13 +101,8 @@ public class ToolDef {
                             if (v.isNumber()) {
                                 map.put(e.getKey(), v.asLong());
                             } else {
-                                final String numStr = v.asText().trim();
                                 try {
-                                    if (numStr.startsWith("0x") || numStr.startsWith("0X")) {
-                                        map.put(e.getKey(), Long.parseLong(numStr.substring(2), 16));
-                                    } else {
-                                        map.put(e.getKey(), Long.parseLong(numStr));
-                                    }
+                                    map.put(e.getKey(), Json.parseHexLong(v.asText()));
                                 } catch (NumberFormatException ignored) { /* skip */ }
                             }
                         });
@@ -148,11 +143,8 @@ public class ToolDef {
                             yield p.required() ? null : p.defaultValue();
                         }
                         if (fieldNode.isNumber()) yield fieldNode.asLong();
-                        final String s = fieldNode.asText();
                         try {
-                            yield (s.startsWith("0x") || s.startsWith("0X"))
-                                ? Long.parseLong(s.substring(2), 16)
-                                : Long.parseLong(s);
+                            yield Json.parseHexLong(fieldNode.asText());
                         } catch (NumberFormatException e) {
                             yield p.required() ? null : p.defaultValue();
                         }

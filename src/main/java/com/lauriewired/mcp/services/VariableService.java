@@ -88,81 +88,85 @@ public class VariableService {
         if (func == null) return StatusOutput.error("Function not found: " + functionIdentifier);
 
         final var decomp = new DecompInterface();
-        decomp.openProgram(program);
-        final var result = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
-        if (result == null || !result.decompileCompleted()) return StatusOutput.error("Decompilation failed");
+        try {
+            decomp.openProgram(program);
+            final var result = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
+            if (result == null || !result.decompileCompleted()) return StatusOutput.error("Decompilation failed");
 
-        final var highFunction = result.getHighFunction();
-        if (highFunction == null) return StatusOutput.error("Decompilation failed (no high function)");
+            final var highFunction = result.getHighFunction();
+            if (highFunction == null) return StatusOutput.error("Decompilation failed (no high function)");
 
-        final var localSymbolMap = highFunction.getLocalSymbolMap();
-        if (localSymbolMap == null) return StatusOutput.error("Decompilation failed (no local symbol map)");
+            final var localSymbolMap = highFunction.getLocalSymbolMap();
+            if (localSymbolMap == null) return StatusOutput.error("Decompilation failed (no local symbol map)");
 
-        // Pre-validate: find all symbols and check for conflicts
-        final Map<String, HighSymbol> symbolMap = new LinkedHashMap<>();
-        final var existingNames = new HashSet<String>();
-        final var symbolsIterator = localSymbolMap.getSymbols();
-        while (symbolsIterator.hasNext()) {
-            final var symbol = symbolsIterator.next();
-            existingNames.add(symbol.getName());
-            if (renames.containsKey(symbol.getName())) {
-                symbolMap.put(symbol.getName(), symbol);
-            }
-        }
-
-        // Validate all renames before starting the transaction
-        for (final var entry : renames.entrySet()) {
-            if (!symbolMap.containsKey(entry.getKey())) {
-                return StatusOutput.error("Variable not found: '" + entry.getKey() + "'");
-            }
-            // Check that the new name doesn't conflict with an existing name
-            // (unless it's one we're also renaming away from)
-            if (existingNames.contains(entry.getValue()) && !renames.containsKey(entry.getValue())) {
-                return StatusOutput.error("Error: A variable with name '" + entry.getValue() + "' already exists in this function");
-            }
-        }
-
-        boolean commitRequired = false;
-        for (final HighSymbol hs : symbolMap.values()) {
-            if (GhidraUtils.checkFullCommit(hs, highFunction)) {
-                commitRequired = true;
-                break;
-            }
-        }
-
-        // Execute all renames in a single transaction
-        try (var tx = ProgramTransaction.start(program, "Batch rename variables")) {
-            if (commitRequired) {
-                HighFunctionDBUtil.commitParamsToDatabase(highFunction, false,
-                    ReturnCommitOption.NO_COMMIT, func.getSignatureSource());
+            // Pre-validate: find all symbols and check for conflicts
+            final Map<String, HighSymbol> symbolMap = new LinkedHashMap<>();
+            final var existingNames = new HashSet<String>();
+            final var symbolsIterator = localSymbolMap.getSymbols();
+            while (symbolsIterator.hasNext()) {
+                final var symbol = symbolsIterator.next();
+                existingNames.add(symbol.getName());
+                if (renames.containsKey(symbol.getName())) {
+                    symbolMap.put(symbol.getName(), symbol);
+                }
             }
 
+            // Validate all renames before starting the transaction
             for (final var entry : renames.entrySet()) {
-                final var highSymbol = symbolMap.get(entry.getKey());
-                final var highVariable = highSymbol.getHighVariable();
-                final var newHighVariable = highFunction.splitOutMergeGroup(highVariable, highVariable.getRepresentative());
-                final var finalHighSymbol = newHighVariable.getSymbol();
+                if (!symbolMap.containsKey(entry.getKey())) {
+                    return StatusOutput.error("Variable not found: '" + entry.getKey() + "'");
+                }
+                // Check that the new name doesn't conflict with an existing name
+                // (unless it's one we're also renaming away from)
+                if (existingNames.contains(entry.getValue()) && !renames.containsKey(entry.getValue())) {
+                    return StatusOutput.error("Error: A variable with name '" + entry.getValue() + "' already exists in this function");
+                }
+            }
 
-                var dataType = finalHighSymbol.getDataType();
-                if (Undefined.isUndefined(dataType)) {
-                    dataType = AbstractIntegerDataType.getUnsignedDataType(
-                        dataType.getLength(), program.getDataTypeManager());
+            boolean commitRequired = false;
+            for (final HighSymbol hs : symbolMap.values()) {
+                if (GhidraUtils.checkFullCommit(hs, highFunction)) {
+                    commitRequired = true;
+                    break;
+                }
+            }
+
+            // Execute all renames in a single transaction
+            try (var tx = ProgramTransaction.start(program, "Batch rename variables")) {
+                if (commitRequired) {
+                    HighFunctionDBUtil.commitParamsToDatabase(highFunction, false,
+                        ReturnCommitOption.NO_COMMIT, func.getSignatureSource());
                 }
 
-                HighFunctionDBUtil.updateDBVariable(
-                    finalHighSymbol, entry.getValue(), dataType, SourceType.USER_DEFINED);
-            }
-            tx.commit();
-        } catch (Exception e) {
-            Msg.error(this, "Failed to batch rename variables", e);
-            return StatusOutput.error("Failed to rename variables (transaction rolled back): " + e.getMessage());
-        }
+                for (final var entry : renames.entrySet()) {
+                    final var highSymbol = symbolMap.get(entry.getKey());
+                    final var highVariable = highSymbol.getHighVariable();
+                    final var newHighVariable = highFunction.splitOutMergeGroup(highVariable, highVariable.getRepresentative());
+                    final var finalHighSymbol = newHighVariable.getSymbol();
 
-        return new JsonOutput(new RenameVariablesResult(
-                "Variables renamed successfully",
-                func.getName(),
-                new LinkedHashMap<>(renames),
-                renames.size()));
+                    var dataType = finalHighSymbol.getDataType();
+                    if (Undefined.isUndefined(dataType)) {
+                        dataType = AbstractIntegerDataType.getUnsignedDataType(
+                            dataType.getLength(), program.getDataTypeManager());
+                    }
+
+                    HighFunctionDBUtil.updateDBVariable(
+                        finalHighSymbol, entry.getValue(), dataType, SourceType.USER_DEFINED);
+                }
+                tx.commit();
+            } catch (Exception e) {
+                Msg.error(this, "Failed to batch rename variables", e);
+                return StatusOutput.error("Failed to rename variables (transaction rolled back): " + e.getMessage());
+            }
+
+            return new JsonOutput(new RenameVariablesResult(
+                    "Variables renamed successfully",
+                    func.getName(),
+                    new LinkedHashMap<>(renames),
+                    renames.size()));
+        } finally {
+            decomp.dispose();
+        }
     }
 
     @McpTool(post = true, description = """
@@ -189,172 +193,176 @@ public class VariableService {
         if (program == null) return StatusOutput.error("No program loaded");
 
         final var decomp = new DecompInterface();
-        decomp.openProgram(program);
-
-        final Function func = functionService.resolveFunction(program, functionIdentifier);
-        if (func == null) {
-            return StatusOutput.error("Function not found: " + functionIdentifier);
-        }
-
-        final var result = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
-        if (result == null || !result.decompileCompleted()) {
-            return StatusOutput.error("Decompilation failed");
-        }
-
-        final var highFunction = result.getHighFunction();
-        if (highFunction == null) {
-            return StatusOutput.error("Decompilation failed (no high function)");
-        }
-
-        final var localSymbolMap = highFunction.getLocalSymbolMap();
-        if (localSymbolMap == null) {
-            return StatusOutput.error("Decompilation failed (no local symbol map)");
-        }
-
-        HighSymbol highSymbol = null;
-        final var symbolsIterator = localSymbolMap.getSymbols();
-        while (symbolsIterator.hasNext()) {
-            final var symbol = symbolsIterator.next();
-            final var symbolName = symbol.getName();
-
-            if (symbolName.equals(variableName)) {
-                highSymbol = symbol;
-            }
-            if (symbolName.equals(resolvedName)) {
-                return StatusOutput.error("Error: A variable with name '" + resolvedName + "' already exists in this function");
-            }
-        }
-
-        if (highSymbol == null) {
-            return StatusOutput.error("Variable not found");
-        }
-
-        // Find the specific Varnode to split if a usage address is provided
-        Varnode specificVarnode = null;
-        if (usageAddress != null && !usageAddress.isEmpty()) {
-            try {
-                final var parsedUsageAddress = program.getAddressFactory().getAddress(usageAddress);
-                final var highVariable = highSymbol.getHighVariable();
-
-                // Get all instances of this variable
-                final var instances = highVariable.getInstances();
-
-                Msg.info(this, "Searching for variable usage at address: " + parsedUsageAddress);
-                Msg.info(this, "Variable " + variableName + " has " + instances.length + " instances");
-
-                // First attempt: Find exact match at the specified address
-                specificVarnode = findExactVarnodeMatch(instances, parsedUsageAddress);
-
-                // Second attempt: Find the closest usage within a small range
-                if (specificVarnode == null) {
-                    Msg.info(this, "No exact match found, looking for nearby usage");
-                    specificVarnode = findNearbyVarnodeUsage(instances, parsedUsageAddress, 16); // Search within 16 bytes
-                }
-
-                // Third attempt: Find any usage if we still don't have a match
-                if (specificVarnode == null) {
-                    Msg.info(this, "No nearby match found, using any usage");
-                    specificVarnode = findAnyVarnodeUsage(instances);
-                }
-
-                if (specificVarnode == null) {
-                    return StatusOutput.error("Could not find any variable usage, even after trying fallback strategies");
-                }
-
-                Msg.info(this, "Selected varnode " +
-                    (specificVarnode.getDef() != null ? "defined at " + specificVarnode.getDef().getSeqnum().getTarget() :
-                    "with no definition"));
-
-            } catch (Exception e) {
-                return StatusOutput.error("Error finding variable usage: " + e.getMessage());
-            }
-        }
-
-        final boolean commitRequired = GhidraUtils.checkFullCommit(highSymbol, highFunction);
-
-        final var highVariable = highSymbol.getHighVariable();
-        final var finalVarnode = specificVarnode != null ? specificVarnode : highVariable.getRepresentative();
-
-        try (var tx = ProgramTransaction.start(program, "Rename variable")) {
-            if (commitRequired) {
-                HighFunctionDBUtil.commitParamsToDatabase(highFunction, false,
-                    ReturnCommitOption.NO_COMMIT, func.getSignatureSource());
-            }
-
-            final var newHighVariable = highFunction.splitOutMergeGroup(highVariable, finalVarnode);
-            final var finalHighSymbol = newHighVariable.getSymbol();
-
-            var dataType = finalHighSymbol.getDataType();
-            if (Undefined.isUndefined(dataType)) {
-                dataType = AbstractIntegerDataType.getUnsignedDataType(dataType.getLength(), program.getDataTypeManager());
-            }
-
-            HighFunctionDBUtil.updateDBVariable(
-                finalHighSymbol,
-                resolvedName,
-                dataType,
-                SourceType.USER_DEFINED
-            );
-            tx.commit();
-        } catch (Exception e) {
-            Msg.error(this, "Failed to rename variable", e);
-            return StatusOutput.error("Failed to rename variable: " + e.getMessage());
-        }
-
-        // Get updated variable list after renaming
         try {
-            // Re-decompile to get the updated state
-            final var updatedResult = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
-            if (updatedResult == null || !updatedResult.decompileCompleted()) {
-                return StatusOutput.error("Variable renamed, but failed to get updated variable list");
+            decomp.openProgram(program);
+
+            final Function func = functionService.resolveFunction(program, functionIdentifier);
+            if (func == null) {
+                return StatusOutput.error("Function not found: " + functionIdentifier);
             }
 
-            final var updatedHighFunction = updatedResult.getHighFunction();
-            if (updatedHighFunction == null) {
-                return StatusOutput.error("Variable renamed, but failed to get updated high function");
+            final var result = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
+            if (result == null || !result.decompileCompleted()) {
+                return StatusOutput.error("Decompilation failed");
             }
 
-            final var updatedSymbolMap = updatedHighFunction.getLocalSymbolMap();
-            if (updatedSymbolMap == null) {
-                return StatusOutput.error("Variable renamed, but failed to get updated symbol map");
+            final var highFunction = result.getHighFunction();
+            if (highFunction == null) {
+                return StatusOutput.error("Decompilation failed (no high function)");
             }
 
-            // Convert symbols to VarInfo records
-            final List<SplitVariableResult.VarInfo> variables = new ArrayList<>();
-            updatedSymbolMap.getSymbols().forEachRemaining(symbol -> {
-                final String symbolName = symbol.getName();
-                final String dataTypeName = symbol.getDataType().getName();
-                String storage = null;
+            final var localSymbolMap = highFunction.getLocalSymbolMap();
+            if (localSymbolMap == null) {
+                return StatusOutput.error("Decompilation failed (no local symbol map)");
+            }
 
-                final HighVariable var = symbol.getHighVariable();
-                if (var != null && var.getSymbol() != null) {
-                    storage = var.getSymbol().getStorage().toString();
+            HighSymbol highSymbol = null;
+            final var symbolsIterator = localSymbolMap.getSymbols();
+            while (symbolsIterator.hasNext()) {
+                final var symbol = symbolsIterator.next();
+                final var symbolName = symbol.getName();
+
+                if (symbolName.equals(variableName)) {
+                    highSymbol = symbol;
+                }
+                if (symbolName.equals(resolvedName)) {
+                    return StatusOutput.error("Error: A variable with name '" + resolvedName + "' already exists in this function");
+                }
+            }
+
+            if (highSymbol == null) {
+                return StatusOutput.error("Variable not found");
+            }
+
+            // Find the specific Varnode to split if a usage address is provided
+            Varnode specificVarnode = null;
+            if (usageAddress != null && !usageAddress.isEmpty()) {
+                try {
+                    final var parsedUsageAddress = program.getAddressFactory().getAddress(usageAddress);
+                    final var highVariable = highSymbol.getHighVariable();
+
+                    // Get all instances of this variable
+                    final var instances = highVariable.getInstances();
+
+                    Msg.info(this, "Searching for variable usage at address: " + parsedUsageAddress);
+                    Msg.info(this, "Variable " + variableName + " has " + instances.length + " instances");
+
+                    // First attempt: Find exact match at the specified address
+                    specificVarnode = findExactVarnodeMatch(instances, parsedUsageAddress);
+
+                    // Second attempt: Find the closest usage within a small range
+                    if (specificVarnode == null) {
+                        Msg.info(this, "No exact match found, looking for nearby usage");
+                        specificVarnode = findNearbyVarnodeUsage(instances, parsedUsageAddress, 16); // Search within 16 bytes
+                    }
+
+                    // Third attempt: Find any usage if we still don't have a match
+                    if (specificVarnode == null) {
+                        Msg.info(this, "No nearby match found, using any usage");
+                        specificVarnode = findAnyVarnodeUsage(instances);
+                    }
+
+                    if (specificVarnode == null) {
+                        return StatusOutput.error("Could not find any variable usage, even after trying fallback strategies");
+                    }
+
+                    Msg.info(this, "Selected varnode " +
+                        (specificVarnode.getDef() != null ? "defined at " + specificVarnode.getDef().getSeqnum().getTarget() :
+                        "with no definition"));
+
+                } catch (Exception e) {
+                    return StatusOutput.error("Error finding variable usage: " + e.getMessage());
+                }
+            }
+
+            final boolean commitRequired = GhidraUtils.checkFullCommit(highSymbol, highFunction);
+
+            final var highVariable = highSymbol.getHighVariable();
+            final var finalVarnode = specificVarnode != null ? specificVarnode : highVariable.getRepresentative();
+
+            try (var tx = ProgramTransaction.start(program, "Rename variable")) {
+                if (commitRequired) {
+                    HighFunctionDBUtil.commitParamsToDatabase(highFunction, false,
+                        ReturnCommitOption.NO_COMMIT, func.getSignatureSource());
                 }
 
-                variables.add(new SplitVariableResult.VarInfo(symbolName, dataTypeName, storage));
-            });
+                final var newHighVariable = highFunction.splitOutMergeGroup(highVariable, finalVarnode);
+                final var finalHighSymbol = newHighVariable.getSymbol();
 
-            // Re-decompile once more to get the updated code after renaming
-            List<Map<String, String>> decompiledLines = null;
-            try {
-                final var finalResult = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
-                decompiledLines = GhidraUtils.extractDecompiledLines(finalResult, func);
+                var dataType = finalHighSymbol.getDataType();
+                if (Undefined.isUndefined(dataType)) {
+                    dataType = AbstractIntegerDataType.getUnsignedDataType(dataType.getLength(), program.getDataTypeManager());
+                }
+
+                HighFunctionDBUtil.updateDBVariable(
+                    finalHighSymbol,
+                    resolvedName,
+                    dataType,
+                    SourceType.USER_DEFINED
+                );
+                tx.commit();
             } catch (Exception e) {
-                Msg.warn(this, "Failed to get decompiled code for response: " + e.getMessage());
+                Msg.error(this, "Failed to rename variable", e);
+                return StatusOutput.error("Failed to rename variable: " + e.getMessage());
             }
 
-            return new JsonOutput(new SplitVariableResult(
-                    "Variable split and renamed",
-                    variableName,
-                    resolvedName,
-                    (usageAddress != null && !usageAddress.isEmpty()) ? usageAddress : null,
-                    variables,
-                    decompiledLines));
+            // Get updated variable list after renaming
+            try {
+                // Re-decompile to get the updated state
+                final var updatedResult = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
+                if (updatedResult == null || !updatedResult.decompileCompleted()) {
+                    return StatusOutput.error("Variable renamed, but failed to get updated variable list");
+                }
 
-        } catch (Exception e) {
-            final String errorMsg = "Variable renamed, but failed to collect variable info: " + e.getMessage();
-            Msg.error(this, errorMsg, e);
-            return StatusOutput.ok("Variable renamed");
+                final var updatedHighFunction = updatedResult.getHighFunction();
+                if (updatedHighFunction == null) {
+                    return StatusOutput.error("Variable renamed, but failed to get updated high function");
+                }
+
+                final var updatedSymbolMap = updatedHighFunction.getLocalSymbolMap();
+                if (updatedSymbolMap == null) {
+                    return StatusOutput.error("Variable renamed, but failed to get updated symbol map");
+                }
+
+                // Convert symbols to VarInfo records
+                final List<SplitVariableResult.VarInfo> variables = new ArrayList<>();
+                updatedSymbolMap.getSymbols().forEachRemaining(symbol -> {
+                    final String symbolName = symbol.getName();
+                    final String dataTypeName = symbol.getDataType().getName();
+                    String storage = null;
+
+                    final HighVariable var = symbol.getHighVariable();
+                    if (var != null && var.getSymbol() != null) {
+                        storage = var.getSymbol().getStorage().toString();
+                    }
+
+                    variables.add(new SplitVariableResult.VarInfo(symbolName, dataTypeName, storage));
+                });
+
+                // Re-decompile once more to get the updated code after renaming
+                List<Map<String, String>> decompiledLines = null;
+                try {
+                    final var finalResult = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
+                    decompiledLines = GhidraUtils.extractDecompiledLines(finalResult, func);
+                } catch (Exception e) {
+                    Msg.warn(this, "Failed to get decompiled code for response: " + e.getMessage());
+                }
+
+                return new JsonOutput(new SplitVariableResult(
+                        "Variable split and renamed",
+                        variableName,
+                        resolvedName,
+                        (usageAddress != null && !usageAddress.isEmpty()) ? usageAddress : null,
+                        variables,
+                        decompiledLines));
+
+            } catch (Exception e) {
+                final String errorMsg = "Variable renamed, but failed to collect variable info: " + e.getMessage();
+                Msg.error(this, errorMsg, e);
+                return StatusOutput.ok("Variable renamed");
+            }
+        } finally {
+            decomp.dispose();
         }
     }
 

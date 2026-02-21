@@ -6,6 +6,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.lauriewired.mcp.utils.Json;
+
 /**
  * Maps Java parameter types to JSON Schema types for MCP tool definitions.
  */
@@ -107,10 +109,7 @@ public enum ParamType {
             }
             case LONG -> {
                 try {
-                    if (raw.startsWith("0x") || raw.startsWith("0X")) {
-                        yield Long.parseLong(raw.substring(2), 16);
-                    }
-                    yield Long.parseLong(raw);
+                    yield Json.parseHexLong(raw);
                 } catch (NumberFormatException e) {
                     yield defaultValue;
                 }

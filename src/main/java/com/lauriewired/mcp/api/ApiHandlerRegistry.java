@@ -275,14 +275,8 @@ public class ApiHandlerRegistry {
             if (value.isNumber()) {
                 result.put(entry.getKey(), value.asLong());
             } else {
-                // Handle string-encoded longs (including hex)
-                final String numStr = value.asText().trim();
                 try {
-                    if (numStr.startsWith("0x") || numStr.startsWith("0X")) {
-                        result.put(entry.getKey(), Long.parseLong(numStr.substring(2), 16));
-                    } else {
-                        result.put(entry.getKey(), Long.parseLong(numStr));
-                    }
+                    result.put(entry.getKey(), Json.parseHexLong(value.asText()));
                 } catch (NumberFormatException ignored) {
                     // skip entries with non-numeric values
                 }

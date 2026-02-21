@@ -78,4 +78,19 @@ public final class Json {
             throw new RuntimeException("JSON parsing failed", e);
         }
     }
+
+    /**
+     * Parse a string to a long, supporting hex prefixes (0x / 0X).
+     *
+     * @param value the string to parse (decimal or hex with 0x prefix)
+     * @return the parsed long value
+     * @throws NumberFormatException if the string is not a valid number
+     */
+    public static long parseHexLong(final String value) {
+        final String trimmed = value.trim();
+        if (trimmed.startsWith("0x") || trimmed.startsWith("0X")) {
+            return Long.parseLong(trimmed.substring(2), 16);
+        }
+        return Long.parseLong(trimmed);
+    }
 }

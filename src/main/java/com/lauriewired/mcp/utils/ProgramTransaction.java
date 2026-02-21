@@ -21,8 +21,8 @@ public class ProgramTransaction implements AutoCloseable {
 
     private final Program program;
     private final int transactionId;
-    private boolean commitRequested;
-    private boolean closed;
+    private volatile boolean commitRequested;
+    private volatile boolean closed;
 
     private ProgramTransaction(final Program program, final int transactionId) {
         this.program = program;
