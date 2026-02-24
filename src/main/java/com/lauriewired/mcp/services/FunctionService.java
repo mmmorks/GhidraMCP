@@ -25,6 +25,7 @@ import com.lauriewired.mcp.model.response.RenameFunctionsResult;
 import com.lauriewired.mcp.utils.GhidraUtils;
 import com.lauriewired.mcp.utils.ProgramTransaction;
 
+import ghidra.app.cmd.disassemble.DisassembleCommand;
 import ghidra.app.cmd.function.ApplyFunctionSignatureCmd;
 import ghidra.app.cmd.function.CreateFunctionCmd;
 import ghidra.app.decompiler.DecompInterface;
@@ -119,8 +120,12 @@ public class FunctionService {
         if (program == null) return StatusOutput.error("No program loaded");
         if (functionIdentifier == null || functionIdentifier.isEmpty()) return StatusOutput.error("Function identifier is required");
 
-        final Function func = resolveFunction(program, functionIdentifier);
-        if (func == null) return StatusOutput.error("Function not found: " + functionIdentifier);
+        Function func = resolveFunction(program, functionIdentifier);
+        if (func == null) {
+            // Try to auto-create a function if the identifier looks like an address
+            func = tryAutoCreateFunction(program, functionIdentifier);
+            if (func == null) return StatusOutput.error("Function not found: " + functionIdentifier);
+        }
 
         // Normalize mode
         final String normalizedMode = (mode == null || mode.isEmpty()) ? "c" : mode.toLowerCase().trim();
@@ -450,6 +455,36 @@ public class FunctionService {
             if (func.getName().equals(identifier)) {
                 return func;
             }
+        }
+        return null;
+    }
+
+    /**
+     * Attempt to auto-create a function at the given identifier (treated as an address).
+     * Returns the newly created function, or null if the identifier is not a valid address
+     * or function creation fails.
+     */
+    private Function tryAutoCreateFunction(final Program program, final String identifier) {
+        final Address entryPoint;
+        try {
+            entryPoint = program.getAddressFactory().getAddress(identifier);
+        } catch (Exception e) {
+            return null;
+        }
+        if (entryPoint == null) return null;
+
+        try (var tx = ProgramTransaction.start(program, "Auto-create function")) {
+            // Disassemble first — CreateFunctionCmd needs instructions
+            final DisassembleCommand disCmd = new DisassembleCommand(entryPoint, null, true);
+            disCmd.applyTo(program, new ConsoleTaskMonitor());
+
+            final CreateFunctionCmd cmd = new CreateFunctionCmd(entryPoint);
+            if (cmd.applyTo(program, new ConsoleTaskMonitor())) {
+                tx.commit();
+                return program.getFunctionManager().getFunctionAt(entryPoint);
+            }
+        } catch (Exception e) {
+            Msg.warn(this, "Auto-create function failed at " + identifier + ": " + e.getMessage());
         }
         return null;
     }

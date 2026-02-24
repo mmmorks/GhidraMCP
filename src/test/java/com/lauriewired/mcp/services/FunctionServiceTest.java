@@ -513,6 +513,7 @@ public class FunctionServiceTest {
             assertTrue(result.contains("Invalid address"),
                 "Should report invalid address, got: " + result);
         }
+
     }
 
     // ===== Tests sharing a Pattern A MIPS function (read-only) =====
@@ -1490,4 +1491,93 @@ public class FunctionServiceTest {
         assertTrue(result.contains("Failed to create function"),
             "Should report failure at unmapped address, got: " + result);
     }
+
+    @Test
+    @DisplayName("getFunctionCode auto-creates function when address has code but no function")
+    void testGetFunctionCode_AutoCreateFunction() throws Exception {
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        // MIPS: simple function (Pattern A) — bytes present but no createFunction call
+        builder.setBytes("0x401000",
+            "27 BD FF F8 AF BF 00 04 00 00 00 00 8F BF 00 04 27 BD 00 08 03 E0 00 08 00 00 00 00",
+            true);
+
+        ProgramDB program = builder.getProgram();
+        FunctionService service = serviceFor(program);
+
+        // No function exists yet
+        assertNull(program.getFunctionManager().getFunctionAt(builder.addr("0x401000")),
+            "No function should exist before getFunctionCode call");
+
+        ToolOutput result = service.getFunctionCode("0x401000", "asm");
+        assertInstanceOf(JsonOutput.class, result, "Should succeed with auto-created function");
+
+        FunctionCodeResult data = (FunctionCodeResult) ((JsonOutput) result).data();
+        assertEquals("assembly", data.format());
+        assertFalse(data.lines().isEmpty(), "Should have assembly lines");
+
+        // Verify function was actually created
+        assertNotNull(program.getFunctionManager().getFunctionAt(builder.addr("0x401000")),
+            "Function should exist after auto-create");
+    }
+
+    @Test
+    @DisplayName("getFunctionCode returns error for name that doesn't match any function (no auto-create)")
+    void testGetFunctionCode_NameNotFound_NoAutoCreate() throws Exception {
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
+        builder.createMemory(".text", "0x401000", 0x1000);
+
+        ProgramDB program = builder.getProgram();
+        FunctionService service = serviceFor(program);
+
+        String result = service.getFunctionCode("nonexistent_func", "C").toStructuredJson();
+        assertTrue(result.contains("Function not found"),
+            "Should return 'Function not found' for unmatched name, got: " + result);
+    }
+
+    @Test
+    @DisplayName("getFunctionCode returns error for address outside memory (auto-create fails)")
+    void testGetFunctionCode_AddressOutsideMemory() throws Exception {
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
+        builder.createMemory(".text", "0x401000", 0x100);
+
+        ProgramDB program = builder.getProgram();
+        FunctionService service = serviceFor(program);
+
+        String result = service.getFunctionCode("0x900000", "C").toStructuredJson();
+        assertTrue(result.contains("Function not found"),
+            "Should return 'Function not found' for unmapped address, got: " + result);
+    }
+
+    @Test
+    @DisplayName("getFunctionCode auto-creates function from raw (undisassembled) bytes")
+    void testGetFunctionCode_AutoCreateFromRawBytes() throws Exception {
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        // MIPS: simple function (Pattern A) — setBytes with false to skip auto-disassemble
+        builder.setBytes("0x401000",
+            "27 BD FF F8 AF BF 00 04 00 00 00 00 8F BF 00 04 27 BD 00 08 03 E0 00 08 00 00 00 00",
+            false);
+
+        ProgramDB program = builder.getProgram();
+        FunctionService service = serviceFor(program);
+
+        // No function and no instructions exist yet
+        assertNull(program.getFunctionManager().getFunctionAt(builder.addr("0x401000")),
+            "No function should exist before getFunctionCode call");
+        assertNull(program.getListing().getInstructionAt(builder.addr("0x401000")),
+            "No instructions should exist before getFunctionCode call");
+
+        ToolOutput result = service.getFunctionCode("0x401000", "asm");
+        assertInstanceOf(JsonOutput.class, result, "Should succeed with auto-disassemble + auto-create");
+
+        FunctionCodeResult data = (FunctionCodeResult) ((JsonOutput) result).data();
+        assertEquals("assembly", data.format());
+        assertFalse(data.lines().isEmpty(), "Should have assembly lines");
+
+        // Verify function was created
+        assertNotNull(program.getFunctionManager().getFunctionAt(builder.addr("0x401000")),
+            "Function should exist after auto-disassemble + auto-create");
+    }
+
 }
