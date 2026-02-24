@@ -26,6 +26,7 @@ import com.lauriewired.mcp.utils.GhidraUtils;
 import com.lauriewired.mcp.utils.ProgramTransaction;
 
 import ghidra.app.cmd.function.ApplyFunctionSignatureCmd;
+import ghidra.app.cmd.function.CreateFunctionCmd;
 import ghidra.app.decompiler.DecompInterface;
 import ghidra.app.decompiler.DecompileResults;
 import ghidra.app.services.CodeViewerService;
@@ -310,6 +311,59 @@ public class FunctionService {
         } catch (InvalidInputException | DuplicateNameException | RuntimeException e) {
             Msg.error(this, "Error renaming functions", e);
             return StatusOutput.error("Failed to rename functions: " + e.getMessage());
+        }
+    }
+
+    @McpTool(post = true, description = """
+        Create a function at a specified address.
+
+        The function body is auto-discovered by following code flow from the entry point.
+        Useful when auto-analysis misses a function entry point.
+
+        Returns: Success or error message
+
+        Example: create_function("00401000") -> auto-named function
+        Example: create_function("00401000", "my_handler") -> named function """,
+        outputType = StatusOutput.class, responseType = StatusOutput.class)
+    public ToolOutput createFunction(
+            @Param("Entry point address for the new function (e.g., \"00401000\", \"ram:00401000\")") final String address,
+            @Param(value = "Optional name for the function (auto-generated if empty)", defaultValue = "") final String name) {
+        final Program program = programService.getCurrentProgram();
+        if (program == null) return StatusOutput.error("No program loaded");
+        if (address == null || address.isEmpty()) return StatusOutput.error("Address is required");
+
+        final Address entryPoint;
+        try {
+            entryPoint = program.getAddressFactory().getAddress(address);
+        } catch (Exception e) {
+            return StatusOutput.error("Invalid address: " + address);
+        }
+        if (entryPoint == null) return StatusOutput.error("Invalid address: " + address);
+
+        // Check if a function already exists at this address
+        if (program.getFunctionManager().getFunctionAt(entryPoint) != null) {
+            return StatusOutput.error("Function already exists at " + entryPoint);
+        }
+
+        try (var tx = ProgramTransaction.start(program, "Create function")) {
+            final CreateFunctionCmd cmd;
+            if (name == null || name.isEmpty()) {
+                cmd = new CreateFunctionCmd(entryPoint);
+            } else {
+                cmd = new CreateFunctionCmd(name, entryPoint, null, SourceType.USER_DEFINED);
+            }
+
+            if (cmd.applyTo(program, new ConsoleTaskMonitor())) {
+                tx.commit();
+                final Function created = program.getFunctionManager().getFunctionAt(entryPoint);
+                final String createdName = created != null ? created.getName() : (name.isEmpty() ? "auto" : name);
+                return StatusOutput.ok("Created function '" + createdName + "' at " + entryPoint);
+            } else {
+                return StatusOutput.error("Failed to create function: " + cmd.getStatusMsg());
+            }
+        } catch (Exception e) {
+            Msg.error(this, "Error creating function at " + address, e);
+            return StatusOutput.error("Failed to create function: " + e.getMessage());
         }
     }
 

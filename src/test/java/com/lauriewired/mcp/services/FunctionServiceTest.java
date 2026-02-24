@@ -122,6 +122,14 @@ public class FunctionServiceTest {
         }
 
         @Test
+        @DisplayName("createFunction returns error when no program loaded")
+        void testCreateFunction_NoProgram() {
+            FunctionService service = nullProgramService();
+            String result = service.createFunction("0x401000", "").toStructuredJson();
+            assertTrue(result.contains("\"message\":\"No program loaded\""));
+        }
+
+        @Test
         @DisplayName("Constructor accepts null tool without throwing")
         void testConstructor_NullTool() {
             assertDoesNotThrow(() -> new FunctionService(null, new ProgramService(null), null));
@@ -482,6 +490,28 @@ public class FunctionServiceTest {
         void testRenameFunctions_FunctionNotFound() {
             String result = service.renameFunctions(Map.of("nonexistent", "newName")).toStructuredJson();
             assertTrue(result.contains("Function not found: nonexistent"));
+        }
+
+        @Test
+        @DisplayName("createFunction returns error for null address")
+        void testCreateFunction_NullAddress() {
+            String result = service.createFunction(null, "").toStructuredJson();
+            assertTrue(result.contains("\"message\":\"Address is required\""));
+        }
+
+        @Test
+        @DisplayName("createFunction returns error for empty address")
+        void testCreateFunction_EmptyAddress() {
+            String result = service.createFunction("", "").toStructuredJson();
+            assertTrue(result.contains("\"message\":\"Address is required\""));
+        }
+
+        @Test
+        @DisplayName("createFunction returns error for invalid address")
+        void testCreateFunction_InvalidAddress() {
+            String result = service.createFunction("not_an_address", "").toStructuredJson();
+            assertTrue(result.contains("Invalid address"),
+                "Should report invalid address, got: " + result);
         }
     }
 
@@ -890,6 +920,14 @@ public class FunctionServiceTest {
         void testSearchFunctionsByName_NoMatches() {
             String json = service.searchFunctionsByName("zzz_not_found", 0, 100).toStructuredJson();
             assertTrue(json.contains("\"remaining\":0"));
+        }
+
+        @Test
+        @DisplayName("createFunction returns error when function already exists at address")
+        void testCreateFunction_AlreadyExists() {
+            String result = service.createFunction("0x401000", "").toStructuredJson();
+            assertTrue(result.contains("Function already exists at"),
+                "Should report existing function, got: " + result);
         }
     }
 
@@ -1389,5 +1427,67 @@ public class FunctionServiceTest {
         String paramTypeName = func.getParameter(0).getDataType().getName();
         assertTrue(paramTypeName.contains("ushort") && paramTypeName.contains("*"),
             "Parameter type should be ushort *, got: " + paramTypeName);
+    }
+
+    @Test
+    @DisplayName("createFunction creates function with auto-generated name")
+    void testCreateFunction_AutoName() throws Exception {
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        // MIPS: simple function (Pattern A)
+        builder.setBytes("0x401000",
+            "27 BD FF F8 AF BF 00 04 00 00 00 00 8F BF 00 04 27 BD 00 08 03 E0 00 08 00 00 00 00",
+            true);
+
+        ProgramDB program = builder.getProgram();
+        FunctionService service = serviceFor(program);
+
+        String result = service.createFunction("0x401000", "").toStructuredJson();
+        assertTrue(result.contains("Created function"),
+            "Should report success, got: " + result);
+        assertTrue(result.contains("00401000"),
+            "Should include address, got: " + result);
+
+        // Verify function was actually created
+        Function func = program.getFunctionManager().getFunctionAt(builder.addr("0x401000"));
+        assertNotNull(func, "Function should exist at 0x401000");
+    }
+
+    @Test
+    @DisplayName("createFunction creates function with specified name")
+    void testCreateFunction_WithName() throws Exception {
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        builder.setBytes("0x401000",
+            "27 BD FF F8 AF BF 00 04 00 00 00 00 8F BF 00 04 27 BD 00 08 03 E0 00 08 00 00 00 00",
+            true);
+
+        ProgramDB program = builder.getProgram();
+        FunctionService service = serviceFor(program);
+
+        String result = service.createFunction("0x401000", "my_handler").toStructuredJson();
+        assertTrue(result.contains("Created function"),
+            "Should report success, got: " + result);
+        assertTrue(result.contains("my_handler"),
+            "Should include function name, got: " + result);
+
+        Function func = program.getFunctionManager().getFunctionAt(builder.addr("0x401000"));
+        assertNotNull(func, "Function should exist at 0x401000");
+        assertEquals("my_handler", func.getName());
+    }
+
+    @Test
+    @DisplayName("createFunction fails at address outside memory")
+    void testCreateFunction_OutsideMemory() throws Exception {
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
+        builder.createMemory(".text", "0x401000", 0x100);
+
+        ProgramDB program = builder.getProgram();
+        FunctionService service = serviceFor(program);
+
+        // Address outside any defined memory block
+        String result = service.createFunction("0x900000", "").toStructuredJson();
+        assertTrue(result.contains("Failed to create function"),
+            "Should report failure at unmapped address, got: " + result);
     }
 }

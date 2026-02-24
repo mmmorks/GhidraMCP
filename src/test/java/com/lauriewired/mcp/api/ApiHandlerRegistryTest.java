@@ -330,8 +330,8 @@ class ApiHandlerRegistryTest {
 
         registry.registerAllEndpoints();
 
-        // 37 tool endpoints + 1 /mcp/tools metadata endpoint = 38
-        verify(mockHttpServer, times(38)).createContext(anyString(), any(HttpHandler.class));
+        // 38 tool endpoints + 1 /mcp/tools metadata endpoint = 39
+        verify(mockHttpServer, times(39)).createContext(anyString(), any(HttpHandler.class));
     }
 
     @Test
@@ -343,8 +343,8 @@ class ApiHandlerRegistryTest {
 
         registry.registerAllEndpoints();
 
-        // Should have 37 tool definitions
-        assertEquals(37, registry.getToolDefs().size());
+        // Should have 38 tool definitions
+        assertEquals(38, registry.getToolDefs().size());
     }
 
     @Test
@@ -431,7 +431,8 @@ class ApiHandlerRegistryTest {
             "set_comment",
             "rename_variables", "split_variable", "set_variable_types",
             "create_structure", "add_structure_field", "update_structure",
-            "create_enum", "add_enum_value", "update_enum"
+            "create_enum", "add_enum_value", "update_enum",
+            "create_function"
         );
 
         for (ToolDef def : registry.getToolDefs()) {
