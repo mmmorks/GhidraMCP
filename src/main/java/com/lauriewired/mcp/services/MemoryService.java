@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import com.lauriewired.mcp.model.JsonOutput;
 import com.lauriewired.mcp.model.ListOutput;
@@ -34,6 +35,7 @@ import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.Memory;
 import ghidra.program.model.mem.MemoryAccessException;
 import ghidra.program.model.mem.MemoryBlock;
+import ghidra.program.model.mem.MemoryBlockSourceInfo;
 import ghidra.program.model.symbol.SourceType;
 import ghidra.program.model.symbol.Symbol;
 import ghidra.program.model.symbol.SymbolTable;
@@ -95,7 +97,16 @@ public class MemoryService {
             final String perms = (block.isRead() ? "r" : "-")
                     + (block.isWrite() ? "w" : "-")
                     + (block.isExecute() ? "x" : "-");
-            items.add(new MemorySegmentItem(block.getName(), block.getStart().toString(), block.getEnd().toString(), size, perms));
+            final String blockType = block.getType().name();
+            final boolean initialized = block.isInitialized();
+            final List<MemoryBlockSourceInfo> sourceInfos = block.getSourceInfos();
+            final String byteSource = sourceInfos.isEmpty() ? null
+                    : sourceInfos.stream()
+                            .map(MemoryBlockSourceInfo::getDescription)
+                            .collect(Collectors.joining("; "));
+            items.add(new MemorySegmentItem(block.getName(), block.getStart().toString(),
+                    block.getEnd().toString(), size, perms, blockType, initialized,
+                    block.isVolatile(), byteSource));
         }
         return ListOutput.paginate(items, offset, limit);
     }

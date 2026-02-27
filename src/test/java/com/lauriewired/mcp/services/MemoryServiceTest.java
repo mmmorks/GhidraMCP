@@ -366,6 +366,11 @@ public class MemoryServiceTest {
             assertTrue(result.contains(".data"));
             assertTrue(result.contains("00400000"));
             assertTrue(result.contains("00402000"));
+            // Verify byte source fields are present
+            assertTrue(result.contains("\"block_type\":\"DEFAULT\""));
+            assertTrue(result.contains("\"initialized\":true"));
+            assertTrue(result.contains("\"is_volatile\":false"));
+            assertTrue(result.contains("\"byte_source\""));
         }
 
         @Test
