@@ -351,6 +351,17 @@ public class FunctionService {
         }
 
         try (var tx = ProgramTransaction.start(program, "Create function")) {
+            // Disassemble first — CreateFunctionCmd needs instructions to follow code flow
+            final DisassembleCommand disCmd = new DisassembleCommand(entryPoint, null, true);
+            disCmd.applyTo(program, new ConsoleTaskMonitor());
+
+            // DisassembleCommand.applyTo() returns true even when no instructions are produced,
+            // so check that an instruction actually exists at the entry point
+            if (program.getListing().getInstructionAt(entryPoint) == null) {
+                return StatusOutput.error("Failed to disassemble at " + entryPoint
+                        + ": no valid instructions at address");
+            }
+
             final CreateFunctionCmd cmd;
             if (name == null || name.isEmpty()) {
                 cmd = new CreateFunctionCmd(entryPoint);
@@ -358,17 +369,51 @@ public class FunctionService {
                 cmd = new CreateFunctionCmd(name, entryPoint, null, SourceType.USER_DEFINED);
             }
 
-            if (cmd.applyTo(program, new ConsoleTaskMonitor())) {
-                tx.commit();
-                final Function created = program.getFunctionManager().getFunctionAt(entryPoint);
-                final String createdName = created != null ? created.getName() : (name.isEmpty() ? "auto" : name);
-                return StatusOutput.ok("Created function '" + createdName + "' at " + entryPoint);
-            } else {
+            if (!cmd.applyTo(program, new ConsoleTaskMonitor())) {
                 return StatusOutput.error("Failed to create function: " + cmd.getStatusMsg());
             }
+
+            final Function created = program.getFunctionManager().getFunctionAt(entryPoint);
+            if (created == null) {
+                return StatusOutput.error("Failed to create function at " + entryPoint);
+            }
+
+            // Verify the created function contains valid code by checking for
+            // halt_baddata() in the decompiler output — the decompiler emits this
+            // when it encounters bad instruction data (non-code bytes that happened
+            // to disassemble into junk instructions)
+            if (containsBadData(program, created)) {
+                // Don't commit — rolls back the junk function
+                return StatusOutput.error("Address " + entryPoint
+                        + " does not contain valid code (decompiler detected bad instruction data)");
+            }
+
+            tx.commit();
+            return StatusOutput.ok("Created function '" + created.getName() + "' at " + entryPoint);
         } catch (Exception e) {
             Msg.error(this, "Error creating function at " + address, e);
             return StatusOutput.error("Failed to create function: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Check whether the decompiler flags the function as containing bad instruction data.
+     * The C++ decompiler emits {@code halt_baddata()} calls when it encounters invalid
+     * instructions; since the Java API doesn't expose the underlying {@code badinstruction}
+     * flag, we check the decompiled C output for this marker.
+     */
+    private boolean containsBadData(final Program program, final Function func) {
+        final DecompInterface decomp = new DecompInterface();
+        try {
+            decomp.openProgram(program);
+            final DecompileResults result = decomp.decompileFunction(func, 30, new ConsoleTaskMonitor());
+            if (result == null || !result.decompileCompleted()) {
+                return true;
+            }
+            final var markup = result.getCCodeMarkup();
+            return markup != null && markup.toString().contains("halt_baddata");
+        } finally {
+            decomp.dispose();
         }
     }
 
@@ -478,10 +523,19 @@ public class FunctionService {
             final DisassembleCommand disCmd = new DisassembleCommand(entryPoint, null, true);
             disCmd.applyTo(program, new ConsoleTaskMonitor());
 
+            if (program.getListing().getInstructionAt(entryPoint) == null) {
+                return null;
+            }
+
             final CreateFunctionCmd cmd = new CreateFunctionCmd(entryPoint);
             if (cmd.applyTo(program, new ConsoleTaskMonitor())) {
+                final Function created = program.getFunctionManager().getFunctionAt(entryPoint);
+                if (created != null && containsBadData(program, created)) {
+                    // Don't commit — rolls back the junk function
+                    return null;
+                }
                 tx.commit();
-                return program.getFunctionManager().getFunctionAt(entryPoint);
+                return created;
             }
         } catch (Exception e) {
             Msg.warn(this, "Auto-create function failed at " + identifier + ": " + e.getMessage());

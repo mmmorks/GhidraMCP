@@ -1486,9 +1486,9 @@ public class FunctionServiceTest {
         ProgramDB program = builder.getProgram();
         FunctionService service = serviceFor(program);
 
-        // Address outside any defined memory block
+        // Address outside any defined memory block — disassembly produces no instructions
         String result = service.createFunction("0x900000", "").toStructuredJson();
-        assertTrue(result.contains("Failed to create function"),
+        assertTrue(result.contains("no valid instructions"),
             "Should report failure at unmapped address, got: " + result);
     }
 
@@ -1578,6 +1578,140 @@ public class FunctionServiceTest {
         // Verify function was created
         assertNotNull(program.getFunctionManager().getFunctionAt(builder.addr("0x401000")),
             "Function should exist after auto-disassemble + auto-create");
+    }
+
+    @Test
+    @DisplayName("createFunction succeeds on already-disassembled code")
+    void testCreateFunction_AlreadyDisassembled() throws Exception {
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        // setBytes with true -> pre-disassembled
+        builder.setBytes("0x401000",
+            "27 BD FF F8 AF BF 00 04 00 00 00 00 8F BF 00 04 27 BD 00 08 03 E0 00 08 00 00 00 00",
+            true);
+
+        ProgramDB program = builder.getProgram();
+        FunctionService service = serviceFor(program);
+
+        // Instructions exist but no function yet
+        assertNotNull(program.getListing().getInstructionAt(builder.addr("0x401000")),
+            "Instructions should already exist");
+        assertNull(program.getFunctionManager().getFunctionAt(builder.addr("0x401000")),
+            "No function should exist yet");
+
+        String result = service.createFunction("0x401000", "").toStructuredJson();
+        assertTrue(result.contains("Created function"),
+            "Should succeed on pre-disassembled code, got: " + result);
+
+        assertNotNull(program.getFunctionManager().getFunctionAt(builder.addr("0x401000")),
+            "Function should exist after creation");
+    }
+
+    @Test
+    @DisplayName("createFunction succeeds on raw undisassembled bytes")
+    void testCreateFunction_RawBytes() throws Exception {
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        // setBytes with false -> raw bytes, no disassembly
+        builder.setBytes("0x401000",
+            "27 BD FF F8 AF BF 00 04 00 00 00 00 8F BF 00 04 27 BD 00 08 03 E0 00 08 00 00 00 00",
+            false);
+
+        ProgramDB program = builder.getProgram();
+        FunctionService service = serviceFor(program);
+
+        // No instructions and no function
+        assertNull(program.getListing().getInstructionAt(builder.addr("0x401000")),
+            "No instructions should exist before call");
+        assertNull(program.getFunctionManager().getFunctionAt(builder.addr("0x401000")),
+            "No function should exist before call");
+
+        String result = service.createFunction("0x401000", "").toStructuredJson();
+        assertTrue(result.contains("Created function"),
+            "Should disassemble and create function from raw bytes, got: " + result);
+
+        assertNotNull(program.getFunctionManager().getFunctionAt(builder.addr("0x401000")),
+            "Function should exist after creation");
+    }
+
+    @Test
+    @DisplayName("createFunction returns error when function already exists (per-test builder)")
+    void testCreateFunction_AlreadyExists_WithBuilder() throws Exception {
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        builder.setBytes("0x401000",
+            "27 BD FF F8 AF BF 00 04 00 00 00 00 8F BF 00 04 27 BD 00 08 03 E0 00 08 00 00 00 00",
+            true);
+        builder.createFunction("0x401000");
+
+        ProgramDB program = builder.getProgram();
+        FunctionService service = serviceFor(program);
+
+        // Function already exists — should get a clear error, not a disassembly attempt
+        assertNotNull(program.getFunctionManager().getFunctionAt(builder.addr("0x401000")));
+
+        String result = service.createFunction("0x401000", "").toStructuredJson();
+        assertTrue(result.contains("Function already exists"),
+            "Should report function already exists, got: " + result);
+    }
+
+    @Test
+    @DisplayName("createFunction fails when bytes don't produce valid instructions")
+    void testCreateFunction_InvalidBytes() throws Exception {
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        // 0xFFFFFFFF does not decode to a valid MIPS instruction
+        builder.setBytes("0x401000", "FF FF FF FF", false);
+
+        ProgramDB program = builder.getProgram();
+        FunctionService service = serviceFor(program);
+
+        String result = service.createFunction("0x401000", "").toStructuredJson();
+        assertTrue(result.contains("no valid instructions"),
+            "Should report disassembly failure for invalid bytes, got: " + result);
+    }
+
+    @Test
+    @DisplayName("createFunction rejects junk bytes that disassemble but aren't a real function")
+    void testCreateFunction_JunkBytes() throws Exception {
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        // Bytes that decode to MIPS instructions but aren't a real function —
+        // the decompiler flags these with halt_baddata()
+        builder.setBytes("0x401000",
+            "3C 01 00 01 34 21 00 02 AC 22 00 00 3C 03 00 04", false);
+
+        ProgramDB program = builder.getProgram();
+        FunctionService service = serviceFor(program);
+
+        String result = service.createFunction("0x401000", "").toStructuredJson();
+        assertTrue(result.contains("does not contain valid code"),
+            "Should reject junk bytes flagged by decompiler, got: " + result);
+
+        // Function should NOT exist (transaction was rolled back)
+        assertNull(program.getFunctionManager().getFunctionAt(builder.addr("0x401000")),
+            "Junk function should have been rolled back");
+    }
+
+    @Test
+    @DisplayName("getFunctionCode does not auto-create function from junk bytes")
+    void testGetFunctionCode_JunkBytes_NoAutoCreate() throws Exception {
+        builder = new ProgramBuilder("test", GhidraTestEnv.LANG);
+        builder.createMemory(".text", "0x401000", 0x1000);
+        // Junk bytes that decode but trigger halt_baddata()
+        builder.setBytes("0x401000",
+            "3C 01 00 01 34 21 00 02 AC 22 00 00 3C 03 00 04", false);
+
+        ProgramDB program = builder.getProgram();
+        FunctionService service = serviceFor(program);
+
+        String result = service.getFunctionCode("0x401000", "C").toStructuredJson();
+        assertTrue(result.contains("Function not found"),
+            "Should not auto-create function from junk bytes, got: " + result);
+
+        // No junk function should be left behind
+        assertNull(program.getFunctionManager().getFunctionAt(builder.addr("0x401000")),
+            "Junk function should not have been created");
     }
 
 }
