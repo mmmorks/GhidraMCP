@@ -25,14 +25,16 @@ public class ToolDef {
     private final boolean hasComplexTypes;  // true if any param is a Map or List type
     private final Class<? extends ToolOutput> outputType;
     private final Class<?> responseType;    // response record type for schema generation
+    private final int timeoutSeconds;       // per-tool HTTP timeout hint (seconds)
 
     private ToolDef(final String name, final String rawDescription, final boolean post, final List<ToolParamDef> params,
-                    final Class<? extends ToolOutput> outputType, final Class<?> responseType) {
+                    final Class<? extends ToolOutput> outputType, final Class<?> responseType, final int timeoutSeconds) {
         this.name = name;
         this.post = post;
         this.params = params;
         this.outputType = outputType;
         this.responseType = responseType;
+        this.timeoutSeconds = timeoutSeconds;
         this.hasComplexTypes = params.stream().anyMatch(p ->
             p.type() == ParamType.STRING_MAP || p.type() == ParamType.LONG_MAP || p.type() == ParamType.STRING_PAIR_LIST);
         this.description = buildFullDescription(rawDescription, params);
@@ -64,7 +66,7 @@ public class ToolDef {
         }
 
         return new ToolDef(toolName, annotation.description(), annotation.post(), paramDefs,
-            annotation.outputType(), annotation.responseType());
+            annotation.outputType(), annotation.responseType(), annotation.timeoutSeconds());
     }
 
     /**
@@ -188,6 +190,10 @@ public class ToolDef {
         tool.put("method", post ? "POST" : "GET");
         tool.put("inputSchema", buildInputSchemaMap());
 
+        if (timeoutSeconds > 0) {
+            tool.put("timeoutSeconds", timeoutSeconds);
+        }
+
         final String schema = SchemaGenerator.generateSchema(responseType, outputType);
         if (schema != null) {
             try {
@@ -239,6 +245,7 @@ public class ToolDef {
     public boolean isPost() { return post; }
     public List<ToolParamDef> getParams() { return List.copyOf(params); }
     public Class<? extends ToolOutput> getOutputType() { return outputType; }
+    public int getTimeoutSeconds() { return timeoutSeconds; }
 
     private static String buildFullDescription(final String rawDescription, final List<ToolParamDef> params) {
         final String normalized = normalizeDescription(rawDescription);

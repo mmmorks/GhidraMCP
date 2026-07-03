@@ -29,4 +29,7 @@ public @interface McpTool {
 
     /** Response record type — used to derive outputSchema via reflection. Void.class means no typed schema. */
     Class<?> responseType() default Void.class;
+
+    /** Per-tool HTTP timeout hint (seconds) surfaced to the bridge. 0 = use bridge default. */
+    int timeoutSeconds() default 0;
 }

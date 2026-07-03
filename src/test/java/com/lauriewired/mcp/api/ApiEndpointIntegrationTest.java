@@ -28,6 +28,7 @@ import com.lauriewired.mcp.services.FunctionService;
 import com.lauriewired.mcp.services.MemoryService;
 import com.lauriewired.mcp.services.NamespaceService;
 import com.lauriewired.mcp.services.ProgramService;
+import com.lauriewired.mcp.services.ProjectService;
 import com.lauriewired.mcp.services.SearchService;
 import com.lauriewired.mcp.services.VariableService;
 import com.sun.net.httpserver.Headers;
@@ -101,7 +102,8 @@ public class ApiEndpointIntegrationTest {
             mockMemoryService,
             mockProgramService,
             mockSearchService,
-            mockVariableService
+            mockVariableService,
+            new ProjectService(null)
         );
         
         when(mockServerManager.isServerRunning()).thenReturn(true);

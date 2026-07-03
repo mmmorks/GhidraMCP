@@ -16,6 +16,7 @@ from bridge_mcp_ghidra import (
     _parse_args,
     _fetch_tool_definitions,
     _call_tool,
+    _effective_timeout,
     _VALID_TOOL_NAME,
 )
 
@@ -378,6 +379,21 @@ class TestCallTool:
             display, _, is_error = await _call_tool(client, _error_server, tool_def, {"key": "val"})
         assert is_error
         assert "server-side failure" in display
+
+
+# ---------------------------------------------------------------------------
+# _effective_timeout
+# ---------------------------------------------------------------------------
+
+class TestEffectiveTimeout:
+    def test_absent_uses_client_default(self):
+        assert _effective_timeout({"name": "x"}) is httpx.USE_CLIENT_DEFAULT
+
+    def test_zero_uses_client_default(self):
+        assert _effective_timeout({"name": "x", "timeoutSeconds": 0}) is httpx.USE_CLIENT_DEFAULT
+
+    def test_positive_value_used(self):
+        assert _effective_timeout({"name": "x", "timeoutSeconds": 600}) == 600
 
 
 # ---------------------------------------------------------------------------

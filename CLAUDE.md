@@ -84,6 +84,7 @@ LLM Client → (MCP/stdio) → bridge_mcp_ghidra.py → (HTTP) → GhidraMCPPlug
 **Service layer** (all in `com.lauriewired.mcp.services`):
 - `ProgramService` — provides current `Program` reference from Ghidra's `PluginTool`; used by all other services
 - `FunctionService`, `DataTypeService`, `AnalysisService`, `MemoryService`, `SearchService`, `VariableService`, `CommentService`, `NamespaceService`
+- `ProjectService` — project-level tools: `import_program` (import a file from the Ghidra host via `ProgramLoader.builder()`, optionally analyze + open), `list_program_files` (walk the project tree), `open_program`, and `reanalyze_program`. Reaches the project via `tool.getProject()` + the tool's `ProgramManager`; imported/opened programs become the CodeBrowser's current program so every other service operates on them. Switching the current program auto-closes (save-first, never discarding unsaved work) the one it replaced. `import_program`/`reanalyze_program` declare `timeoutSeconds = 600` (the bridge honors per-tool timeouts) since auto-analysis can outlast the default 30s HTTP timeout.
 
 **Key utilities** (in `com.lauriewired.mcp.utils`):
 - `Json` — shared Jackson `ObjectMapper` singleton (`NON_NULL`, `SNAKE_CASE`); also provides `Json.toSnakeCase()` as the single source of truth for all camelCase→snake_case conversion

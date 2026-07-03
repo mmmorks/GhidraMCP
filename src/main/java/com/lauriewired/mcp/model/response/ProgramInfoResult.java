@@ -1,5 +1,8 @@
 package com.lauriewired.mcp.model.response;
 
+import ghidra.program.model.address.AddressIterator;
+import ghidra.program.model.listing.Program;
+
 import com.lauriewired.mcp.model.Displayable;
 
 public record ProgramInfoResult(
@@ -17,6 +20,26 @@ public record ProgramInfoResult(
     int functionCount,
     int symbolCount
 ) implements Displayable {
+    /** Build a ProgramInfoResult from a live program. */
+    public static ProgramInfoResult from(final Program program) {
+        final AddressIterator entryPoints = program.getSymbolTable().getExternalEntryPointIterator();
+        final String entryPoint = entryPoints.hasNext() ? entryPoints.next().toString() : null;
+        return new ProgramInfoResult(
+            program.getName(),
+            program.getExecutableFormat(),
+            program.getLanguage().getProcessor().toString(),
+            program.getLanguageID().toString(),
+            program.getLanguage().getLanguageDescription().getEndian().toString(),
+            program.getLanguage().getLanguageDescription().getSize(),
+            program.getCompilerSpec().getCompilerSpecID().toString(),
+            program.getImageBase().toString(),
+            program.getMinAddress().toString(),
+            program.getMaxAddress().toString(),
+            entryPoint,
+            program.getFunctionManager().getFunctionCount(),
+            program.getSymbolTable().getNumSymbols());
+    }
+
     @Override
     public String toDisplayText() {
         final StringBuilder sb = new StringBuilder();
