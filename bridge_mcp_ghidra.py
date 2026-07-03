@@ -61,6 +61,19 @@ def _serialize_query_value(v):
     return json.dumps(v)
 
 
+def _effective_timeout(tool_def: dict):
+    """Per-tool HTTP timeout override, falling back to the client default.
+
+    The Java plugin emits `timeoutSeconds` in /mcp/tools for long-running tools
+    (import/analysis). When absent or non-positive, use the AsyncClient's
+    configured default via httpx.USE_CLIENT_DEFAULT.
+    """
+    value = tool_def.get("timeoutSeconds")
+    if isinstance(value, (int, float)) and value > 0:
+        return value
+    return httpx.USE_CLIENT_DEFAULT
+
+
 def _handle_response(body: str) -> tuple[str, dict | None, bool]:
     """Process HTTP response into (display_text, structured_data, is_error) tuple.
 
@@ -102,15 +115,17 @@ async def _call_tool(client: httpx.AsyncClient, server_url: str, tool_def: dict,
         return f"Invalid tool name: {endpoint!r}", None, True
     method = tool_def.get("method", "GET").upper()
     url = f"{server_url}/{endpoint}"
+    timeout = _effective_timeout(tool_def)
 
     try:
         if method == "POST":
             filtered = {k: v for k, v in arguments.items() if v is not None}
             resp = await client.post(url, content=json.dumps(filtered),
-                                     headers={"Content-Type": "application/json"})
+                                     headers={"Content-Type": "application/json"},
+                                     timeout=timeout)
         else:
             params = {k: _serialize_query_value(v) for k, v in arguments.items() if v is not None}
-            resp = await client.get(url, params=params)
+            resp = await client.get(url, params=params, timeout=timeout)
         resp.raise_for_status()
         return _handle_response(resp.text)
     except httpx.HTTPStatusError as e:
