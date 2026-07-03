@@ -1,6 +1,7 @@
 package com.lauriewired.mcp.services;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -16,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import com.lauriewired.mcp.model.JsonOutput;
 import com.lauriewired.mcp.model.ToolOutput;
 import com.lauriewired.mcp.model.response.SearchDecompiledResult;
+import com.lauriewired.mcp.model.response.SearchMemoryResult;
 
 import ghidra.program.database.ProgramBuilder;
 import ghidra.program.database.ProgramDB;
@@ -292,6 +294,24 @@ public class SearchServiceTest {
             // Should find the hex pattern at the data section
             assertTrue(json.contains("00402000") || json.contains("402000") || json.contains("match"),
                     "Should find hex pattern in memory, got: " + json);
+        }
+
+        @Test
+        @DisplayName("searchMemory finds hex byte pattern with structured result validation")
+        void testSearchMemory_HexPatternStructured() {
+            // Search for "Hello W" as hex bytes: 48 65 6C 6C 6F 20 57
+            ToolOutput result = service.searchMemory("48 65 6C 6C 6F 20 57", false, null, 10);
+            assertInstanceOf(JsonOutput.class, result, "Should return JsonOutput, got: " + result.toStructuredJson());
+
+            SearchMemoryResult data = (SearchMemoryResult) ((JsonOutput) result).data();
+            assertTrue(data.matchCount() >= 1, "Should find at least 1 match for hex pattern");
+            assertFalse(data.matches().isEmpty(), "Matches list should not be empty");
+
+            SearchMemoryResult.MemoryMatch match = data.matches().get(0);
+            assertTrue(match.address().contains("402000"),
+                    "Match should be at 0x402000 in .data block, got: " + match.address());
+            assertEquals(".data", match.block(), "Match should be in .data block");
+            assertNotNull(match.context(), "Match should include hex context");
         }
 
         @Test
