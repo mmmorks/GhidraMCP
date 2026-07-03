@@ -22,8 +22,8 @@ import com.lauriewired.mcp.utils.ProgramTransaction;
 
 import ghidra.app.plugin.core.analysis.AutoAnalysisManager;
 import ghidra.app.services.ProgramManager;
-import ghidra.app.util.importer.AutoImporter;
 import ghidra.app.util.importer.MessageLog;
+import ghidra.app.util.importer.ProgramLoader;
 import ghidra.app.util.opinion.Loaded;
 import ghidra.app.util.opinion.LoadResults;
 import ghidra.framework.model.DomainFile;
@@ -257,47 +257,55 @@ public class ProjectService {
         final MessageLog log = new MessageLog();
         final Object consumer = this;
 
-        try (LoadResults<Program> results =
-                 AutoImporter.importByUsingBestGuess(file, project, folderPath, consumer, log, TaskMonitor.DUMMY)) {
+        try (LoadResults<Program> results = ProgramLoader.builder()
+                .source(file)
+                .project(project)
+                .projectFolderPath(folderPath)
+                .log(log)
+                .monitor(TaskMonitor.DUMMY)
+                .load()) {
             final Loaded<Program> primary = results.getPrimary();
-            final Program program = primary.getDomainObject();
-
-            final boolean analyzed = analyze;
-            if (analyze) {
-                runAnalysis(program);
-            }
-            results.save(TaskMonitor.DUMMY);
-            final DomainFile savedFile = primary.getSavedDomainFile();
-
-            String warning = null;
-            if (open) {
-                final ProgramManager pm = getProgramManager();
-                if (pm != null) {
-                    final String[] warningBox = new String[1];
-                    runOnSwing(() -> {
-                        final Program prev = pm.getCurrentProgram();
-                        final Program opened = pm.openProgram(savedFile);
-                        warningBox[0] = autoClosePrevious(pm, prev, opened);
-                        return null;
-                    });
-                    warning = warningBox[0];
+            final Program program = primary.getDomainObject(consumer);
+            try {
+                final boolean analyzed = analyze;
+                if (analyze) {
+                    runAnalysis(program);
                 }
-            }
+                results.save(TaskMonitor.DUMMY);
+                final DomainFile savedFile = primary.getSavedDomainFile();
 
-            final List<String> extras = new ArrayList<>();
-            for (final Loaded<Program> other : results.getNonPrimary()) {
-                extras.add(other.getName());
-            }
+                String warning = null;
+                if (open) {
+                    final ProgramManager pm = getProgramManager();
+                    if (pm != null) {
+                        final String[] warningBox = new String[1];
+                        runOnSwing(() -> {
+                            final Program prev = pm.getCurrentProgram();
+                            final Program opened = pm.openProgram(savedFile);
+                            warningBox[0] = autoClosePrevious(pm, prev, opened);
+                            return null;
+                        });
+                        warning = warningBox[0];
+                    }
+                }
 
-            return new JsonOutput(new ImportResult(
-                program.getName(),
-                savedFile.getPathname(),
-                program.getExecutableFormat(),
-                program.getLanguageID().toString(),
-                program.getFunctionManager().getFunctionCount(),
-                analyzed,
-                extras,
-                warning));
+                final List<String> extras = new ArrayList<>();
+                for (final Loaded<Program> other : results.getNonPrimary()) {
+                    extras.add(other.getName());
+                }
+
+                return new JsonOutput(new ImportResult(
+                    program.getName(),
+                    savedFile.getPathname(),
+                    program.getExecutableFormat(),
+                    program.getLanguageID().toString(),
+                    program.getFunctionManager().getFunctionCount(),
+                    analyzed,
+                    extras,
+                    warning));
+            } finally {
+                program.release(consumer);
+            }
         } catch (Exception e) {
             return StatusOutput.error("Import failed: " + e.getMessage());
         }
