@@ -336,8 +336,8 @@ class ApiHandlerRegistryTest {
 
         registry.registerAllEndpoints();
 
-        // 41 tool endpoints + 1 /mcp/tools metadata endpoint = 42
-        verify(mockHttpServer, times(42)).createContext(anyString(), any(HttpHandler.class));
+        // 42 tool endpoints + 1 /mcp/tools metadata endpoint = 43
+        verify(mockHttpServer, times(43)).createContext(anyString(), any(HttpHandler.class));
     }
 
     @Test
@@ -349,8 +349,8 @@ class ApiHandlerRegistryTest {
 
         registry.registerAllEndpoints();
 
-        // Should have 41 tool definitions
-        assertEquals(41, registry.getToolDefs().size());
+        // Should have 42 tool definitions
+        assertEquals(42, registry.getToolDefs().size());
     }
 
     @Test
@@ -439,7 +439,7 @@ class ApiHandlerRegistryTest {
             "create_structure", "add_structure_field", "update_structure",
             "create_enum", "add_enum_value", "update_enum",
             "create_function",
-            "open_program", "reanalyze_program"
+            "open_program", "reanalyze_program", "import_program"
         );
 
         for (ToolDef def : registry.getToolDefs()) {
@@ -455,7 +455,7 @@ class ApiHandlerRegistryTest {
     }
 
     @Test
-    @DisplayName("/mcp/tools endpoint returns valid JSON array with all 41 tools")
+    @DisplayName("/mcp/tools endpoint returns valid JSON array with all 42 tools")
     void testMcpToolsEndpoint_ReturnsAllTools() throws Exception {
         when(mockServerManager.isServerRunning()).thenReturn(true);
         when(mockServerManager.getServer()).thenReturn(mockHttpServer);
@@ -488,7 +488,7 @@ class ApiHandlerRegistryTest {
         assertTrue(jsonOutput.startsWith("["), "Response should be a JSON array");
         assertTrue(jsonOutput.endsWith("]"), "Response should end with ]");
 
-        // Verify all 41 tools are present by checking for each tool name
+        // Verify all 42 tools are present by checking for each tool name
         for (ToolDef def : registry.getToolDefs()) {
             assertTrue(jsonOutput.contains("\"name\":\"" + def.getName() + "\""),
                 "JSON should contain tool: " + def.getName());

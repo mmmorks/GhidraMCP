@@ -1,5 +1,6 @@
 package com.lauriewired.mcp.services;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -13,6 +14,7 @@ import com.lauriewired.mcp.model.ListOutput;
 import com.lauriewired.mcp.model.StatusOutput;
 import com.lauriewired.mcp.model.ToolOutput;
 import com.lauriewired.mcp.model.response.AnalysisResult;
+import com.lauriewired.mcp.model.response.ImportResult;
 import com.lauriewired.mcp.model.response.OpenProgramResult;
 import com.lauriewired.mcp.model.response.ProgramFileItem;
 import com.lauriewired.mcp.model.response.ProgramInfoResult;
@@ -20,6 +22,10 @@ import com.lauriewired.mcp.utils.ProgramTransaction;
 
 import ghidra.app.plugin.core.analysis.AutoAnalysisManager;
 import ghidra.app.services.ProgramManager;
+import ghidra.app.util.importer.AutoImporter;
+import ghidra.app.util.importer.MessageLog;
+import ghidra.app.util.opinion.Loaded;
+import ghidra.app.util.opinion.LoadResults;
 import ghidra.framework.model.DomainFile;
 import ghidra.framework.model.DomainFolder;
 import ghidra.framework.model.Project;
@@ -216,5 +222,84 @@ public class ProjectService {
             program.getFunctionManager().getFunctionCount(),
             program.getSymbolTable().getNumSymbols(),
             elapsed);
+    }
+
+    @McpTool(post = true, timeoutSeconds = 600, outputType = JsonOutput.class,
+             responseType = ImportResult.class, description = """
+        Import a file from the Ghidra host's filesystem into the current project.
+
+        Ghidra auto-detects the format (ELF, PE, Mach-O, raw, etc.), imports the
+        file into the given project folder, optionally runs auto-analysis, and
+        optionally opens it as the current program (which auto-closes the program
+        it replaced). Blocks until done; large binaries may take minutes.
+
+        Returns: metadata for the imported program (name, project path, format,
+        language, function count, analyzed flag, any additional programs, warning)
+
+        Example: import_program("/samples/firmware.bin", "/imports", true, true) """)
+    @SuppressWarnings("PMD.CloseResource")
+    // `project` is the tool's shared active AutoCloseable Project (tool.getProject()); it is
+    // not owned by this method and must never be closed here. `results` (LoadResults) IS
+    // closed by the try-with-resources below.
+    public ToolOutput importProgram(
+            @Param(value = "Absolute path to the file on the Ghidra host") final String path,
+            @Param(value = "Destination project folder", defaultValue = "/") final String folder,
+            @Param(value = "Run auto-analysis after import", defaultValue = "true") final boolean analyze,
+            @Param(value = "Open the imported program as current", defaultValue = "true") final boolean open) {
+        final Project project = getProject();
+        if (project == null) return StatusOutput.error("No active Ghidra project");
+        if (path == null || path.isBlank()) return StatusOutput.error("path is required");
+
+        final File file = new File(path);
+        if (!file.isFile()) return StatusOutput.error("File not found or not a regular file: " + path);
+
+        final String folderPath = (folder == null || folder.isBlank()) ? "/" : folder;
+        final MessageLog log = new MessageLog();
+        final Object consumer = this;
+
+        try (LoadResults<Program> results =
+                 AutoImporter.importByUsingBestGuess(file, project, folderPath, consumer, log, TaskMonitor.DUMMY)) {
+            final Loaded<Program> primary = results.getPrimary();
+            final Program program = primary.getDomainObject();
+
+            final boolean analyzed = analyze;
+            if (analyze) {
+                runAnalysis(program);
+            }
+            results.save(TaskMonitor.DUMMY);
+            final DomainFile savedFile = primary.getSavedDomainFile();
+
+            String warning = null;
+            if (open) {
+                final ProgramManager pm = getProgramManager();
+                if (pm != null) {
+                    final String[] warningBox = new String[1];
+                    runOnSwing(() -> {
+                        final Program prev = pm.getCurrentProgram();
+                        final Program opened = pm.openProgram(savedFile);
+                        warningBox[0] = autoClosePrevious(pm, prev, opened);
+                        return null;
+                    });
+                    warning = warningBox[0];
+                }
+            }
+
+            final List<String> extras = new ArrayList<>();
+            for (final Loaded<Program> other : results.getNonPrimary()) {
+                extras.add(other.getName());
+            }
+
+            return new JsonOutput(new ImportResult(
+                program.getName(),
+                savedFile.getPathname(),
+                program.getExecutableFormat(),
+                program.getLanguageID().toString(),
+                program.getFunctionManager().getFunctionCount(),
+                analyzed,
+                extras,
+                warning));
+        } catch (Exception e) {
+            return StatusOutput.error("Import failed: " + e.getMessage());
+        }
     }
 }

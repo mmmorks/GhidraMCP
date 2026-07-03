@@ -183,6 +183,26 @@ class ProjectServiceTest {
         assertTrue(out.toStructuredJson().contains("No program"));
     }
 
+    @org.junit.jupiter.api.Test
+    void importProgram_noProject_returnsError() {
+        ProjectService svc = inlineService(null);
+        ToolOutput out = svc.importProgram("/tmp/whatever.bin", "/", true, true);
+        assertInstanceOf(StatusOutput.class, out);
+        assertTrue(out.toStructuredJson().contains("No active"));
+    }
+
+    @org.junit.jupiter.api.Test
+    void importProgram_missingFile_returnsError() {
+        PluginTool tool = mock(PluginTool.class);
+        Project project = mock(Project.class);
+        when(tool.getProject()).thenReturn(project);
+
+        ProjectService svc = inlineService(tool);
+        ToolOutput out = svc.importProgram("/no/such/file-xyz.bin", "/", true, true);
+        assertInstanceOf(StatusOutput.class, out);
+        assertTrue(out.toStructuredJson().contains("File not found"));
+    }
+
     @org.junit.jupiter.api.Nested
     @org.junit.jupiter.api.DisplayName("reanalyze on a real ProgramBuilder program")
     class ReanalyzeIntegration {
