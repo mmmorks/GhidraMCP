@@ -8,7 +8,6 @@ import com.lauriewired.mcp.model.response.ProgramInfoResult;
 
 import ghidra.app.services.ProgramManager;
 import ghidra.framework.plugintool.PluginTool;
-import ghidra.program.model.address.AddressIterator;
 import ghidra.program.model.listing.Program;
 
 /**
@@ -53,24 +52,6 @@ public class ProgramService {
     public ToolOutput getProgramInfo() {
         final Program program = getCurrentProgram();
         if (program == null) return StatusOutput.error("No program loaded");
-
-        // Entry point
-        final AddressIterator entryPoints = program.getSymbolTable().getExternalEntryPointIterator();
-        final String entryPoint = entryPoints.hasNext() ? entryPoints.next().toString() : null;
-
-        return new JsonOutput(new ProgramInfoResult(
-                program.getName(),
-                program.getExecutableFormat(),
-                program.getLanguage().getProcessor().toString(),
-                program.getLanguageID().toString(),
-                program.getLanguage().getLanguageDescription().getEndian().toString(),
-                program.getLanguage().getLanguageDescription().getSize(),
-                program.getCompilerSpec().getCompilerSpecID().toString(),
-                program.getImageBase().toString(),
-                program.getMinAddress().toString(),
-                program.getMaxAddress().toString(),
-                entryPoint,
-                program.getFunctionManager().getFunctionCount(),
-                program.getSymbolTable().getNumSymbols()));
+        return new JsonOutput(ProgramInfoResult.from(program));
     }
 }
