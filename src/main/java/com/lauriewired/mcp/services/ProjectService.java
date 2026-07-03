@@ -179,8 +179,12 @@ public class ProjectService {
             return "Previous program '" + prev.getName()
                 + "' left open: it has unsaved changes that could not be saved.";
         } catch (Exception e) {
-            return "Previous program '" + prev.getName() + "' left open: save failed: " + e.getMessage();
+            return "Previous program '" + prev.getName() + "' left open: save failed: " + describe(e);
         }
+    }
+
+    private static String describe(final Throwable e) {
+        return e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
     }
 
     @McpTool(post = true, timeoutSeconds = 600, outputType = JsonOutput.class,
@@ -282,7 +286,11 @@ public class ProjectService {
                         runOnSwing(() -> {
                             final Program prev = pm.getCurrentProgram();
                             final Program opened = pm.openProgram(savedFile);
-                            warningBox[0] = autoClosePrevious(pm, prev, opened);
+                            if (opened != null) {
+                                warningBox[0] = autoClosePrevious(pm, prev, opened);
+                            } else {
+                                warningBox[0] = "Imported and saved, but failed to open as the current program.";
+                            }
                             return null;
                         });
                         warning = warningBox[0];
@@ -307,7 +315,7 @@ public class ProjectService {
                 program.release(consumer);
             }
         } catch (Exception e) {
-            return StatusOutput.error("Import failed: " + e.getMessage());
+            return StatusOutput.error("Import failed: " + describe(e));
         }
     }
 }
