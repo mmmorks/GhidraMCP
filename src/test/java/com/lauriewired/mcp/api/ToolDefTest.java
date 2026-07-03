@@ -105,6 +105,9 @@ class ToolDefTest {
                 @Param(value = "As string", defaultValue = "true") boolean asString) {
             return "mem";
         }
+
+        @McpTool(post = true, timeoutSeconds = 600, description = "A slow tool")
+        public com.lauriewired.mcp.model.ToolOutput slowTool() { return null; }
     }
 
     @Test
@@ -555,5 +558,28 @@ class ToolDefTest {
     void testParseParams_GetLongNull() throws Exception {
         Object result = ParamType.LONG.parseFromString(null, 42L);
         assertEquals(42L, result);
+    }
+
+    // =========================================================================
+    // timeoutSeconds tests
+    // =========================================================================
+
+    @Test
+    void testFromMethod_TimeoutSecondsCaptured() throws Exception {
+        Method method = TestTools.class.getDeclaredMethod("slowTool");
+        McpTool ann = method.getAnnotation(McpTool.class);
+        ToolDef def = ToolDef.fromMethod(method, ann);
+        assertEquals(600, def.getTimeoutSeconds());
+    }
+
+    @Test
+    void testToToolJson_EmitsTimeoutWhenSet() throws Exception {
+        Method slow = TestTools.class.getDeclaredMethod("slowTool");
+        ToolDef slowDef = ToolDef.fromMethod(slow, slow.getAnnotation(McpTool.class));
+        assertTrue(slowDef.toToolJson().contains("\"timeoutSeconds\":600"));
+
+        Method plain = TestTools.class.getDeclaredMethod("getProgramInfo");
+        ToolDef plainDef = ToolDef.fromMethod(plain, plain.getAnnotation(McpTool.class));
+        assertFalse(plainDef.toToolJson().contains("timeoutSeconds"));
     }
 }
