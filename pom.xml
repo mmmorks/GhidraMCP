@@ -11,7 +11,7 @@
   <url>http://maven.apache.org</url>
   
   <properties>
-    <maven.compiler.release>24</maven.compiler.release>
+    <maven.compiler.release>25</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <!-- Ghidra install dir for integration tests (override with -Dghidra.install.dir=...) -->
     <ghidra.install.dir>/Applications/Ghidra.app/Contents/app</ghidra.install.dir>
@@ -212,7 +212,7 @@
         <artifactId>maven-compiler-plugin</artifactId>
         <version>3.11.0</version>
         <configuration>
-          <release>24</release>
+          <release>25</release>
           <parameters>true</parameters>
         </configuration>
       </plugin>
@@ -348,7 +348,7 @@
       <plugin>
         <groupId>org.jacoco</groupId>
         <artifactId>jacoco-maven-plugin</artifactId>
-        <version>0.8.13</version>
+        <version>0.8.15</version>
         <executions>
           <execution>
             <id>prepare-agent</id>
@@ -395,10 +395,24 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-pmd-plugin</artifactId>
         <version>3.28.0</version>
+        <!-- Override the bundled PMD engine (7.17.0) with 7.26.0, whose ASM 9.10.1
+             can parse JDK 26 (class-file major version 70) java.base classes. -->
+        <dependencies>
+          <dependency>
+            <groupId>net.sourceforge.pmd</groupId>
+            <artifactId>pmd-core</artifactId>
+            <version>7.26.0</version>
+          </dependency>
+          <dependency>
+            <groupId>net.sourceforge.pmd</groupId>
+            <artifactId>pmd-java</artifactId>
+            <version>7.26.0</version>
+          </dependency>
+        </dependencies>
         <configuration>
           <failOnViolation>true</failOnViolation>
           <printFailingErrors>true</printFailingErrors>
-          <targetJdk>24</targetJdk>
+          <targetJdk>25</targetJdk>
           <rulesets>
             <ruleset>${project.basedir}/pmd-rules.xml</ruleset>
           </rulesets>

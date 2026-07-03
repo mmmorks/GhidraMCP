@@ -119,7 +119,7 @@ MCP Server + Ghidra Plugin
 # Installation
 
 ## Prerequisites
-- [Ghidra](https://ghidra-sre.org) (12.0.3+)
+- [Ghidra](https://ghidra-sre.org) (12.0.3+), running on **JDK 25+** (the plugin is compiled for Java 25, so Ghidra must be launched with a JDK 25 or newer)
 - Python 3.10+
 - Python dependencies: `pip install -r requirements.txt`
 
@@ -189,7 +189,7 @@ Another MCP client that supports multiple models on the backend is [5ire](https:
 # Building from Source
 
 ## Prerequisites
-- Java 24
+- Java 25 (JDK)
 - Maven
 
 ## Build
