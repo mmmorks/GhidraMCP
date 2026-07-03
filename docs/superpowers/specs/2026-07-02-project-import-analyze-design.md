@@ -41,7 +41,7 @@ nine existing services keep working unchanged.
    program with zero modification. Cost: a CodeBrowser window must be open (it
    already is — that is where the plugin lives).
 2. **Scope: all four project operations** — import, list, open, analyze.
-3. **Analysis execution: synchronous, block until done.** `analyze_program`
+3. **Analysis execution: synchronous, block until done.** `reanalyze_program`
    (and `import_program` when `analyze=true`) holds the POST open until Ghidra
    finishes, then returns final counts. Chosen for the simplest agent mental
    model. Consequence handled in Decision 4.
@@ -82,7 +82,14 @@ exactly like the other services.
 | `import_program` | POST | `import_program(path, folder="/", analyze=true, open=true)` | `JsonOutput<ImportResult>` |
 | `list_program_files` | GET | `list_program_files(folder="/")` | `ListOutput<ProgramFileItem>` |
 | `open_program` | POST | `open_program(project_path)` | `JsonOutput<ProgramInfoResult>` |
-| `analyze_program` | POST | `analyze_program()` | `JsonOutput<AnalysisResult>` |
+| `reanalyze_program` | POST | `reanalyze_program()` | `JsonOutput<AnalysisResult>` |
+
+The analysis trigger is named `reanalyze_program` (not `analyze_program`)
+deliberately: because `import_program` analyzes by default, any imported or
+previously-opened program is normally already analyzed, and the underlying
+Ghidra call is `reAnalyzeAll`. The name signals to the agent that analysis is
+the expected default state and this tool re-runs it — discouraging a redundant
+analysis pass on a freshly imported program.
 
 New response records in `com.lauriewired.mcp.model.response` (Java records,
 implementing `Displayable`, serialized snake_case by the shared Jackson mapper),
@@ -98,7 +105,7 @@ following the existing `ProgramInfoResult` pattern:
 - `open_program` reuses the existing `ProgramInfoResult` shape.
 
 `import_program` with `analyze=true` calls the same analysis code path as
-`analyze_program` — one implementation, invoked synchronously.
+`reanalyze_program` — one implementation, invoked synchronously.
 
 ### Import behavior details
 
@@ -117,7 +124,7 @@ POST is **not** timed out server-side, but a synchronous analysis will exceed
 Add an **optional per-tool timeout hint**:
 
 - `@McpTool(..., timeoutSeconds = 600)` on `import_program` and
-  `analyze_program`.
+  `reanalyze_program`.
 - Surface `timeoutSeconds` in the `/mcp/tools` metadata (via `ToolDef`).
 - In the bridge, when invoking a tool, use its `timeout_seconds` as the
   per-request `httpx` timeout, falling back to the global `--timeout` default
@@ -143,7 +150,7 @@ self-correct) for:
 - Name collision in target folder (`DuplicateNameException`).
 - `open_program` on a nonexistent project path.
 - Any tool call when no program is current where one is required
-  (`analyze_program`).
+  (`reanalyze_program`).
 
 ## Testing
 
