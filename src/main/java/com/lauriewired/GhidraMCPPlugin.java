@@ -11,6 +11,7 @@ import com.lauriewired.mcp.services.FunctionService;
 import com.lauriewired.mcp.services.MemoryService;
 import com.lauriewired.mcp.services.NamespaceService;
 import com.lauriewired.mcp.services.ProgramService;
+import com.lauriewired.mcp.services.ProjectService;
 import com.lauriewired.mcp.services.SearchService;
 import com.lauriewired.mcp.services.VariableService;
 
@@ -49,6 +50,7 @@ public class GhidraMCPPlugin extends Plugin {
     private MemoryService memoryService;
     private VariableService variableService;
     private SearchService searchService;
+    private ProjectService projectService;
 
     /**
      * Plugin constructor
@@ -82,7 +84,8 @@ public class GhidraMCPPlugin extends Plugin {
         this.memoryService = new MemoryService(programService, dataTypeService);
         this.variableService = new VariableService(programService, functionService);
         this.searchService = new SearchService(programService);
-        
+        this.projectService = new ProjectService(tool);
+
         Msg.info(GhidraMCPPlugin.class, "All services initialized");
     }
     
@@ -111,7 +114,8 @@ public class GhidraMCPPlugin extends Plugin {
                 memoryService,
                 programService,
                 searchService,
-                variableService
+                variableService,
+                projectService
             );
             
             // Register all API endpoints

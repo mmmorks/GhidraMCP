@@ -36,6 +36,7 @@ import com.lauriewired.mcp.services.FunctionService;
 import com.lauriewired.mcp.services.MemoryService;
 import com.lauriewired.mcp.services.NamespaceService;
 import com.lauriewired.mcp.services.ProgramService;
+import com.lauriewired.mcp.services.ProjectService;
 import com.lauriewired.mcp.services.SearchService;
 import com.lauriewired.mcp.services.VariableService;
 import com.sun.net.httpserver.HttpContext;
@@ -96,7 +97,8 @@ class ApiHandlerRegistryTest {
             mockMemoryService,
             mockProgramService,
             mockSearchService,
-            mockVariableService
+            mockVariableService,
+            new ProjectService(null)
         );
     }
 
@@ -114,7 +116,8 @@ class ApiHandlerRegistryTest {
             mockMemoryService,
             mockProgramService,
             mockSearchService,
-            mockVariableService
+            mockVariableService,
+            new ProjectService(null)
         );
         assertNotNull(testRegistry);
     }
@@ -182,6 +185,9 @@ class ApiHandlerRegistryTest {
         verify(mockHttpServer).createContext(eq("/rename_variables"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/split_variable"), any(HttpHandler.class));
         verify(mockHttpServer).createContext(eq("/set_variable_types"), any(HttpHandler.class));
+
+        // Project endpoints
+        verify(mockHttpServer).createContext(eq("/list_program_files"), any(HttpHandler.class));
 
         // MCP tools metadata endpoint
         verify(mockHttpServer).createContext(eq("/mcp/tools"), any(HttpHandler.class));
@@ -330,8 +336,8 @@ class ApiHandlerRegistryTest {
 
         registry.registerAllEndpoints();
 
-        // 38 tool endpoints + 1 /mcp/tools metadata endpoint = 39
-        verify(mockHttpServer, times(39)).createContext(anyString(), any(HttpHandler.class));
+        // 39 tool endpoints + 1 /mcp/tools metadata endpoint = 40
+        verify(mockHttpServer, times(40)).createContext(anyString(), any(HttpHandler.class));
     }
 
     @Test
@@ -343,8 +349,8 @@ class ApiHandlerRegistryTest {
 
         registry.registerAllEndpoints();
 
-        // Should have 38 tool definitions
-        assertEquals(38, registry.getToolDefs().size());
+        // Should have 39 tool definitions
+        assertEquals(39, registry.getToolDefs().size());
     }
 
     @Test
@@ -448,7 +454,7 @@ class ApiHandlerRegistryTest {
     }
 
     @Test
-    @DisplayName("/mcp/tools endpoint returns valid JSON array with all 40 tools")
+    @DisplayName("/mcp/tools endpoint returns valid JSON array with all 39 tools")
     void testMcpToolsEndpoint_ReturnsAllTools() throws Exception {
         when(mockServerManager.isServerRunning()).thenReturn(true);
         when(mockServerManager.getServer()).thenReturn(mockHttpServer);

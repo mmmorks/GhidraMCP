@@ -17,6 +17,7 @@ import com.lauriewired.mcp.services.FunctionService;
 import com.lauriewired.mcp.services.MemoryService;
 import com.lauriewired.mcp.services.NamespaceService;
 import com.lauriewired.mcp.services.ProgramService;
+import com.lauriewired.mcp.services.ProjectService;
 import com.lauriewired.mcp.services.SearchService;
 import com.lauriewired.mcp.services.VariableService;
 import com.lauriewired.mcp.telemetry.TelemetryInterceptor;
@@ -43,6 +44,7 @@ public class ApiHandlerRegistry {
     private final ProgramService programService;
     private final SearchService searchService;
     private final VariableService variableService;
+    private final ProjectService projectService;
     private final TelemetryLogger telemetryLogger;
     private final TimeoutHandler timeoutHandler;
     private final List<ToolDef> toolDefs = new ArrayList<>();
@@ -57,7 +59,8 @@ public class ApiHandlerRegistry {
             final MemoryService memoryService,
             final ProgramService programService,
             final SearchService searchService,
-            final VariableService variableService) {
+            final VariableService variableService,
+            final ProjectService projectService) {
         this.serverManager = serverManager;
         this.functionService = functionService;
         this.namespaceService = namespaceService;
@@ -68,6 +71,7 @@ public class ApiHandlerRegistry {
         this.programService = programService;
         this.searchService = searchService;
         this.variableService = variableService;
+        this.projectService = projectService;
         this.telemetryLogger = new TelemetryLogger();
 
         final int timeoutSeconds = serverManager.getRequestTimeoutSeconds();
@@ -90,7 +94,7 @@ public class ApiHandlerRegistry {
         final Object[] services = {
             programService, functionService, namespaceService,
             dataTypeService, analysisService, commentService,
-            memoryService, searchService, variableService
+            memoryService, searchService, variableService, projectService
         };
 
         for (final Object service : services) {
