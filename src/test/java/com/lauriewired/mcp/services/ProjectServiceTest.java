@@ -96,4 +96,77 @@ class ProjectServiceTest {
         assertInstanceOf(StatusOutput.class, out);
         assertTrue(out.toStructuredJson().contains("Folder not found"));
     }
+
+    // --- auto-close via the tested core helper ---
+
+    private static Program mockProgram(String name, DomainFile df, boolean changed) {
+        Program p = mock(Program.class);
+        when(p.getName()).thenReturn(name);
+        when(p.getDomainFile()).thenReturn(df);
+        when(p.isChanged()).thenReturn(changed);
+        return p;
+    }
+
+    @org.junit.jupiter.api.Test
+    void autoClose_cleanSwitch_savesAndCloses() throws Exception {
+        ProgramManager pm = mock(ProgramManager.class);
+        DomainFile df = mockFile("/old", "old", "Program");
+        when(df.canSave()).thenReturn(true);
+        // isChanged: true before save, false after save
+        Program prev = mock(Program.class);
+        when(prev.getName()).thenReturn("old");
+        when(prev.getDomainFile()).thenReturn(df);
+        when(prev.isChanged()).thenReturn(true, false);
+        Program opened = mock(Program.class);
+
+        ProjectService svc = inlineService(mock(PluginTool.class));
+        String warning = svc.autoClosePrevious(pm, prev, opened);
+
+        org.mockito.Mockito.verify(df).save(org.mockito.ArgumentMatchers.any());
+        org.mockito.Mockito.verify(pm).closeProgram(prev, false);
+        org.junit.jupiter.api.Assertions.assertNull(warning);
+    }
+
+    @org.junit.jupiter.api.Test
+    void autoClose_saveFails_leavesOpenWithWarning() throws Exception {
+        ProgramManager pm = mock(ProgramManager.class);
+        DomainFile df = mockFile("/old", "old", "Program");
+        when(df.canSave()).thenReturn(true);
+        org.mockito.Mockito.doThrow(new java.io.IOException("disk full"))
+            .when(df).save(org.mockito.ArgumentMatchers.any());
+        Program prev = mockProgram("old", df, true);
+        Program opened = mock(Program.class);
+
+        ProjectService svc = inlineService(mock(PluginTool.class));
+        String warning = svc.autoClosePrevious(pm, prev, opened);
+
+        assertTrue(warning.contains("old"));
+        assertTrue(warning.contains("disk full"));
+        org.mockito.Mockito.verify(pm, org.mockito.Mockito.never())
+            .closeProgram(org.mockito.ArgumentMatchers.eq(prev), org.mockito.ArgumentMatchers.anyBoolean());
+    }
+
+    @org.junit.jupiter.api.Test
+    void autoClose_noPrevious_isNoOp() {
+        ProgramManager pm = mock(ProgramManager.class);
+        Program opened = mock(Program.class);
+        ProjectService svc = inlineService(mock(PluginTool.class));
+        org.junit.jupiter.api.Assertions.assertNull(svc.autoClosePrevious(pm, null, opened));
+        org.junit.jupiter.api.Assertions.assertNull(svc.autoClosePrevious(pm, opened, opened));
+    }
+
+    @org.junit.jupiter.api.Test
+    void openProgram_missingPath_returnsError() {
+        PluginTool tool = mock(PluginTool.class);
+        Project project = mock(Project.class);
+        ProjectData data = mock(ProjectData.class);
+        when(tool.getProject()).thenReturn(project);
+        when(project.getProjectData()).thenReturn(data);
+        when(data.getFile("/gone")).thenReturn(null);
+
+        ProjectService svc = inlineService(tool);
+        ToolOutput out = svc.openProgram("/gone");
+        assertInstanceOf(StatusOutput.class, out);
+        assertTrue(out.toStructuredJson().contains("not found"));
+    }
 }
