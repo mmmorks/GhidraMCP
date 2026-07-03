@@ -65,14 +65,17 @@ public class ProjectService {
     }
 
     @McpTool(outputType = ListOutput.class, responseType = ProgramFileItem.class, description = """
-        List program files in the current Ghidra project.
+        List files in the current Ghidra project.
 
         Recursively walks the project folder tree starting at the given folder,
-        returning each program file's project path, name, content type, and
-        whether it is currently open. Use this to discover binaries already
-        imported so you can open one with open_program.
+        returning each file's project path, name, content type, and whether it
+        is currently open. Use this to discover what has already been imported
+        so you can open one with open_program (pass its project path). This
+        lists ALL project files, not only programs — data-type archives and
+        other artifacts appear too, so check the content type ("Program" marks
+        an analyzable binary) to pick a program.
 
-        Returns: paginated list of project program files
+        Returns: paginated list of project files
 
         Example: list_program_files("/") -> "/imports/firmware.bin  (Program)  [open]" """)
     @SuppressWarnings("PMD.CloseResource")
@@ -125,9 +128,11 @@ public class ProjectService {
     @McpTool(post = true, outputType = JsonOutput.class, responseType = OpenProgramResult.class, description = """
         Open an already-imported project file and make it the current program.
 
-        Switches the CodeBrowser to the given project file so all other tools
-        operate on it. The previously-current program is auto-closed (saved
-        first); if that save fails it is left open and a warning is returned.
+        Get a valid project path from list_program_files (or from the
+        project_path returned by a prior import_program). Switches the
+        CodeBrowser to that file so all other tools operate on it. The
+        previously-current program is auto-closed (saved first); if that save
+        fails it is left open and a warning is returned.
 
         Returns: program metadata for the newly-current program (plus optional warning)
 
@@ -192,9 +197,10 @@ public class ProjectService {
         Re-run Ghidra auto-analysis on the current program.
 
         Imported programs are analyzed by default, so a program is normally
-        already analyzed — use this to redo analysis (e.g. after changing
-        settings). This blocks until analysis completes and may take minutes
-        on large binaries.
+        already analyzed and you rarely need this. Reach for it only when you
+        imported with analyze=false, or when substantial manual edits warrant
+        a fresh analysis pass. This blocks until analysis completes and may
+        take minutes on large binaries.
 
         Returns: analyzed flag with function/symbol counts and elapsed time
 
@@ -232,10 +238,14 @@ public class ProjectService {
              responseType = ImportResult.class, description = """
         Import a file from the Ghidra host's filesystem into the current project.
 
-        Ghidra auto-detects the format (ELF, PE, Mach-O, raw, etc.), imports the
-        file into the given project folder, optionally runs auto-analysis, and
-        optionally opens it as the current program (which auto-closes the program
-        it replaced). Blocks until done; large binaries may take minutes.
+        The path is on the Ghidra host's filesystem (where Ghidra runs), not
+        the caller's machine. Ghidra auto-detects the format (ELF, PE, Mach-O,
+        raw, etc.), imports the file into the given project folder (created if
+        absent), optionally runs auto-analysis, and optionally opens it as the
+        current program (which auto-closes the program it replaced). Blocks
+        until done; large binaries may take minutes. Importing a file whose
+        name already exists in the target folder fails — import to a different
+        folder or open the existing one with open_program.
 
         Returns: metadata for the imported program (name, project path, format,
         language, function count, analyzed flag, any additional programs, warning)
