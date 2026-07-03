@@ -75,13 +75,44 @@ exactly like the other services.
 - **Imported program** is persisted into the project (`LoadResults.save(...)`)
   and the plugin's consumer reference released after the program is opened.
 
+## Program lifecycle: auto-close previous
+
+Ghidra's `ProgramManager` is a *multi-program* manager:
+`openProgram(DomainFile)` opens a file as `OPEN_CURRENT` and switches the
+current program, but leaves every previously-opened program still open
+(`getAllOpenPrograms()`), so programs otherwise accumulate. There is no standalone
+close tool (out of scope). Instead, whenever a tool **switches the current
+program** — `open_program`, and `import_program` with `open=true` — it
+auto-closes the program it replaced, implemented as the *safe* variant so
+analysis is never silently lost:
+
+1. Capture `prev = programManager.getCurrentProgram()` before opening.
+2. Open the new program as current.
+3. If `prev != null` and `prev != newProgram`:
+   - If `prev.isChanged()` and `prev.getDomainFile().canSave()`, attempt
+     `prev.getDomainFile().save(monitor)`.
+   - **On save success (or nothing to save):** `closeProgram(prev, false)`.
+     The `ignoreChanges` flag is `false` by design: a still-dirty program is
+     never discarded on close. Because we saved first, a clean program closes
+     without prompting.
+   - **On save failure (`IOException`), or an unsavable/temporary program with
+     unsaved changes:** do **not** call close (it would refuse anyway with
+     `ignoreChanges=false`). Leave `prev` open and attach a warning to the
+     result rather than discard work.
+
+Only the single previously-current program is auto-closed — programs a human
+opened independently are left alone. When `import_program` is called with
+`open=false`, the current program does not change and nothing is closed.
+All `ProgramManager`, `save`, and `closeProgram` calls run on the EDT via
+`Swing.runNow(...)`.
+
 ## Tools
 
 | Tool | HTTP | Signature | Output model |
 |---|---|---|---|
 | `import_program` | POST | `import_program(path, folder="/", analyze=true, open=true)` | `JsonOutput<ImportResult>` |
 | `list_program_files` | GET | `list_program_files(folder="/")` | `ListOutput<ProgramFileItem>` |
-| `open_program` | POST | `open_program(project_path)` | `JsonOutput<ProgramInfoResult>` |
+| `open_program` | POST | `open_program(project_path)` | `JsonOutput<OpenProgramResult>` |
 | `reanalyze_program` | POST | `reanalyze_program()` | `JsonOutput<AnalysisResult>` |
 
 The analysis trigger is named `reanalyze_program` (not `analyze_program`)
@@ -96,13 +127,15 @@ implementing `Displayable`, serialized snake_case by the shared Jackson mapper),
 following the existing `ProgramInfoResult` pattern:
 
 - **`ImportResult`** — program name, project path, executable format, language
-  id, function count, analyzed flag, and a list of any additional programs the
-  loader produced (archives/containers can yield more than one).
+  id, function count, analyzed flag, a list of any additional programs the
+  loader produced (archives/containers can yield more than one), and an optional
+  `warning` (e.g. the auto-close save failure above).
 - **`ProgramFileItem`** — project path, name, content type, `open` flag
   (whether it is currently open in the tool). Element type of the `ListOutput`.
+- **`OpenProgramResult`** — the `ProgramInfoResult` fields for the newly-current
+  program plus an optional `warning` (auto-close save failure).
 - **`AnalysisResult`** — analyzed flag, function count, symbol count, elapsed
   ms.
-- `open_program` reuses the existing `ProgramInfoResult` shape.
 
 `import_program` with `analyze=true` calls the same analysis code path as
 `reanalyze_program` — one implementation, invoked synchronously.
@@ -152,6 +185,11 @@ self-correct) for:
 - Any tool call when no program is current where one is required
   (`reanalyze_program`).
 
+Non-fatal (warning, not error): auto-close of the previous program fails to save
+(`IOException`) — the switch to the new program still succeeds; the previous
+program is left open and the failure is reported in the result's `warning`
+field.
+
 ## Testing
 
 **Unit-testable with the existing Mockito harness:**
@@ -160,6 +198,9 @@ self-correct) for:
   `DomainFile` tree, including the `open` flag against mocked
   `ProgramManager.getAllOpenPrograms()`.
 - `open_program` via mocked `ProgramManager` + `ProjectData.getFile`.
+- Auto-close logic via mocked programs: previous program is saved then closed on
+  a clean switch; a save-failing previous program is left open and surfaces a
+  `warning`; `open=false` closes nothing.
 - All error / validation paths above.
 - Response-record `Displayable` output formatting.
 - Bridge: per-tool `timeout_seconds` selection logic.
@@ -189,6 +230,7 @@ self-correct) for:
 ## Out of scope (YAGNI)
 
 - Deleting / renaming / moving project files.
-- Closing programs.
+- A standalone close tool (auto-close-previous covers the accumulation problem;
+  closing arbitrary programs on demand is deferred).
 - Configuring per-analyzer options.
 - Raw-bytes upload (import is from a filesystem path on the Ghidra host).
