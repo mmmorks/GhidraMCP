@@ -169,4 +169,49 @@ class ProjectServiceTest {
         assertInstanceOf(StatusOutput.class, out);
         assertTrue(out.toStructuredJson().contains("not found"));
     }
+
+    @org.junit.jupiter.api.Test
+    void reanalyze_noCurrentProgram_returnsError() {
+        PluginTool tool = mock(PluginTool.class);
+        ProgramManager pm = mock(ProgramManager.class);
+        when(tool.getService(ProgramManager.class)).thenReturn(pm);
+        when(pm.getCurrentProgram()).thenReturn(null);
+
+        ProjectService svc = inlineService(tool);
+        ToolOutput out = svc.reanalyzeProgram();
+        assertInstanceOf(StatusOutput.class, out);
+        assertTrue(out.toStructuredJson().contains("No program"));
+    }
+
+    @org.junit.jupiter.api.Nested
+    @org.junit.jupiter.api.DisplayName("reanalyze on a real ProgramBuilder program")
+    class ReanalyzeIntegration {
+        @org.junit.jupiter.api.Test
+        void reanalyze_realProgram_marksAnalyzed() throws Exception {
+            GhidraTestEnv.initialize();
+            ghidra.program.database.ProgramBuilder builder =
+                new ghidra.program.database.ProgramBuilder("t", ghidra.program.database.ProgramBuilder._X64);
+            builder.createMemory(".text", "0x401000", 0x200);
+            builder.createEmptyFunction("main", "0x401000", 0x40,
+                ghidra.program.model.data.DataType.DEFAULT);
+            ghidra.program.database.ProgramDB program = builder.getProgram();
+            try {
+                PluginTool tool = mock(PluginTool.class);
+                ProgramManager pm = mock(ProgramManager.class);
+                when(tool.getService(ProgramManager.class)).thenReturn(pm);
+                when(pm.getCurrentProgram()).thenReturn(program);
+
+                ProjectService svc = inlineService(tool);
+                ToolOutput out = svc.reanalyzeProgram();
+                assertInstanceOf(com.lauriewired.mcp.model.JsonOutput.class, out);
+                com.lauriewired.mcp.model.response.AnalysisResult r =
+                    (com.lauriewired.mcp.model.response.AnalysisResult)
+                        ((com.lauriewired.mcp.model.JsonOutput) out).data();
+                org.junit.jupiter.api.Assertions.assertTrue(r.analyzed());
+                org.junit.jupiter.api.Assertions.assertTrue(r.functionCount() >= 1);
+            } finally {
+                builder.dispose();
+            }
+        }
+    }
 }

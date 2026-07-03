@@ -12,10 +12,13 @@ import com.lauriewired.mcp.model.JsonOutput;
 import com.lauriewired.mcp.model.ListOutput;
 import com.lauriewired.mcp.model.StatusOutput;
 import com.lauriewired.mcp.model.ToolOutput;
+import com.lauriewired.mcp.model.response.AnalysisResult;
 import com.lauriewired.mcp.model.response.OpenProgramResult;
 import com.lauriewired.mcp.model.response.ProgramFileItem;
 import com.lauriewired.mcp.model.response.ProgramInfoResult;
+import com.lauriewired.mcp.utils.ProgramTransaction;
 
+import ghidra.app.plugin.core.analysis.AutoAnalysisManager;
 import ghidra.app.services.ProgramManager;
 import ghidra.framework.model.DomainFile;
 import ghidra.framework.model.DomainFolder;
@@ -23,6 +26,7 @@ import ghidra.framework.model.Project;
 import ghidra.framework.model.ProjectData;
 import ghidra.framework.plugintool.PluginTool;
 import ghidra.program.model.listing.Program;
+import ghidra.program.util.GhidraProgramUtilities;
 import ghidra.util.Swing;
 import ghidra.util.task.TaskMonitor;
 
@@ -171,5 +175,46 @@ public class ProjectService {
         } catch (Exception e) {
             return "Previous program '" + prev.getName() + "' left open: save failed: " + e.getMessage();
         }
+    }
+
+    @McpTool(post = true, timeoutSeconds = 600, outputType = JsonOutput.class,
+             responseType = AnalysisResult.class, description = """
+        Re-run Ghidra auto-analysis on the current program.
+
+        Imported programs are analyzed by default, so a program is normally
+        already analyzed — use this to redo analysis (e.g. after changing
+        settings). This blocks until analysis completes and may take minutes
+        on large binaries.
+
+        Returns: analyzed flag with function/symbol counts and elapsed time
+
+        Example: reanalyze_program() """)
+    public ToolOutput reanalyzeProgram() {
+        final ProgramManager pm = getProgramManager();
+        final Program program = pm != null ? pm.getCurrentProgram() : null;
+        if (program == null) return StatusOutput.error("No program is currently open");
+        return new JsonOutput(runAnalysis(program));
+    }
+
+    /**
+     * Run auto-analysis on a program within a transaction and return counts.
+     * Shared by reanalyze_program and import_program. Package-private for testing.
+     */
+    AnalysisResult runAnalysis(final Program program) {
+        final long start = System.currentTimeMillis();
+        final AutoAnalysisManager mgr = AutoAnalysisManager.getAnalysisManager(program);
+        try (var tx = ProgramTransaction.start(program, "Auto-analysis")) {
+            mgr.initializeOptions();
+            mgr.reAnalyzeAll(null);
+            mgr.startAnalysis(TaskMonitor.DUMMY);
+            GhidraProgramUtilities.markProgramAnalyzed(program);
+            tx.commit();
+        }
+        final long elapsed = System.currentTimeMillis() - start;
+        return new AnalysisResult(
+            true,
+            program.getFunctionManager().getFunctionCount(),
+            program.getSymbolTable().getNumSymbols(),
+            elapsed);
     }
 }
